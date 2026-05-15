@@ -41,6 +41,7 @@ const KEY_NAMES = ['C','D♭','D','E♭','E','F','F#/G♭','G','A♭','A','B♭'
 const KEY_RELATIVE_MINOR_NAMES = ['A','B♭','B','C','C#','D','D#/E♭','E','F','F#','G','G#'];
 const KEY_FIFTHS = [0,-5,2,-3,4,-1,6,1,-4,3,-2,5];
 const DEFAULT_MUSIC21_KEY_ENDPOINT = 'http://127.0.0.1:8000/api/analyze-key';
+const DEFAULT_MUSIC21_HARMONY_ENDPOINT = 'http://127.0.0.1:8000/api/analyze-harmony';
 const NOTE_COLORS = {C:'#e74c3c',D:'#f39c12',E:'#eab308',F:'#22c55e',G:'#3b82f6',A:'#6366f1',B:'#a855f7'};
 const SOLFEGE_KR = ['도','레','미','파','솔','라','시'];
 const STEP_TO_NUM = {C:1,D:2,E:3,F:4,G:5,A:6,B:7};
@@ -2625,6 +2626,12 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
    ============================================================== */
 function ChordsPanel({files,showProgress,hideProgress}){
   const [log,setLog]=useState([]);
+  const [harmonyData,setHarmonyData]=useState(null);
+  const [harmonyError,setHarmonyError]=useState('');
+  const [harmonyEndpoint,setHarmonyEndpoint]=useState(()=>{
+    try{return localStorage.getItem('music21HarmonyEndpoint')||DEFAULT_MUSIC21_HARMONY_ENDPOINT}
+    catch(e){return DEFAULT_MUSIC21_HARMONY_ENDPOINT}
+  });
 
   const run=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -2677,13 +2684,90 @@ function ChordsPanel({files,showProgress,hideProgress}){
     lines.push({m:'✅ 코드 기호 파악 완료',t:'ok'});setLog(lines);hideProgress();
   },[files,showProgress,hideProgress]);
 
+  const updateHarmonyEndpoint=useCallback(e=>{
+    const next=e.target.value;
+    setHarmonyEndpoint(next);
+    try{localStorage.setItem('music21HarmonyEndpoint',next)}catch(err){}
+  },[]);
+
+  const runMusic21Harmony=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    const endpoint=(harmonyEndpoint||DEFAULT_MUSIC21_HARMONY_ENDPOINT).trim();
+    if(!endpoint){alert('music21 API 주소를 입력해주세요.');return}
+    setHarmonyError('');
+    showProgress('music21 화성 분석 중...');
+    const payload={
+      scores:files.map(file=>({
+        name:file.name,
+        xml:new XMLSerializer().serializeToString(file.xmlDoc)
+      }))
+    };
+    try{
+      const res=await fetch(endpoint,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      if(!res.ok){
+        const msg=await res.text();
+        throw new Error(`${res.status} ${msg.slice(0,160)}`);
+      }
+      setHarmonyData(await res.json());
+    }catch(e){
+      setHarmonyData(null);
+      setHarmonyError(`music21 API 연결 실패: ${e.message}`);
+    }finally{
+      hideProgress();
+    }
+  },[files,harmonyEndpoint,showProgress,hideProgress]);
+
   return <div>
     <h2 className="panel__heading">코드 분석</h2>
-    <p className="panel__description">악보에 존재하는 코드 기호(harmony)를 파악하거나, 수직 음향을 분석해 마디별 코드를 추출합니다.</p>
+    <p className="panel__description">악보에 존재하는 코드 기호(harmony)를 파악하거나, 수직 음향과 music21 로마숫자 분석으로 마디별 화성을 추출합니다.</p>
     <div className="btn-row">
       <button className="btn btn--primary" onClick={runIdentify}>🔖 코드 기호 파악</button>
       <button className="btn btn--secondary" onClick={run}>▶ 수직 음향 분석</button>
     </div>
+
+    <div className="card harmony-analysis-card">
+      <div className="card__title">music21 고급 코드/화성 분석</div>
+      <div className="card__text">music21의 chordify()로 수직 음향을 묶고 romanNumeralFromChord()로 조성 안에서 로마숫자 기능화성을 추정합니다.</div>
+      <label className="form-label">music21 API 주소</label>
+      <input className="form-input form-input--mono" value={harmonyEndpoint} onChange={updateHarmonyEndpoint}/>
+      <div className="btn-row">
+        <button className="btn btn--secondary" onClick={runMusic21Harmony}>고급 화성 분석</button>
+      </div>
+      {harmonyError && <div className="key-analysis-warning">{harmonyError}</div>}
+    </div>
+
+    {harmonyData && <div className="harmony-analysis-results">
+      {harmonyData.summary && <div className="stats-row">
+        <div className="stat-tile"><div className="stat-tile__value">{harmonyData.summary.successful}</div><div className="stat-tile__label">분석 성공</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{harmonyData.summary.failed}</div><div className="stat-tile__label">분석 실패</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{harmonyData.summary.total_chords}</div><div className="stat-tile__label">추출 화성</div></div>
+      </div>}
+      {harmonyData.results?.map((r,i)=><div className="harmony-result" key={i}>
+        <div className="key-result__header">
+          <span className="key-result__name">{r.name}</span>
+          <span className={`key-result__badge key-result__badge--${r.status||'ok'}`}>{r.status==='ok'?'music21':'오류'}</span>
+        </div>
+        {r.key && <div className="key-result__sub">분석 조성: {r.key.label_ko||r.key.label}</div>}
+        {r.chords?.length
+          ? <div className="harmony-table">
+              {r.chords.map((c,j)=><div className="harmony-row" key={j}>
+                <span className="harmony-row__measure">m.{c.measure}</span>
+                <span className="harmony-row__chord">{c.figure||c.common_name}</span>
+                <span className="harmony-row__roman">{c.roman||'-'}</span>
+                <span className="harmony-row__quality">{c.quality||c.common_name}</span>
+              </div>)}
+            </div>
+          : <div className="key-result__sub">추출된 화성이 없습니다.</div>}
+        {r.progressions?.length>0 && <div className="key-result__alts">
+          진행: {r.progressions.slice(0,8).map(p=><span key={p.progression} className="composer-tag">{p.progression} ({p.count})</span>)}
+        </div>}
+        {r.error && <div className="key-analysis-warning">{r.error}</div>}
+      </div>)}
+    </div>}
     <LogPanel lines={log}/>
   </div>;
 }

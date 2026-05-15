@@ -1145,6 +1145,61 @@ body {
   align-items: center;
 }
 
+.harmony-analysis-card .form-input {
+  margin-bottom: 2px;
+}
+
+.harmony-analysis-results {
+  margin-bottom: 10px;
+}
+
+.harmony-result {
+  background: var(--bg-grouped);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.harmony-table {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.harmony-row {
+  display: grid;
+  grid-template-columns: 42px minmax(54px, 1fr) minmax(54px, 1fr) minmax(60px, 1fr);
+  gap: 6px;
+  align-items: center;
+  padding: 6px 7px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.harmony-row__measure {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.harmony-row__chord {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.harmony-row__roman {
+  color: var(--green);
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.harmony-row__quality {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ===== BAR CHART ===== */
 .bar-chart { margin: 10px 0; }
 
