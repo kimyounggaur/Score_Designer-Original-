@@ -1610,6 +1610,43 @@ body {
 
 .slash-preview__label { font-size: 10px; color: var(--text-muted); margin-bottom: 2px; }
 
+.notation-control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.notehead-shape-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(74px, 1fr));
+  gap: 6px;
+}
+
+.notehead-shape {
+  min-height: 30px;
+  padding: 5px 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.notehead-shape:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.notehead-shape--selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
 /* ===== TWO COLUMN ===== */
 .two-col {
   display: grid;

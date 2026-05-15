@@ -1755,9 +1755,85 @@ function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
   const [rmKey,setRmKey]=useState(true);
   const [slashPitch,setSlashPitch]=useState(true);
   const [slashKeep,setSlashKeep]=useState(false);
+  const [measureMode,setMeasureMode]=useState('all');
+  const [measureStart,setMeasureStart]=useState(1);
+  const [measureEnd,setMeasureEnd]=useState(8);
+  const [measureList,setMeasureList]=useState('');
+  const [noteheadEnabled,setNoteheadEnabled]=useState(false);
+  const [noteheadValue,setNoteheadValue]=useState('slash');
+  const [noteheadFilled,setNoteheadFilled]=useState('auto');
+  const [noteheadParentheses,setNoteheadParentheses]=useState(false);
+  const [noteheadMeasureMode,setNoteheadMeasureMode]=useState('all');
+  const [noteheadMeasureStart,setNoteheadMeasureStart]=useState(1);
+  const [noteheadMeasureEnd,setNoteheadMeasureEnd]=useState(8);
+  const [noteheadMeasureList,setNoteheadMeasureList]=useState('');
+  const [noteheadNoteMode,setNoteheadNoteMode]=useState('all');
+  const [noteheadNoteList,setNoteheadNoteList]=useState('');
+  const [noteheadPitchList,setNoteheadPitchList]=useState('');
   const [log,setLog]=useState([]);
   const baselineRef=useRef(null);
   const lastOutRef=useRef(null);
+
+  const NOTEHEAD_OPTIONS=[
+    ['normal','일반'],['slash','슬래시'],['triangle','삼각형'],['diamond','다이아몬드'],['square','사각형'],
+    ['cross','십자'],['x','X'],['circle-x','원형 X'],['inverted triangle','역삼각형'],['arrow down','아래 화살표'],
+    ['arrow up','위 화살표'],['slashed','사선'],['back slashed','역사선'],['cluster','클러스터'],['circle dot','원 점'],
+    ['left triangle','왼쪽 삼각형'],['rectangle','직사각형'],['none','없음'],['do','도'],['re','레'],['mi','미'],
+    ['fa','파'],['fa up','파 위'],['so','솔'],['la','라'],['ti','시']
+  ];
+
+  function parseNumberSpec(spec){
+    const set=new Set();
+    String(spec||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(token=>{
+      const m=token.match(/^(\d+)\s*-\s*(\d+)$/);
+      if(m){const a=parseInt(m[1]),b=parseInt(m[2]);for(let i=Math.min(a,b);i<=Math.max(a,b);i++)set.add(i)}
+      else{const n=parseInt(token);if(Number.isFinite(n)&&n>0)set.add(n)}
+    });
+    return set;
+  }
+
+  function getMeasureNumber(measure,fallback){
+    const raw=measure.getAttribute('number');
+    const parsed=parseInt(raw);
+    return Number.isFinite(parsed)?parsed:fallback;
+  }
+
+  function allowedMeasure(num,mode,start,end,list){
+    if(mode==='all')return true;
+    if(mode==='range')return num>=Math.min(start,end)&&num<=Math.max(start,end);
+    return parseNumberSpec(list).has(num);
+  }
+
+  function pitchNameKey(p){
+    return `${p.step}${p.alter===1?'#':p.alter===-1?'b':''}${p.octave}`;
+  }
+
+  function eachAllowedMeasure(doc,mode,start,end,list,fn){
+    doc.querySelectorAll('part').forEach(part=>{
+      [...part.querySelectorAll('measure')].forEach((measure,idx)=>{
+        const num=getMeasureNumber(measure,idx+1);
+        if(allowedMeasure(num,mode,start,end,list))fn(measure,num,part);
+      });
+    });
+  }
+
+  function ensureMeasureAttributes(doc,measure){
+    let attr=measure.querySelector(':scope > attributes');
+    if(!attr){
+      attr=doc.createElement('attributes');
+      measure.insertBefore(attr,measure.firstChild);
+    }
+    return attr;
+  }
+
+  function applyNotehead(note,doc,value){
+    let nh=note.querySelector('notehead');
+    if(!nh){nh=doc.createElement('notehead');insertNoteheadInOrder(note,nh)}
+    nh.textContent=value;
+    if(noteheadFilled==='auto')nh.removeAttribute('filled');else nh.setAttribute('filled',noteheadFilled);
+    if(noteheadParentheses)nh.setAttribute('parentheses','yes');else nh.removeAttribute('parentheses');
+    nh.removeAttribute('color');
+  }
 
   useEffect(()=>{
     if(files===lastOutRef.current)return;
@@ -1786,29 +1862,76 @@ function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
       for(let fi=0;fi<files.length;fi++){
         const file=files[fi];const baseDoc=baseline[fi]?.xmlDoc||file.xmlDoc;
         const doc=cloneDoc(baseDoc);const ch=[];
-        if(hIds.length){hIds.forEach(id=>{doc.querySelector(`part-list score-part[id="${id}"]`)?.remove();doc.querySelector(`part[id="${id}"]`)?.remove()});ch.push(`${hIds.length}파트 제거`)}
-        if(lyrics){const ls=doc.querySelectorAll('lyric');ch.push(`가사 ${ls.length}개 제거`);ls.forEach(l=>l.remove())}
-        if(chords){const hs=doc.querySelectorAll('harmony');ch.push(`코드 ${hs.length}개 제거`);hs.forEach(h=>h.remove())}
+        if(hIds.length){
+          if(measureMode==='all'){
+            hIds.forEach(id=>{doc.querySelector(`part-list score-part[id="${id}"]`)?.remove();doc.querySelector(`part[id="${id}"]`)?.remove()});
+            ch.push(`${hIds.length}파트 제거`);
+          }else{
+            let hidden=0;
+            hIds.forEach(id=>{
+              const part=doc.querySelector(`part[id="${id}"]`);if(!part)return;
+              [...part.querySelectorAll('measure')].forEach((measure,idx)=>{
+                const num=getMeasureNumber(measure,idx+1);
+                if(!allowedMeasure(num,measureMode,measureStart,measureEnd,measureList))return;
+                measure.querySelectorAll('note,harmony,direction,figured-bass').forEach(el=>{el.setAttribute('print-object','no');hidden++});
+              });
+            });
+            ch.push(`선택 마디 스태프 요소 ${hidden}개 숨김`);
+          }
+        }
+        if(lyrics){let cnt=0;eachAllowedMeasure(doc,measureMode,measureStart,measureEnd,measureList,measure=>{
+          measure.querySelectorAll('lyric').forEach(l=>{l.remove();cnt++});
+        });ch.push(`가사 ${cnt}개 제거`)}
+        if(chords){let cnt=0;eachAllowedMeasure(doc,measureMode,measureStart,measureEnd,measureList,measure=>{
+          measure.querySelectorAll('harmony').forEach(h=>{h.remove();cnt++});
+        });ch.push(`코드 ${cnt}개 제거`)}
         if(oneLine){
-          doc.querySelectorAll('attributes').forEach(attr=>{
+          let attrCount=0;
+          eachAllowedMeasure(doc,measureMode,measureStart,measureEnd,measureList,measure=>{
+            const attr=ensureMeasureAttributes(doc,measure);attrCount++;
             let sd=attr.querySelector('staff-details');if(!sd){sd=doc.createElement('staff-details');attr.appendChild(sd)}
             let sl=sd.querySelector('staff-lines');if(!sl){sl=doc.createElement('staff-lines');sd.appendChild(sl)}sl.textContent='1';
             if(rmKey){const k=attr.querySelector('key fifths');if(k)k.textContent='0'}
             let cl=attr.querySelector('clef');if(cl){let sg=cl.querySelector('sign');if(sg)sg.textContent='percussion';let ln=cl.querySelector('line');if(ln)ln.textContent='2'}
           });
-          let mv=0;doc.querySelectorAll('note').forEach(n=>{const p=n.querySelector('pitch');if(!p)return;
-            p.querySelector('step').textContent='B';p.querySelector('octave').textContent='4';
-            const a=p.querySelector('alter');if(a)a.remove();if(rmAcc){const ac=n.querySelector('accidental');if(ac)ac.remove()}mv++});
-          ch.push(`1줄 보표 (${mv}음표)`);
+          let mv=0;eachAllowedMeasure(doc,measureMode,measureStart,measureEnd,measureList,measure=>{
+            measure.querySelectorAll('note').forEach(n=>{const p=n.querySelector('pitch');if(!p)return;
+              p.querySelector('step').textContent='B';p.querySelector('octave').textContent='4';
+              const a=p.querySelector('alter');if(a)a.remove();if(rmAcc){const ac=n.querySelector('accidental');if(ac)ac.remove()}mv++});
+          });
+          ch.push(`1줄 보표 (${mv}음표 · ${attrCount}마디 설정)`);
         }
         if(slash){
-          let sc=0;doc.querySelectorAll('note').forEach(n=>{if(n.querySelector('rest'))return;
+          let sc=0;eachAllowedMeasure(doc,measureMode,measureStart,measureEnd,measureList,measure=>{
+            measure.querySelectorAll('note').forEach(n=>{if(n.querySelector('rest'))return;
             let nh=n.querySelector('notehead');if(!nh){nh=doc.createElement('notehead');insertNoteheadInOrder(n,nh)}
             nh.textContent='slash';nh.removeAttribute('color');nh.removeAttribute('filled');
             if(slashPitch){const p=n.querySelector('pitch');if(p){p.querySelector('step').textContent='B';p.querySelector('octave').textContent='4';const a=p.querySelector('alter');if(a)a.remove()}const ac=n.querySelector('accidental');if(ac)ac.remove()}
             sc++});
-          if(!slashKeep)doc.querySelectorAll('harmony').forEach(h=>h.remove());
+          });
+          if(!slashKeep){let hc=0;eachAllowedMeasure(doc,measureMode,measureStart,measureEnd,measureList,measure=>{
+            measure.querySelectorAll('harmony').forEach(h=>{h.remove();hc++});
+          });if(hc)ch.push(`슬래시 변환과 함께 코드 ${hc}개 제거`)}
           ch.push(`슬래시 ${sc}개`);
+        }
+        if(noteheadEnabled){
+          const noteSpec=parseNumberSpec(noteheadNoteList);
+          const pitchSpec=new Set(String(noteheadPitchList||'').split(',').map(s=>s.trim()).filter(Boolean));
+          let converted=0,skipped=0;
+          eachAllowedMeasure(doc,noteheadMeasureMode,noteheadMeasureStart,noteheadMeasureEnd,noteheadMeasureList,measure=>{
+            let ord=0;
+            measure.querySelectorAll('note').forEach(note=>{
+              if(note.querySelector('rest'))return;
+              const p=getNotePitch(note);if(!p){skipped++;return}
+              ord++;
+              if(noteheadNoteMode==='positions'&&!noteSpec.has(ord)){skipped++;return}
+              if(noteheadNoteMode==='pitches'&&!pitchSpec.has(pitchNameKey(p))&&!pitchSpec.has(p.step)){skipped++;return}
+              applyNotehead(note,doc,noteheadValue);converted++;
+            });
+          });
+          const label=NOTEHEAD_OPTIONS.find(([v])=>v===noteheadValue)?.[1]||noteheadValue;
+          ch.push(`음표머리 ${label} ${converted}개 변환`);
+          if(skipped)ch.push(`음표머리 필터 제외 ${skipped}개`);
         }
         updatedFiles.push({...file,xmlDoc:doc});
         const label=ch.length?'':' (원본 복원)';
@@ -1819,7 +1942,7 @@ function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,hideStaff,lyrics,chords,oneLine,slash,rmAcc,rmKey,slashPitch,slashKeep,showProgress,hideProgress,onFilesUpdate]);
+  },[files,hideStaff,lyrics,chords,oneLine,slash,rmAcc,rmKey,slashPitch,slashKeep,measureMode,measureStart,measureEnd,measureList,noteheadEnabled,noteheadValue,noteheadFilled,noteheadParentheses,noteheadMeasureMode,noteheadMeasureStart,noteheadMeasureEnd,noteheadMeasureList,noteheadNoteMode,noteheadNoteList,noteheadPitchList,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">악보 표기 변환</h2>
@@ -1834,6 +1957,19 @@ function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
           <Toggle on={hideStaff[p.id]} onClick={()=>setHideStaff(s=>({...s,[p.id]:!s[p.id]}))}/>
         </div>
       )}</div>}
+    </div>
+    <div className="card"><div className="card__title">📍 표기 변환 작업 마디</div>
+      <div className="card__text">스태프 숨기기, 가사 숨기기, 코드 심볼 숨기기, 1줄 보표 변환, 슬래시 변환에 적용됩니다.</div>
+      <div className="chip-group">
+        <Chip on={measureMode==='all'} onClick={()=>setMeasureMode('all')}>전체 마디</Chip>
+        <Chip on={measureMode==='range'} onClick={()=>setMeasureMode('range')}>마디 범위</Chip>
+        <Chip on={measureMode==='list'} onClick={()=>setMeasureMode('list')}>마디 지정</Chip>
+      </div>
+      {measureMode==='range' && <div className="notation-control-grid">
+        <div><label className="form-label">시작 마디</label><input className="form-input form-input--mono" type="number" min="1" value={measureStart} onChange={e=>setMeasureStart(parseInt(e.target.value)||1)}/></div>
+        <div><label className="form-label">끝 마디</label><input className="form-input form-input--mono" type="number" min="1" value={measureEnd} onChange={e=>setMeasureEnd(parseInt(e.target.value)||1)}/></div>
+      </div>}
+      {measureMode==='list' && <div><label className="form-label">마디 번호</label><input className="form-input form-input--mono" value={measureList} onChange={e=>setMeasureList(e.target.value)} placeholder="예: 1, 3, 5-8"/></div>}
     </div>
     <div className="card"><div className="toggle-row"><div className="card__title">🔇 가사 숨기기</div><Toggle on={lyrics} onClick={()=>setLyrics(!lyrics)}/></div></div>
     <div className="card"><div className="toggle-row"><div className="card__title">🔇 코드 심볼 숨기기</div><Toggle on={chords} onClick={()=>setChords(!chords)}/></div></div>
@@ -1853,6 +1989,42 @@ function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
         <div className="slash-preview__arrow">→</div>
         <div><div className="slash-preview__label">슬래시</div><div className="slash-preview__converted">⧸ ⧸ ⧸</div></div>
       </div></>}
+    </div>
+    <div className="card"><div className="toggle-row"><div className="card__title">🎵 음표머리 변환</div><Toggle on={noteheadEnabled} onClick={()=>setNoteheadEnabled(!noteheadEnabled)}/></div>
+      {noteheadEnabled && <>
+        <label className="form-label section-gap">음표머리 형태</label>
+        <select className="form-select" value={noteheadValue} onChange={e=>setNoteheadValue(e.target.value)}>
+          {NOTEHEAD_OPTIONS.map(([value,label])=><option key={value} value={value}>{label} ({value})</option>)}
+        </select>
+        <div className="notehead-shape-grid section-gap">
+          {NOTEHEAD_OPTIONS.map(([value,label])=><button key={value} className={`notehead-shape${noteheadValue===value?' notehead-shape--selected':''}`} onClick={()=>setNoteheadValue(value)}>{label}</button>)}
+        </div>
+        <div className="chip-group section-gap">
+          <Chip on={noteheadFilled==='auto'} onClick={()=>setNoteheadFilled('auto')}>채움 자동</Chip>
+          <Chip on={noteheadFilled==='yes'} onClick={()=>setNoteheadFilled('yes')}>채움</Chip>
+          <Chip on={noteheadFilled==='no'} onClick={()=>setNoteheadFilled('no')}>비움</Chip>
+          <Chip on={noteheadParentheses} onClick={()=>setNoteheadParentheses(!noteheadParentheses)}>괄호</Chip>
+        </div>
+        <div className="card__title section-gap">마디 선택</div>
+        <div className="chip-group">
+          <Chip on={noteheadMeasureMode==='all'} onClick={()=>setNoteheadMeasureMode('all')}>전체 마디</Chip>
+          <Chip on={noteheadMeasureMode==='range'} onClick={()=>setNoteheadMeasureMode('range')}>마디 범위</Chip>
+          <Chip on={noteheadMeasureMode==='list'} onClick={()=>setNoteheadMeasureMode('list')}>마디 지정</Chip>
+        </div>
+        {noteheadMeasureMode==='range' && <div className="notation-control-grid">
+          <div><label className="form-label">시작 마디</label><input className="form-input form-input--mono" type="number" min="1" value={noteheadMeasureStart} onChange={e=>setNoteheadMeasureStart(parseInt(e.target.value)||1)}/></div>
+          <div><label className="form-label">끝 마디</label><input className="form-input form-input--mono" type="number" min="1" value={noteheadMeasureEnd} onChange={e=>setNoteheadMeasureEnd(parseInt(e.target.value)||1)}/></div>
+        </div>}
+        {noteheadMeasureMode==='list' && <div><label className="form-label">마디 번호</label><input className="form-input form-input--mono" value={noteheadMeasureList} onChange={e=>setNoteheadMeasureList(e.target.value)} placeholder="예: 2, 4, 9-12"/></div>}
+        <div className="card__title section-gap">음표 선택</div>
+        <div className="chip-group">
+          <Chip on={noteheadNoteMode==='all'} onClick={()=>setNoteheadNoteMode('all')}>선택 마디의 모든 음표</Chip>
+          <Chip on={noteheadNoteMode==='positions'} onClick={()=>setNoteheadNoteMode('positions')}>마디 안 n번째 음표</Chip>
+          <Chip on={noteheadNoteMode==='pitches'} onClick={()=>setNoteheadNoteMode('pitches')}>특정 음높이</Chip>
+        </div>
+        {noteheadNoteMode==='positions' && <div><label className="form-label">음표 순번</label><input className="form-input form-input--mono" value={noteheadNoteList} onChange={e=>setNoteheadNoteList(e.target.value)} placeholder="예: 1, 3, 5-6"/></div>}
+        {noteheadNoteMode==='pitches' && <div><label className="form-label">음높이</label><input className="form-input form-input--mono" value={noteheadPitchList} onChange={e=>setNoteheadPitchList(e.target.value)} placeholder="예: C4, E4, G 또는 Bb4"/></div>}
+      </>}
     </div>
     <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 표기 변환 실행</button></div>
     <LogPanel lines={log}/>
