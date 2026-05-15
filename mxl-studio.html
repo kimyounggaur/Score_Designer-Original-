@@ -2858,6 +2858,7 @@ function ChordsPanel({files,showProgress,hideProgress}){
 function StatsPanel({files,showProgress,hideProgress}){
   const [basicData,setBasicData]=useState(null);
   const [composerData,setComposerData]=useState(null);
+  const [difficultyData,setDifficultyData]=useState(null);
   const [keyData,setKeyData]=useState(null);
   const [keyError,setKeyError]=useState('');
   const [keyEndpoint,setKeyEndpoint]=useState(()=>{
@@ -2927,6 +2928,86 @@ function StatsPanel({files,showProgress,hideProgress}){
     hideProgress();
   },[files,showProgress,hideProgress]);
 
+  const runDifficulty=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    showProgress('난이도/연주성 분석 중...');await new Promise(r=>setTimeout(r,50));
+    const results=[];const aggregate={notes:0,rests:0,measures:0,range:0,leapPct:0,fastPct:0,restPct:0,score:0};
+    for(const file of files){
+      const doc=file.xmlDoc;
+      let notes=0,rests=0,lowest=127,highest=0,leaps=0,bigLeaps=0,repeats=0,steps=0,fastNotes=0,dotted=0;
+      const rhythmCounts={};const intervalCounts={};const warnings=[];
+      const measures=[...doc.querySelectorAll('part:first-of-type > measure')];
+      measures.forEach(measure=>{
+        let prevMidi=null;
+        measure.querySelectorAll('note').forEach(note=>{
+          if(note.querySelector('chord'))return;
+          const type=note.querySelector('type')?.textContent||'unknown';
+          if(note.querySelector('dot'))dotted++;
+          rhythmCounts[type]=(rhythmCounts[type]||0)+1;
+          if(note.querySelector('rest')){rests++;return}
+          const p=getNotePitch(note);if(!p)return;
+          const midi=noteToMidi(p.step,p.alter,p.octave);
+          notes++;if(midi<lowest)lowest=midi;if(midi>highest)highest=midi;
+          if(['16th','32nd','64th'].includes(type))fastNotes++;
+          if(prevMidi!==null){
+            const iv=Math.abs(midi-prevMidi);
+            const ivName=getIntervalName(Math.min(iv,12));
+            intervalCounts[ivName]=(intervalCounts[ivName]||0)+1;
+            if(iv===0)repeats++;else if(iv<=2)steps++;else leaps++;
+            if(iv>=7)bigLeaps++;
+          }
+          prevMidi=midi;
+        });
+      });
+      const totalEvents=notes+rests||1;
+      const rangeSemis=highest>0&&lowest<127?highest-lowest:0;
+      const moveTotal=steps+leaps+repeats||1;
+      const restPct=rests/totalEvents*100;
+      const leapPct=leaps/moveTotal*100;
+      const bigLeapPct=bigLeaps/moveTotal*100;
+      const fastPct=fastNotes/Math.max(notes,1)*100;
+      const density=notes/Math.max(measures.length,1);
+      const rhythmVariety=Object.keys(rhythmCounts).filter(k=>k!=='unknown').length;
+      let score=0;
+      score+=Math.min(24,rangeSemis*0.75);
+      score+=Math.min(22,leapPct*0.45+bigLeapPct*0.8);
+      score+=Math.min(18,fastPct*0.75);
+      score+=Math.min(14,Math.max(0,density-4)*2.2);
+      score+=Math.min(10,rhythmVariety*1.7+dotted*0.08);
+      score+=Math.min(8,Math.max(0,restPct-22)*0.25);
+      score=Math.round(Math.max(0,Math.min(100,score)));
+      const level=score>=68?'어려움':score>=38?'보통':'쉬움';
+      if(rangeSemis>=24)warnings.push('두 옥타브 이상 음역');
+      if(bigLeapPct>=18)warnings.push('큰 도약 많음');
+      if(fastPct>=18)warnings.push('빠른 패시지 비율 높음');
+      if(density>=8)warnings.push('마디당 음표 밀도 높음');
+      if(restPct>=35)warnings.push('쉼표/호흡 지점 많음');
+      results.push({
+        name:file.name,score,level,notes,rests,measures:measures.length,
+        lowest:fmtNote(lowest<127?midiToNote(lowest):null),highest:fmtNote(highest>0?midiToNote(highest):null),
+        rangeSemis,leapPct:leapPct.toFixed(1),bigLeapPct:bigLeapPct.toFixed(1),
+        fastPct:fastPct.toFixed(1),restPct:restPct.toFixed(1),density:density.toFixed(1),
+        rhythmVariety,warnings:warnings.length?warnings:['특별한 위험 요소 적음'],
+        intervalCounts,rhythmCounts
+      });
+      aggregate.notes+=notes;aggregate.rests+=rests;aggregate.measures+=measures.length;
+      aggregate.range+=rangeSemis;aggregate.leapPct+=leapPct;aggregate.fastPct+=fastPct;aggregate.restPct+=restPct;aggregate.score+=score;
+    }
+    const count=results.length||1;
+    const avgScore=Math.round(aggregate.score/count);
+    const avgLevel=avgScore>=68?'어려움':avgScore>=38?'보통':'쉬움';
+    setDifficultyData({
+      summary:{
+        fileCount:results.length,totalNotes:aggregate.notes,totalRests:aggregate.rests,totalMeasures:aggregate.measures,
+        avgScore,avgLevel,avgRange:(aggregate.range/count).toFixed(1),
+        avgLeapPct:(aggregate.leapPct/count).toFixed(1),avgFastPct:(aggregate.fastPct/count).toFixed(1),
+        avgRestPct:(aggregate.restPct/count).toFixed(1)
+      },
+      results
+    });
+    hideProgress();
+  },[files,showProgress,hideProgress]);
+
   const updateKeyEndpoint=useCallback(e=>{
     const next=e.target.value;
     setKeyEndpoint(next);
@@ -2975,6 +3056,7 @@ function StatsPanel({files,showProgress,hideProgress}){
     <div className="btn-row">
       <button className="btn btn--primary" onClick={runBasic}>▶ 기본 분석</button>
       <button className="btn btn--secondary" onClick={runComposer}>📋 작곡 스타일 분석</button>
+      <button className="btn btn--secondary" onClick={runDifficulty}>난이도/연주성 분석</button>
     </div>
 
     <div className="card key-analysis-card">
@@ -3018,6 +3100,35 @@ function StatsPanel({files,showProgress,hideProgress}){
           {r.error && <div className="key-analysis-warning">{r.error}</div>}
         </div>;
       })}
+    </div>}
+
+    {difficultyData && <div className="difficulty-analysis-results">
+      <div className="stats-row">
+        <div className="stat-tile"><div className={`stat-tile__value difficulty-level difficulty-level--${difficultyData.summary.avgLevel}`}>{difficultyData.summary.avgLevel}</div><div className="stat-tile__label">종합 등급</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{difficultyData.summary.avgScore}</div><div className="stat-tile__label">난이도 점수</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{difficultyData.summary.avgRange}</div><div className="stat-tile__label">평균 음역(반음)</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{difficultyData.summary.avgLeapPct}%</div><div className="stat-tile__label">도약 비율</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{difficultyData.summary.avgFastPct}%</div><div className="stat-tile__label">빠른 음표</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{difficultyData.summary.avgRestPct}%</div><div className="stat-tile__label">쉼표 비율</div></div>
+      </div>
+      {difficultyData.results.map((r,i)=><div className="difficulty-result" key={i}>
+        <div className="key-result__header">
+          <span className="key-result__name">{r.name}</span>
+          <span className={`difficulty-badge difficulty-badge--${r.level}`}>{r.level} · {r.score}</span>
+        </div>
+        <div className="difficulty-meter"><div className={`difficulty-meter__bar difficulty-meter__bar--${r.level}`} style={{'--difficulty-score':`${r.score}%`}}/></div>
+        <div className="difficulty-grid">
+          <div><span className="key-result__label">음역</span><strong>{r.lowest}–{r.highest}</strong><small>{r.rangeSemis}반음</small></div>
+          <div><span className="key-result__label">도약</span><strong>{r.leapPct}%</strong><small>큰 도약 {r.bigLeapPct}%</small></div>
+          <div><span className="key-result__label">빠른 패시지</span><strong>{r.fastPct}%</strong><small>16분 이하</small></div>
+          <div><span className="key-result__label">쉼표</span><strong>{r.restPct}%</strong><small>호흡/휴지</small></div>
+          <div><span className="key-result__label">밀도</span><strong>{r.density}</strong><small>음표/마디</small></div>
+          <div><span className="key-result__label">리듬</span><strong>{r.rhythmVariety}</strong><small>유형</small></div>
+        </div>
+        <div className="key-result__alts">
+          포인트: {r.warnings.map(w=><span key={w} className="composer-tag">{w}</span>)}
+        </div>
+      </div>)}
     </div>}
 
     {basicData && <div>

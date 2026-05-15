@@ -1200,6 +1200,90 @@ body {
   white-space: nowrap;
 }
 
+.difficulty-analysis-results {
+  margin-bottom: 10px;
+}
+
+.difficulty-result {
+  background: var(--bg-grouped);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.difficulty-level {
+  font-size: 18px;
+}
+
+.difficulty-level--쉬움,
+.difficulty-badge--쉬움 {
+  color: var(--green);
+}
+
+.difficulty-level--보통,
+.difficulty-badge--보통 {
+  color: var(--amber);
+}
+
+.difficulty-level--어려움,
+.difficulty-badge--어려움 {
+  color: var(--red);
+}
+
+.difficulty-badge {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.difficulty-meter {
+  height: 7px;
+  overflow: hidden;
+  background: var(--bg-primary);
+  border-radius: 999px;
+  margin-bottom: 10px;
+}
+
+.difficulty-meter__bar {
+  width: var(--difficulty-score, 0%);
+  height: 100%;
+  border-radius: inherit;
+}
+
+.difficulty-meter__bar--쉬움 { background: var(--green); }
+.difficulty-meter__bar--보통 { background: var(--amber); }
+.difficulty-meter__bar--어려움 { background: var(--red); }
+
+.difficulty-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(82px, 1fr));
+  gap: 7px;
+}
+
+.difficulty-grid > div {
+  min-width: 0;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+  padding: 8px;
+}
+
+.difficulty-grid strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+.difficulty-grid small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 10px;
+  margin-top: 2px;
+}
+
 /* ===== BAR CHART ===== */
 .bar-chart { margin: 10px 0; }
 
