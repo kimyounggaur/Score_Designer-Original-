@@ -42,6 +42,7 @@ const KEY_RELATIVE_MINOR_NAMES = ['A','B♭','B','C','C#','D','D#/E♭','E','F',
 const KEY_FIFTHS = [0,-5,2,-3,4,-1,6,1,-4,3,-2,5];
 const DEFAULT_MUSIC21_KEY_ENDPOINT = 'http://127.0.0.1:8000/api/analyze-key';
 const DEFAULT_MUSIC21_HARMONY_ENDPOINT = 'http://127.0.0.1:8000/api/analyze-harmony';
+const DEFAULT_MUSIC21_TRANSPOSE_ENDPOINT = 'http://127.0.0.1:8000/api/transpose';
 const NOTE_COLORS = {C:'#e74c3c',D:'#f39c12',E:'#eab308',F:'#22c55e',G:'#3b82f6',A:'#6366f1',B:'#a855f7'};
 const SOLFEGE_KR = ['도','레','미','파','솔','라','시'];
 const STEP_TO_NUM = {C:1,D:2,E:3,F:4,G:5,A:6,B:7};
@@ -381,6 +382,12 @@ function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
   const [ivQual,setIvQual]=useState('major');
   const [ivDir,setIvDir]=useState(1);
   const [log,setLog]=useState([]);
+  const [smartSemi,setSmartSemi]=useState(2);
+  const [smartTargetKey,setSmartTargetKey]=useState('');
+  const [smartEndpoint,setSmartEndpoint]=useState(()=>{
+    try{return localStorage.getItem('music21TransposeEndpoint')||DEFAULT_MUSIC21_TRANSPOSE_ENDPOINT}
+    catch(e){return DEFAULT_MUSIC21_TRANSPOSE_ENDPOINT}
+  });
 
   const run=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -443,6 +450,58 @@ function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
   function base(f){return f.name.replace(/\.(mxl|xml|musicxml)$/i,'')}
   function ser(d){return new XMLSerializer().serializeToString(d)}
 
+  const updateSmartEndpoint=useCallback(e=>{
+    const next=e.target.value;
+    setSmartEndpoint(next);
+    try{localStorage.setItem('music21TransposeEndpoint',next)}catch(err){}
+  },[]);
+
+  const runSmartTranspose=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    const endpoint=(smartEndpoint||DEFAULT_MUSIC21_TRANSPOSE_ENDPOINT).trim();
+    if(!endpoint){alert('music21 API 주소를 입력해주세요.');return}
+    setLog([]);showProgress('music21 스마트 조옮김 중...');
+    const payload={
+      semitones:smartSemi,
+      target_key:smartTargetKey||null,
+      scores:files.map(file=>({
+        name:file.name,
+        xml:new XMLSerializer().serializeToString(file.xmlDoc)
+      }))
+    };
+    try{
+      const res=await fetch(endpoint,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      if(!res.ok){
+        const msg=await res.text();
+        throw new Error(`${res.status} ${msg.slice(0,160)}`);
+      }
+      const data=await res.json();
+      const updated=[];const lines=[];
+      data.results.forEach((result,idx)=>{
+        if(result.status==='ok'&&result.xml){
+          const xmlDoc=new DOMParser().parseFromString(result.xml,'text/xml');
+          if(xmlDoc.querySelector('parsererror'))throw new Error(`${result.name}: 변환 결과 XML 파싱 오류`);
+          updated.push({...files[idx],name:result.name||files[idx].name,xmlDoc,xmlString:result.xml});
+          lines.push({m:`✓ ${files[idx].name}: ${result.source_key?.label||'-'} → ${result.target_key?.label||result.target_key_name||smartTargetKey||`${smartSemi}반음`}`,t:'ok'});
+        }else{
+          updated.push(files[idx]);
+          lines.push({m:`❌ ${files[idx]?.name||result.name}: ${result.error||'변환 실패'}`,t:'err'});
+        }
+      });
+      onFilesUpdate(updated);
+      lines.push({m:'✅ music21 스마트 조옮김 완료',t:'ok'});
+      setLog(lines);
+    }catch(e){
+      setLog([{m:'❌ music21 API 연결 실패: '+e.message,t:'err'}]);
+    }finally{
+      hideProgress();
+    }
+  },[files,smartEndpoint,smartSemi,smartTargetKey,showProgress,hideProgress,onFilesUpdate]);
+
   return <div>
     <h2 className="panel__heading">조옮김 (Transpose)</h2>
     <p className="panel__description">악보를 원하는 조로 변환합니다. 12개 장조 모두 생성하거나 특정 조로 변환할 수 있습니다.</p>
@@ -487,6 +546,27 @@ function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
     </div>}
 
     <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 변환 실행</button></div>
+
+    <div className="card smart-transpose-card">
+      <div className="card__title">music21 스마트 조옮김</div>
+      <div className="card__text">music21로 조표, 이명동음 표기, 임시표를 더 자연스럽게 정리해 조옮김합니다.</div>
+      <label className="form-label">music21 API 주소</label>
+      <input className="form-input form-input--mono" value={smartEndpoint} onChange={updateSmartEndpoint}/>
+      <label className="form-label">반음 이동</label>
+      <input className="form-input form-input--mono" type="number" min="-24" max="24" value={smartSemi}
+        onChange={e=>setSmartSemi(parseInt(e.target.value)||0)}/>
+      <label className="form-label">목표 조성 선택</label>
+      <select className="form-select" value={smartTargetKey} onChange={e=>setSmartTargetKey(e.target.value)}>
+        <option value="">반음 이동 기준으로 자동 정리</option>
+        <option value="C">C Major</option><option value="G">G Major</option><option value="D">D Major</option><option value="A">A Major</option>
+        <option value="E">E Major</option><option value="B">B Major</option><option value="F#">F# Major</option><option value="Gb">G♭ Major</option>
+        <option value="Db">D♭ Major</option><option value="Ab">A♭ Major</option><option value="Eb">E♭ Major</option><option value="Bb">B♭ Major</option><option value="F">F Major</option>
+        <option value="a">A minor</option><option value="e">E minor</option><option value="b">B minor</option><option value="f#">F# minor</option>
+        <option value="c#">C# minor</option><option value="g#">G# minor</option><option value="eb">E♭ minor</option><option value="bb">B♭ minor</option>
+        <option value="f">F minor</option><option value="c">C minor</option><option value="g">G minor</option><option value="d">D minor</option>
+      </select>
+      <div className="btn-row"><button className="btn btn--secondary" onClick={runSmartTranspose}>스마트 조옮김 실행</button></div>
+    </div>
     <LogPanel lines={log}/>
   </div>;
 }

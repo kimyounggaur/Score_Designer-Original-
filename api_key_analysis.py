@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from music21 import chord, converter, key, roman, stream
+from music21 import chord, converter, interval, key, roman, stream
 
 
 class ScorePayload(BaseModel):
@@ -17,6 +17,11 @@ class ScorePayload(BaseModel):
 
 class AnalyzePayload(BaseModel):
     scores: list[ScorePayload] = Field(min_length=1)
+
+
+class TransposePayload(AnalyzePayload):
+    semitones: int = 0
+    target_key: str | None = None
 
 
 app = FastAPI(title="Score Designer music21 API")
@@ -85,6 +90,35 @@ def serialize_written_key(score: Any) -> dict[str, Any] | None:
     }
 
 
+def parse_target_key(name: str | None) -> key.Key | None:
+    if not name:
+        return None
+    normalized = name.strip().replace("♭", "-")
+    if not normalized:
+        return None
+
+    mode = "minor" if normalized[0].islower() else "major"
+    tonic = normalized[0].upper() + normalized[1:]
+    if len(tonic) > 1 and tonic[1] == "b":
+        tonic = tonic[0] + "-" + tonic[2:]
+    return key.Key(tonic, mode)
+
+
+def key_interval(source_key: key.Key, target_key: key.Key) -> interval.Interval:
+    source_pitch = source_key.tonic
+    target_pitch = target_key.tonic
+    diff = (target_pitch.pitchClass - source_pitch.pitchClass) % 12
+    if diff > 6:
+        diff -= 12
+    return interval.Interval(diff)
+
+
+def score_to_musicxml_string(score_obj: Any) -> str:
+    path = score_obj.write("musicxml")
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
 def analyze_one(score_payload: ScorePayload) -> dict[str, Any]:
     try:
         parsed = converter.parseData(score_payload.xml, format="musicxml")
@@ -107,6 +141,49 @@ def analyze_one(score_payload: ScorePayload) -> dict[str, Any]:
             "detected_key": None,
             "written_key": None,
             "alternates": [],
+            "error": str(exc),
+        }
+
+
+def transpose_one(score_payload: ScorePayload, semitones: int, target_key_name: str | None) -> dict[str, Any]:
+    try:
+        parsed = converter.parseData(score_payload.xml, format="musicxml")
+        source_key = parsed.analyze("key")
+        target_key = parse_target_key(target_key_name)
+        transpose_interval = key_interval(source_key, target_key) if target_key else interval.Interval(semitones)
+        transposed = parsed.transpose(transpose_interval)
+
+        if target_key:
+            target_signature = key.KeySignature(target_key.sharps)
+            for signature in list(transposed.recurse().getElementsByClass(key.KeySignature)):
+                signature.sharps = target_signature.sharps
+
+        try:
+            transposed.makeAccidentals(inPlace=True)
+        except Exception:
+            pass
+
+        xml = score_to_musicxml_string(transposed)
+        return {
+            "name": score_payload.name,
+            "status": "ok",
+            "xml": xml,
+            "source_key": serialize_key(source_key),
+            "target_key": serialize_key(target_key) if target_key else None,
+            "target_key_name": target_key_name,
+            "semitones": int(semitones),
+            "interval": transpose_interval.directedName,
+        }
+    except Exception as exc:
+        return {
+            "name": score_payload.name,
+            "status": "error",
+            "xml": None,
+            "source_key": None,
+            "target_key": None,
+            "target_key_name": target_key_name,
+            "semitones": int(semitones),
+            "interval": None,
             "error": str(exc),
         }
 
@@ -242,6 +319,22 @@ def analyze_key(payload: AnalyzePayload) -> dict[str, Any]:
             "failed": len(results) - len(ok_results),
             "top_key": top_key,
             "key_counts": dict(counts),
+        },
+    }
+
+
+@app.post("/api/transpose")
+def transpose_scores(payload: TransposePayload) -> dict[str, Any]:
+    results = [
+        transpose_one(score, payload.semitones, payload.target_key)
+        for score in payload.scores
+    ]
+    ok_results = [r for r in results if r["status"] == "ok"]
+    return {
+        "results": results,
+        "summary": {
+            "successful": len(ok_results),
+            "failed": len(results) - len(ok_results),
         },
     }
 
