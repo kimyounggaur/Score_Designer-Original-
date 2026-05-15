@@ -1,0 +1,3540 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>악보 디자이너 — React</title>
+<link rel="stylesheet" href="styles.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script crossorigin src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
+</head>
+<body>
+<div id="root"></div>
+
+<!--
+  ================================================================
+  REACT COMPONENTS — 오직 로직만 존재합니다.
+  인라인 스타일, styled-components 등 스타일 관련 코드 없음.
+  동적 데이터 값은 CSS Custom Properties(--변수)로만 전달.
+  ================================================================
+-->
+<script type="text/babel">
+const { useState, useCallback, useRef, useEffect, useMemo } = React;
+
+/* ==============================================================
+   CONSTANTS
+   ============================================================== */
+const STEPS = ['C','D','E','F','G','A','B'];
+const STEP_TO_SEMI = {C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+const SEMI_TO_STEP = [
+  {step:'C',alter:0},{step:'C',alter:1},{step:'D',alter:0},{step:'E',alter:-1},
+  {step:'E',alter:0},{step:'F',alter:0},{step:'F',alter:1},{step:'G',alter:0},
+  {step:'A',alter:-1},{step:'A',alter:0},{step:'B',alter:-1},{step:'B',alter:0}
+];
+const KEY_NAMES = ['C','D♭','D','E♭','E','F','F#/G♭','G','A♭','A','B♭','B'];
+const KEY_FIFTHS = [0,-5,2,-3,4,-1,6,1,-4,3,-2,5];
+const NOTE_COLORS = {C:'#e74c3c',D:'#f39c12',E:'#eab308',F:'#22c55e',G:'#3b82f6',A:'#6366f1',B:'#a855f7'};
+const SOLFEGE_KR = ['도','레','미','파','솔','라','시'];
+const STEP_TO_NUM = {C:1,D:2,E:3,F:4,G:5,A:6,B:7};
+
+const CLEF_CONFIGS = [
+  {id:'treble', sign:'G',          line:2, label:'G 음자리표',      sub:'트레블 (바이올린)',  center:71},
+  {id:'bass',   sign:'F',          line:4, label:'F 음자리표',      sub:'베이스 (첼로/베이스)',center:50},
+  {id:'alto',   sign:'C',          line:3, label:'C 음자리표 알토', sub:'알토 (비올라)',       center:60},
+  {id:'tenor',  sign:'C',          line:4, label:'C 음자리표 테너', sub:'테너 (첼로 고음)',    center:57},
+  {id:'neutral',sign:'percussion', line:2, label:'중립 음자리표',   sub:'타악기',             center:null},
+];
+
+const INSTRUMENT_RANGES = {
+  tongue_drum:{low:{step:'C',oct:4},high:{step:'C',oct:6},name:'스틸 텅드럼'},
+  kalimba:{low:{step:'C',oct:4},high:{step:'E',oct:6},name:'칼림바 17키'},
+  recorder_soprano:{low:{step:'C',oct:5},high:{step:'D',oct:7},name:'소프라노 리코더'},
+  recorder_alto:{low:{step:'F',oct:4},high:{step:'G',oct:6},name:'알토 리코더'},
+  ocarina:{low:{step:'A',oct:4},high:{step:'F',oct:6},name:'오카리나 12홀'},
+  harmonica_c:{low:{step:'C',oct:4},high:{step:'C',oct:7},name:'하모니카 C'},
+};
+
+const TRANS_INSTRUMENTS = {
+  // 목관
+  bb_clarinet:{name:'B♭ 클라리넷',key:'B♭',semi:-2,interval:'장2도 ↓',cat:'목관'},
+  a_clarinet:{name:'A 클라리넷',key:'A',semi:-3,interval:'단3도 ↓',cat:'목관'},
+  eb_clarinet:{name:'E♭ 클라리넷',key:'E♭',semi:3,interval:'단3도 ↑',cat:'목관'},
+  bb_bass_clarinet:{name:'B♭ 베이스 클라리넷',key:'B♭',semi:-14,interval:'장9도 ↓',cat:'목관'},
+  f_english_horn:{name:'F 잉글리시 호른',key:'F',semi:-7,interval:'완전5도 ↓',cat:'목관'},
+  g_alto_flute:{name:'G 알토 플루트',key:'G',semi:-5,interval:'완전4도 ↓',cat:'목관'},
+  // 금관
+  bb_trumpet:{name:'B♭ 트럼펫',key:'B♭',semi:-2,interval:'장2도 ↓',cat:'금관'},
+  bb_cornet:{name:'B♭ 코넷',key:'B♭',semi:-2,interval:'장2도 ↓',cat:'금관'},
+  bb_flugelhorn:{name:'B♭ 플뤼겔호른',key:'B♭',semi:-2,interval:'장2도 ↓',cat:'금관'},
+  f_horn:{name:'F 호른',key:'F',semi:-7,interval:'완전5도 ↓',cat:'금관'},
+  // 색소폰
+  bb_soprano_sax:{name:'B♭ 소프라노 색소폰',key:'B♭',semi:-2,interval:'장2도 ↓',cat:'색소폰'},
+  eb_alto_sax:{name:'E♭ 알토 색소폰',key:'E♭',semi:-9,interval:'장6도 ↓',cat:'색소폰'},
+  bb_tenor_sax:{name:'B♭ 테너 색소폰',key:'B♭',semi:-14,interval:'장9도 ↓',cat:'색소폰'},
+  eb_bari_sax:{name:'E♭ 바리톤 색소폰',key:'E♭',semi:-21,interval:'장13도 ↓',cat:'색소폰'},
+  // 하모니카
+  harm_g:{name:'G 하모니카',key:'G',semi:-5,interval:'완전4도 ↓',cat:'하모니카'},
+  harm_a:{name:'A 하모니카',key:'A',semi:-3,interval:'단3도 ↓',cat:'하모니카'},
+  harm_bb:{name:'B♭ 하모니카',key:'B♭',semi:-2,interval:'장2도 ↓',cat:'하모니카'},
+  harm_d:{name:'D 하모니카',key:'D',semi:2,interval:'장2도 ↑',cat:'하모니카'},
+  harm_e:{name:'E 하모니카',key:'E',semi:4,interval:'장3도 ↑',cat:'하모니카'},
+  harm_f:{name:'F 하모니카',key:'F',semi:5,interval:'완전4도 ↑',cat:'하모니카'},
+  harm_ab:{name:'A♭ 하모니카',key:'A♭',semi:-4,interval:'장3도 ↓',cat:'하모니카'},
+  harm_eb:{name:'E♭ 하모니카',key:'E♭',semi:3,interval:'단3도 ↑',cat:'하모니카'},
+  harm_b:{name:'B 하모니카',key:'B',semi:-1,interval:'단2도 ↓',cat:'하모니카'},
+  harm_db:{name:'D♭ 하모니카',key:'D♭',semi:1,interval:'단2도 ↑',cat:'하모니카'},
+  harm_fs:{name:'F# 하모니카',key:'F#',semi:6,interval:'증4도 ↑',cat:'하모니카'},
+  harm_low_g:{name:'Low G 하모니카',key:'G',semi:-17,interval:'장10도 ↓',cat:'하모니카'},
+  harm_low_d:{name:'Low D 하모니카',key:'D',semi:-10,interval:'단7도 ↓',cat:'하모니카'},
+  harm_low_f:{name:'Low F 하모니카',key:'F',semi:-7,interval:'완전5도 ↓',cat:'하모니카'},
+  // 오카리나
+  oc_g_alto:{name:'G 알토 오카리나',key:'G',semi:-5,interval:'완전4도 ↓',cat:'오카리나'},
+  oc_f_alto:{name:'F 알토 오카리나',key:'F',semi:-7,interval:'완전5도 ↓',cat:'오카리나'},
+  oc_bb_sop:{name:'B♭ 소프라노 오카리나',key:'B♭',semi:10,interval:'단7도 ↑',cat:'오카리나'},
+  oc_g_sop:{name:'G 소프라노 오카리나',key:'G',semi:7,interval:'완전5도 ↑',cat:'오카리나'},
+  oc_f_sop:{name:'F 소프라노 오카리나',key:'F',semi:5,interval:'완전4도 ↑',cat:'오카리나'},
+  oc_d:{name:'D 오카리나',key:'D',semi:2,interval:'장2도 ↑',cat:'오카리나'},
+  oc_a:{name:'A 오카리나',key:'A',semi:-3,interval:'단3도 ↓',cat:'오카리나'},
+  oc_eb:{name:'E♭ 오카리나',key:'E♭',semi:3,interval:'단3도 ↑',cat:'오카리나'},
+  oc_g_bass:{name:'G 베이스 오카리나',key:'G',semi:-17,interval:'장10도 ↓',cat:'오카리나'},
+  oc_f_bass:{name:'F 베이스 오카리나',key:'F',semi:-19,interval:'장11도 ↓',cat:'오카리나'},
+  // 팬플룻
+  pf_g:{name:'G 팬플룻',key:'G',semi:-5,interval:'완전4도 ↓',cat:'팬플룻'},
+  pf_f:{name:'F 팬플룻',key:'F',semi:-7,interval:'완전5도 ↓',cat:'팬플룻'},
+  pf_d:{name:'D 팬플룻',key:'D',semi:2,interval:'장2도 ↑',cat:'팬플룻'},
+  pf_a:{name:'A 팬플룻',key:'A',semi:-3,interval:'단3도 ↓',cat:'팬플룻'},
+  pf_bb:{name:'B♭ 팬플룻',key:'B♭',semi:-2,interval:'장2도 ↓',cat:'팬플룻'},
+  pf_eb:{name:'E♭ 팬플룻',key:'E♭',semi:3,interval:'단3도 ↑',cat:'팬플룻'},
+};
+
+const TEMPO_PRESETS = [
+  {name:'Grave',min:20,max:40,bpm:35},{name:'Largo',min:40,max:55,bpm:48},
+  {name:'Adagio',min:65,max:75,bpm:70},{name:'Andante',min:75,max:90,bpm:82},
+  {name:'Moderato',min:90,max:110,bpm:100},{name:'Allegretto',min:110,max:125,bpm:116},
+  {name:'Allegro',min:125,max:150,bpm:138},{name:'Vivace',min:150,max:170,bpm:160},
+  {name:'Presto',min:170,max:210,bpm:186},{name:'Prestissimo',min:210,max:300,bpm:220},
+];
+
+const DIATONIC_SCALES = {
+  0:[0,2,4,5,7,9,11],1:[1,3,5,6,8,10,0],2:[2,4,6,7,9,11,1],3:[3,5,7,8,10,0,2],
+  4:[4,6,8,9,11,1,3],5:[5,7,9,10,0,2,4],6:[6,8,10,11,1,3,5],7:[7,9,11,0,2,4,6],
+  8:[8,10,0,1,3,5,7],9:[9,11,1,2,4,6,8],10:[10,0,2,3,5,7,9],11:[11,1,3,4,6,8,10]
+};
+
+const NAV = [
+  {section:'파일 관리',items:[{id:'upload',icon:'📂',label:'파일 업로드'}]},
+  {section:'변환 도구',items:[
+    {id:'transpose',icon:'transpose_svg',label:'조옮김'},{id:'keychange',icon:'🔀',label:'마디별 조바꿈'},
+    {id:'capo',icon:'capo_svg',label:'카포 (Capo)'},
+    {id:'range',icon:'panflute_svg',label:'음역대 조정'},
+    {id:'instrument',icon:'🎺',label:'이조 악기'},{id:'tempo',icon:'⏱️',label:'템포 조절'},
+    {id:'tempochange',icon:'📐',label:'마디별 템포'},
+    {id:'ossia',icon:'🎶',label:'Ossia 마디'},
+    {id:'parts',icon:'🎼',label:'파트 추출'},
+  ]},
+  {section:'표기 편집',items:[{id:'notation',icon:'✏️',label:'악보 표기 변환'}]},
+  {section:'내보내기',items:[{id:'export',icon:'📤',label:'이미지 / PDF'}]},
+  {section:'교육 도구',items:[
+    {id:'color',icon:'🎨',label:'색깔 악보'},{id:'harmony',icon:'🔗',label:'화성 쌓기'},
+    {id:'chordtools',icon:'🔧',label:'코드 도구'},{id:'numbering',icon:'🔢',label:'숫자 악보'},
+    {id:'chords',icon:'🎸',label:'코드 분석'},{id:'stats',icon:'📊',label:'통계 분석'},
+  ]},
+];
+
+/* ==============================================================
+   UTILITY FUNCTIONS
+   ============================================================== */
+function noteToMidi(step,alter,octave){return(octave+1)*12+STEP_TO_SEMI[step]+(alter||0)}
+function midiToNote(midi){const o=Math.floor(midi/12)-1;const s=((midi%12)+12)%12;const i=SEMI_TO_STEP[s];return{step:i.step,alter:i.alter,octave:o}}
+function fmtNote(n){return n?n.step+(n.alter===1?'#':n.alter===-1?'♭':'')+n.octave:'-'}
+function parseNoteStr(s){const m=s.match(/^([A-G])([#b]?)(\d+)$/);if(!m)return null;return{step:m[1],alter:m[2]==='#'?1:m[2]==='b'?-1:0,octave:parseInt(m[3])}}
+function cloneDoc(d){return new DOMParser().parseFromString(new XMLSerializer().serializeToString(d),'text/xml')}
+function insertNoteheadInOrder(note,nh){
+  const anchors=['stem','time-modification','accidental','dot','type'];
+  for(const tag of anchors){
+    const el=note.querySelector(':scope > '+tag);
+    if(el){if(el.nextSibling)note.insertBefore(nh,el.nextSibling);else note.appendChild(nh);return}
+  }
+  note.appendChild(nh);
+}
+function getNotePitch(n){const p=n.querySelector('pitch');if(!p)return null;return{step:p.querySelector('step')?.textContent,alter:parseFloat(p.querySelector('alter')?.textContent||'0'),octave:parseInt(p.querySelector('octave')?.textContent||'4')}}
+function setNotePitch(n,step,alter,oct){const p=n.querySelector('pitch');if(!p)return;p.querySelector('step').textContent=step;let a=p.querySelector('alter');if(alter!==0){if(!a){a=p.ownerDocument.createElement('alter');p.insertBefore(a,p.querySelector('octave'))}a.textContent=alter}else if(a)a.remove();p.querySelector('octave').textContent=oct}
+function transposeNote(step,alter,oct,semi){return midiToNote(noteToMidi(step,alter||0,oct)+semi)}
+function getCurrentClef(xmlDoc){
+  const sign=xmlDoc.querySelector('clef sign')?.textContent||'G';
+  const line=parseInt(xmlDoc.querySelector('clef line')?.textContent||'2');
+  if(sign==='percussion')return 'neutral';
+  if(sign==='G')return 'treble';
+  if(sign==='F')return 'bass';
+  if(sign==='C'&&line===4)return 'tenor';
+  if(sign==='C')return 'alto';
+  return 'treble';
+}
+function getTempoTerm(bpm){for(const p of TEMPO_PRESETS)if(bpm>=p.min&&bpm<=p.max)return p.name;return bpm<20?'Larghissimo':'Prestissimo'}
+function getKeyRoot(doc){const f=parseInt(doc.querySelector('key fifths')?.textContent||'0');const i=KEY_FIFTHS.indexOf(f);return i>=0?i:0}
+function getDiaThirdAbove(midi,kr){const pc=((midi%12)+12)%12;const sc=DIATONIC_SCALES[kr]||DIATONIC_SCALES[0];const idx=sc.indexOf(pc);if(idx===-1)return midi+4;const tpc=sc[(idx+2)%7];let t=Math.floor(midi/12)*12+tpc;if(t<=midi)t+=12;if(t-midi>5)t-=12;return t}
+function getDiaThirdBelow(midi,kr){const pc=((midi%12)+12)%12;const sc=DIATONIC_SCALES[kr]||DIATONIC_SCALES[0];const idx=sc.indexOf(pc);if(idx===-1)return midi-4;const tpc=sc[((idx-2)%7+7)%7];let t=Math.floor(midi/12)*12+tpc;if(t>=midi)t-=12;if(midi-t>5)t+=12;return t}
+
+function detectChord(semiArr){
+  if(!semiArr.length)return null;
+  const u=[...new Set(semiArr.map(n=>n%12))].sort((a,b)=>a-b);
+  if(u.length<2)return SEMI_TO_STEP[u[0]].step;
+  let best=null,bestS=-1;
+  for(const root of u){
+    const iv=u.map(n=>(n-root+12)%12);const h=s=>iv.includes(s);
+    let q='',sc=0;
+    if(h(4)&&h(7)){q='';sc=3;if(h(11)){q='maj7';sc=4}else if(h(10)){q='7';sc=4}}
+    else if(h(3)&&h(7)){q='m';sc=3;if(h(10)){q='m7';sc=4}}
+    else if(h(3)&&h(6)){q='dim';sc=2;if(h(10)){q='m7♭5';sc=3}}
+    else if(h(4)&&h(8)){q='aug';sc=2}
+    else if(h(5)&&h(7)){q='sus4';sc=2}
+    else if(h(7)){q='5';sc=1}
+    if(sc>bestS){bestS=sc;const rn=SEMI_TO_STEP[root];best=rn.step+(rn.alter===1?'#':rn.alter===-1?'♭':'')+q}
+  }
+  return best||'?';
+}
+
+function parseChordSymbol(text){
+  const m=text.match(/^([A-G])([#♯b♭]?)(.*)/);if(!m)return null;
+  const rs=m[1],ra=(m[2]==='#'||m[2]==='♯')?1:(m[2]==='b'||m[2]==='♭')?-1:0,q=m[3];
+  let kind='major';
+  if(/^m7♭5|^m7b5|^ø/.test(q))kind='half-diminished';
+  else if(/^maj7|^M7/.test(q))kind='major-seventh';
+  else if(/^m7|^min7/.test(q))kind='minor-seventh';
+  else if(/^dim7/.test(q))kind='diminished-seventh';
+  else if(/^dim|^°/.test(q))kind='diminished';
+  else if(/^aug|^\+/.test(q))kind='augmented';
+  else if(/^7/.test(q))kind='dominant';
+  else if(/^m$|^m[^a]|^min|^-/.test(q))kind='minor';
+  else if(/^sus4/.test(q))kind='suspended-fourth';
+  else if(/^sus2/.test(q))kind='suspended-second';
+  return{rootStep:rs,rootAlter:ra,kind};
+}
+
+function harmonyToString(h){
+  const rs=h.querySelector('root root-step')?.textContent||'';
+  const ra=h.querySelector('root root-alter')?.textContent||'0';
+  const kind=h.querySelector('kind')?.textContent||'major';
+  let r=rs;if(ra==='1')r+='#';else if(ra==='-1')r+='♭';
+  const km={major:'',minor:'m',dominant:'7','major-seventh':'maj7','minor-seventh':'m7',
+    diminished:'dim',augmented:'aug','half-diminished':'m7♭5','diminished-seventh':'dim7',
+    'suspended-fourth':'sus4','suspended-second':'sus2'};
+  return r+(km[kind]||kind);
+}
+
+function noteToNumStr(step,alter,oct,keyRoot,mode,showOct,showSharp){
+  if(mode==='korean'){
+    let n=SOLFEGE_KR[STEP_TO_NUM[step]-1];
+    if(alter===1&&showSharp)n='#'+n;else if(alter===-1&&showSharp)n='♭'+n;
+    if(showOct){if(oct>=5)n='˙'+n;else if(oct<=3)n=n+'˙'}
+    return n;
+  }
+  let num=STEP_TO_NUM[step],acc='';
+  if(mode==='movable'){
+    const midi12=(STEP_TO_SEMI[step]+(alter||0)+12)%12;
+    const sc=DIATONIC_SCALES[keyRoot]||DIATONIC_SCALES[0];
+    const idx=sc.indexOf(midi12);
+    if(idx>=0)num=idx+1;
+    else{for(let d=1;d<=2;d++){const b=sc.indexOf((midi12-d+12)%12);if(b>=0){num=b+1;acc='#';break}
+      const a=sc.indexOf((midi12+d)%12);if(a>=0){num=a+1;acc='♭';break}}}
+  }else{if(alter===1)acc='#';else if(alter===-1)acc='♭'}
+  if(!showSharp)acc='';
+  let r=acc+String(num);
+  if(showOct){if(oct>=5)r='˙'+r;else if(oct<=3)r=r+'˙'}
+  return r;
+}
+
+function downloadBlob(blob,name){const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u)}
+
+function getIntervalName(s){
+  const n=['유니슨','단2도','장2도','단3도','장3도','완전4도','증4도','완전5도','단6도','장6도','단7도','장7도','옥타브'];
+  return s<=12?n[s]:s+'반음';
+}
+
+/* ==============================================================
+   SHARED COMPONENTS
+   ============================================================== */
+function LogPanel({lines}){
+  const ref=useRef();
+  useEffect(()=>{if(ref.current)ref.current.scrollTop=ref.current.scrollHeight},[lines]);
+  if(!lines||!lines.length)return null;
+  return <div className="result-log" ref={ref}>
+    {lines.map((l,i)=><div key={i} className={`log-line${l.t?' log-line--'+l.t:''}`}>{l.m}</div>)}
+  </div>;
+}
+
+function BarChart({data,barColor,labelWidth}){
+  const max=Math.max(...Object.values(data),1);
+  return <div className="bar-chart">
+    {Object.entries(data).map(([k,v])=>{
+      const pct=(v/max*100);
+      return <div className="bar-row" key={k}>
+        <div className="bar-row__label" style={{'--label-w':(labelWidth||48)+'px'}}>{k}</div>
+        <div className="bar-row__track">
+          <div className="bar-row__fill" style={{'--pct':pct+'%','--bar-color':barColor||'var(--accent-core)'}}>{v}</div>
+        </div>
+      </div>;
+    })}
+  </div>;
+}
+
+function Chip({on,onClick,children}){
+  return <div className={`chip${on?' chip--on':''}`} onClick={onClick}>{children}</div>;
+}
+
+function Toggle({on,onClick}){
+  return <div className={`toggle${on?' toggle--on':''}`} onClick={onClick}/>;
+}
+
+/* ==============================================================
+   PANEL: UPLOAD
+   ============================================================== */
+function UploadPanel({files,onFilesAdd,onRemove,onClear}){
+  const [dragging,setDragging]=useState(false);
+  const inputRef=useRef();
+
+  const handleDrop=useCallback(e=>{
+    e.preventDefault();setDragging(false);onFilesAdd(e.dataTransfer.files);
+  },[onFilesAdd]);
+
+  return <div>
+    <h2 className="panel__heading">파일 업로드</h2>
+    <p className="panel__description">MusicXML(.mxl, .xml, .musicxml) 파일을 업로드하세요. 여러 파일을 동시에 가능합니다.</p>
+
+    <div className={`upload-zone${dragging?' upload-zone--dragging':''}`}
+      onClick={()=>inputRef.current.click()}
+      onDragOver={e=>{e.preventDefault();setDragging(true)}}
+      onDragLeave={()=>setDragging(false)}
+      onDrop={handleDrop}>
+      <div className="upload-zone__icon">📁</div>
+      <div className="upload-zone__title">파일을 여기에 드래그하거나 클릭하세요</div>
+      <div className="upload-zone__subtitle">.mxl, .xml, .musicxml 파일 지원</div>
+      <input ref={inputRef} className="upload-zone__input" type="file" multiple accept=".mxl,.xml,.musicxml"
+        onChange={e=>onFilesAdd(e.target.files)}/>
+    </div>
+
+    {files.length>0 && <div className="file-list">
+      {files.map((f,i)=>{
+        const parts=f.xmlDoc.querySelectorAll('part').length;
+        const notes=f.xmlDoc.querySelectorAll('note:not([rest])').length;
+        return <div className="file-entry" key={i}>
+          <div>
+            <div className="file-entry__name">{f.name}</div>
+            <div className="file-entry__meta">{parts}파트 · {notes}음표</div>
+          </div>
+          <button className="file-entry__remove" onClick={()=>onRemove(i)}>✕</button>
+        </div>;
+      })}
+    </div>}
+
+    {files.length>0 && <div className="btn-row">
+      <button className="btn btn--secondary" onClick={onClear}>🗑️ 전체 삭제</button>
+    </div>}
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: TRANSPOSE
+   ============================================================== */
+const INTERVAL_BASE_MAJOR={2:2,3:4,6:9,7:11};
+const INTERVAL_BASE_PERFECT={1:0,4:5,5:7,8:12};
+const INTERVAL_QUALITIES=[
+  {id:'major',label:'Major (M)'},{id:'minor',label:'Minor (m)'},
+  {id:'augmented',label:'Augmented (A)'},{id:'diminished',label:'Diminished (d)'},
+  {id:'double-augmented',label:'Double Aug. (AA)'},{id:'double-diminished',label:'Double Dim. (dd)'},
+];
+const INTERVAL_NUMBERS=[
+  {id:2,label:'2nd'},{id:3,label:'3rd'},{id:4,label:'4th'},
+  {id:5,label:'5th'},{id:6,label:'6th'},{id:7,label:'7th'},{id:8,label:'Octave'},
+];
+function computeIntervalSemis(num,qual){
+  if(num in INTERVAL_BASE_MAJOR){
+    const b=INTERVAL_BASE_MAJOR[num];
+    return({major:b,minor:b-1,augmented:b+1,diminished:b-2,'double-augmented':b+2,'double-diminished':b-3})[qual];
+  }
+  const b=INTERVAL_BASE_PERFECT[num];
+  return({major:b,minor:b-1,augmented:b+1,diminished:b-1,'double-augmented':b+2,'double-diminished':b-2})[qual];
+}
+
+function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [mode,setMode]=useState('single');
+  const [selKey,setSelKey]=useState(0);
+  const [semi,setSemi]=useState(0);
+  const [ivNum,setIvNum]=useState(3);
+  const [ivQual,setIvQual]=useState('major');
+  const [ivDir,setIvDir]=useState(1);
+  const [log,setLog]=useState([]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('조옮김 처리 중...');
+    await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        if(mode==='all12'){
+          let previewDoc=null;
+          for(let i=0;i<12;i++){
+            const doc=transposeDoc(file.xmlDoc,i,i);
+            if(i===selKey)previewDoc=doc;
+            lines.push({m:`✓ ${base(file)} → ${KEY_NAMES[i]} Major`,t:'ok'});
+          }
+          updatedFiles.push({...file,xmlDoc:previewDoc||transposeDoc(file.xmlDoc,0,0)});
+        }else if(mode==='semitone'){
+          const doc=transposeDoc(file.xmlDoc,semi,null);
+          updatedFiles.push({...file,xmlDoc:doc});
+          lines.push({m:`✓ ${base(file)} → ${semi>0?'+':''}${semi} 반음`,t:'ok'});
+        }else if(mode==='interval'){
+          const s=computeIntervalSemis(ivNum,ivQual);
+          if(s===undefined){lines.push({m:`❌ 지원하지 않는 조합`,t:'err'});continue}
+          const shift=s*ivDir;
+          const doc=transposeDoc(file.xmlDoc,shift,null);
+          updatedFiles.push({...file,xmlDoc:doc});
+          const qLabel=INTERVAL_QUALITIES.find(q=>q.id===ivQual)?.label||ivQual;
+          const nLabel=INTERVAL_NUMBERS.find(n=>n.id===ivNum)?.label||ivNum;
+          lines.push({m:`✓ ${base(file)} → ${ivDir>0?'↑':'↓'} ${qLabel} ${nLabel} (${shift>0?'+':''}${shift}반음)`,t:'ok'});
+        }else{
+          const fifths=parseInt(file.xmlDoc.querySelector('key fifths')?.textContent||'0');
+          const ci=KEY_FIFTHS.indexOf(fifths);const cs=ci>=0?ci:0;
+          const s=(selKey-cs+12)%12;
+          const doc=transposeDoc(file.xmlDoc,s,selKey);
+          updatedFiles.push({...file,xmlDoc:doc});
+          lines.push({m:`✓ ${base(file)} → ${KEY_NAMES[selKey]} (${s}반음)`,t:'ok'});
+        }
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,mode,selKey,semi,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
+
+  function transposeDoc(xmlDoc,semitones,targetKeyIdx){
+    const doc=cloneDoc(xmlDoc);
+    doc.querySelectorAll('note').forEach(note=>{
+      const p=getNotePitch(note);if(!p)return;
+      const np=transposeNote(p.step,p.alter,p.octave,semitones);
+      setNotePitch(note,np.step,np.alter,np.octave);
+      let acc=note.querySelector('accidental');
+      if(acc){if(np.alter===1)acc.textContent='sharp';else if(np.alter===-1)acc.textContent='flat';else acc.remove()}
+      else if(np.alter!==0){acc=doc.createElement('accidental');acc.textContent=np.alter===1?'sharp':'flat';const pi=note.querySelector('pitch');if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);else note.appendChild(acc)}
+    });
+    if(targetKeyIdx!==null&&targetKeyIdx!==undefined)
+      doc.querySelectorAll('key fifths').forEach(f=>f.textContent=KEY_FIFTHS[targetKeyIdx]);
+    return doc;
+  }
+
+  function base(f){return f.name.replace(/\.(mxl|xml|musicxml)$/i,'')}
+  function ser(d){return new XMLSerializer().serializeToString(d)}
+
+  return <div>
+    <h2 className="panel__heading">조옮김 (Transpose)</h2>
+    <p className="panel__description">악보를 원하는 조로 변환합니다. 12개 장조 모두 생성하거나 특정 조로 변환할 수 있습니다.</p>
+
+    <div className="card"><div className="card__title">🎯 변환 모드</div>
+      <div className="chip-group">
+        <Chip on={mode==='single'} onClick={()=>setMode('single')}>특정 조로 변환</Chip>
+        <Chip on={mode==='all12'} onClick={()=>setMode('all12')}>12개 장조 모두</Chip>
+        <Chip on={mode==='semitone'} onClick={()=>setMode('semitone')}>반음 단위 이동</Chip>
+        <Chip on={mode==='interval'} onClick={()=>setMode('interval')}>음정 이동 (Interval)</Chip>
+      </div>
+    </div>
+
+    {mode==='single' && <div className="card"><div className="card__title">🎼 목표 조 선택</div>
+      <div className="key-grid">
+        {KEY_NAMES.map((n,i)=><div key={i} className={`key-grid__btn${i===selKey?' key-grid__btn--selected':''}`}
+          onClick={()=>setSelKey(i)}>{n}</div>)}
+      </div>
+    </div>}
+
+    {mode==='semitone' && <div className="card"><div className="card__title">↕️ 반음 이동</div>
+      <label className="form-label">이동할 반음 수 (-12 ~ +12)</label>
+      <input className="form-input form-input--mono" type="number" value={semi} min={-12} max={12}
+        onChange={e=>setSemi(parseInt(e.target.value)||0)}/>
+    </div>}
+
+    {mode==='interval' && <div className="card"><div className="card__title">🎼 음정 (Interval) 이동</div>
+      <label className="form-label">음정 수 (Interval Number)</label>
+      <div className="chip-group">
+        {INTERVAL_NUMBERS.map(n=><Chip key={n.id} on={ivNum===n.id} onClick={()=>setIvNum(n.id)}>{n.label}</Chip>)}
+      </div>
+      <label className="form-label">음정 종류 (Quality)</label>
+      <div className="chip-group">
+        {INTERVAL_QUALITIES.map(q=><Chip key={q.id} on={ivQual===q.id} onClick={()=>setIvQual(q.id)}>{q.label}</Chip>)}
+      </div>
+      <label className="form-label">방향</label>
+      <div className="chip-group">
+        <Chip on={ivDir===1} onClick={()=>setIvDir(1)}>↑ 위로</Chip>
+        <Chip on={ivDir===-1} onClick={()=>setIvDir(-1)}>↓ 아래로</Chip>
+      </div>
+      <div className="card__text">현재 설정: {ivDir>0?'↑':'↓'} {INTERVAL_QUALITIES.find(q=>q.id===ivQual)?.label} {INTERVAL_NUMBERS.find(n=>n.id===ivNum)?.label} = {(()=>{const s=computeIntervalSemis(ivNum,ivQual);return s===undefined?'—':`${s*ivDir>0?'+':''}${s*ivDir} 반음`})()}</div>
+    </div>}
+
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 변환 실행</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: RANGE
+   ============================================================== */
+function RangePanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [instr,setInstr]=useState('');
+  const [customLow,setCustomLow]=useState('C4');
+  const [customHigh,setCustomHigh]=useState('C6');
+  const [log,setLog]=useState([]);
+
+  const range=INSTRUMENT_RANGES[instr];
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!instr){alert('악기를 선택해주세요.');return}
+    let low,high;
+    if(instr==='custom'){low=parseNoteStr(customLow);high=parseNoteStr(customHigh);if(!low||!high){alert('올바른 음표 형식을 입력해주세요');return}}
+    else{low={...range.low,alter:0};high={...range.high,alter:0}}
+    const lm=noteToMidi(low.step,low.alter,low.octave),hm=noteToMidi(high.step,high.alter,high.octave);
+    setLog([]);showProgress('음역대 조정 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);let adj=0;
+        doc.querySelectorAll('note').forEach(note=>{
+          const p=getNotePitch(note);if(!p)return;
+          let midi=noteToMidi(p.step,p.alter,p.octave);
+          while(midi<lm){midi+=12;adj++}while(midi>hm){midi-=12;adj++}
+          if(midi<lm||midi>hm)return;
+          const np=midiToNote(midi);setNotePitch(note,np.step,np.alter,np.octave);
+        });
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${adj}개 음표 조정`,t:'ok'});
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,instr,customLow,customHigh,range,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">음역대 자동 조정</h2>
+    <p className="panel__description">특정 악기의 음역대에 맞게 옥타브를 자동 조정합니다.</p>
+    <div className="card"><div className="card__title">🎹 악기 선택</div>
+      <select className="form-select" value={instr} onChange={e=>setInstr(e.target.value)}>
+        <option value="">악기를 선택하세요</option>
+        {Object.entries(INSTRUMENT_RANGES).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
+        <option value="custom">사용자 지정</option>
+      </select>
+      {range && <div className="range-tag">
+        <span>음역대:</span>
+        <span className="range-tag__note">{range.low.step}{range.low.oct}</span>
+        <span>~</span>
+        <span className="range-tag__note">{range.high.step}{range.high.oct}</span>
+      </div>}
+    </div>
+    {instr==='custom' && <div className="card"><div className="card__title">✏️ 사용자 지정</div>
+      <div className="two-col">
+        <div><label className="form-label">최저음</label><input className="form-input form-input--mono" value={customLow} onChange={e=>setCustomLow(e.target.value)}/></div>
+        <div><label className="form-label">최고음</label><input className="form-input form-input--mono" value={customHigh} onChange={e=>setCustomHigh(e.target.value)}/></div>
+      </div>
+    </div>}
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 음역대 조정 실행</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: TRANSPOSING INSTRUMENT
+   ============================================================== */
+function InstrumentPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [dir,setDir]=useState('toC');
+  const [sel,setSel]=useState('');
+  const [customSemi,setCustomSemi]=useState(-2);
+  const [log,setLog]=useState([]);
+
+  const info=TRANS_INSTRUMENTS[sel];
+  const semiSounding=sel==='custom_instr'?customSemi:info?.semi||0;
+  const shift=dir==='toC'?semiSounding:-semiSounding;
+
+  const preview=useMemo(()=>{
+    if(!sel)return[];
+    return['C4','D4','E4','F4','G4','A4','B4','C5'].map(ex=>{
+      const p=parseNoteStr(ex);if(!p)return null;
+      const midi=noteToMidi(p.step,p.alter,p.octave)+shift;
+      const r=midiToNote(midi);
+      return{from:ex,to:fmtNote(r)};
+    }).filter(Boolean);
+  },[sel,shift]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!sel){alert('악기를 선택해주세요.');return}
+    setLog([]);showProgress('이조 변환 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);let cnt=0;
+        doc.querySelectorAll('note').forEach(note=>{
+          const p=getNotePitch(note);if(!p)return;
+          const np=transposeNote(p.step,p.alter,p.octave,shift);
+          setNotePitch(note,np.step,np.alter,np.octave);
+          let acc=note.querySelector('accidental');
+          if(acc){if(np.alter===1)acc.textContent='sharp';else if(np.alter===-1)acc.textContent='flat';else acc.remove()}
+          else if(np.alter!==0){acc=doc.createElement('accidental');acc.textContent=np.alter===1?'sharp':'flat';const pi=note.querySelector('pitch');if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);else note.appendChild(acc)}
+          cnt++;
+        });
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${cnt}개 음표 변환`,t:'ok'});
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,sel,shift,dir,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">이조 악기 변환</h2>
+    <p className="panel__description">이조 악기용 악보를 실음으로 변환하거나, 실음 악보를 이조 악기용으로 변환합니다.</p>
+    <div className="card"><div className="card__title">🔄 변환 방향</div>
+      <div className="chip-group">
+        <Chip on={dir==='toC'} onClick={()=>setDir('toC')}>이조 악보 → 실음</Chip>
+        <Chip on={dir==='fromC'} onClick={()=>setDir('fromC')}>실음 → 이조 악보</Chip>
+      </div>
+    </div>
+    <div className="card"><div className="card__title">🎺 악기 선택</div>
+      <select className="form-select" value={sel} onChange={e=>setSel(e.target.value)}>
+        <option value="">악기를 선택하세요</option>
+        {[...new Set(Object.values(TRANS_INSTRUMENTS).map(v=>v.cat))].map(cat=>
+          <optgroup key={cat} label={cat}>
+            {Object.entries(TRANS_INSTRUMENTS).filter(([_,v])=>v.cat===cat).map(([k,v])=>
+              <option key={k} value={k}>{v.name} ({v.interval})</option>
+            )}
+          </optgroup>
+        )}
+        <optgroup label="사용자 지정">
+          <option value="custom_instr">반음 수 직접 입력</option>
+        </optgroup>
+      </select>
+      {info && <div className="info-box section-gap"><div className="info-box__row">
+        <div><div className="info-box__micro-label">악기</div><div className="info-box__value">{info.name}</div></div>
+        <div className="info-box__divider"/>
+        <div><div className="info-box__micro-label">조성</div><div className="info-box__value info-box__value--accent">{info.key}</div></div>
+        <div className="info-box__divider"/>
+        <div><div className="info-box__micro-label">이조</div><div className="info-box__value info-box__value--warn">{info.interval}</div></div>
+      </div></div>}
+    </div>
+    {sel==='custom_instr' && <div className="card"><div className="card__title">✏️ 사용자 지정</div>
+      <label className="form-label">기보음 대비 실음 차이 (반음 수)</label>
+      <input className="form-input form-input--mono" type="number" value={customSemi} onChange={e=>setCustomSemi(parseInt(e.target.value)||0)}/>
+    </div>}
+    {preview.length>0 && <div className="card"><div className="card__title">🎯 변환 예시</div>
+      <div className="preview-grid">{preview.map((p,i)=>
+        <div className="preview-cell" key={i}>
+          <div className="preview-cell__top">{p.from}</div>
+          <div className="preview-cell__arrow">↓</div>
+          <div className="preview-cell__bottom preview-cell__bottom--accent">{p.to}</div>
+        </div>
+      )}</div>
+    </div>}
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 이조 변환 실행</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: TEMPO
+   ============================================================== */
+function TempoPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [bpm,setBpm]=useState(120);
+  const [origBpm,setOrigBpm]=useState(120);
+  const [detectMsg,setDetectMsg]=useState('파일을 업로드하면 원본 템포가 표시됩니다.');
+  const [optSound,setOptSound]=useState(true);
+  const [optMetro,setOptMetro]=useState(true);
+  const [optStretch,setOptStretch]=useState(false);
+  const [log,setLog]=useState([]);
+
+  useEffect(()=>{
+    if(!files.length)return;
+    const doc=files[0].xmlDoc;
+    const s=doc.querySelector('sound[tempo]');
+    if(s){const t=parseFloat(s.getAttribute('tempo'));if(t>0){setOrigBpm(t);setBpm(t);setDetectMsg(`✓ 감지됨: ${t} BPM (${getTempoTerm(t)})`);return}}
+    const pm=doc.querySelector('metronome per-minute');
+    if(pm){const t=parseFloat(pm.textContent);if(t>0){setOrigBpm(t);setBpm(t);setDetectMsg(`✓ 감지됨: ${t} BPM`);return}}
+    setOrigBpm(120);setBpm(120);setDetectMsg('템포 정보 없음. 기본값 120 BPM');
+  },[files]);
+
+  const fillPct=((bpm-20)/(300-20))*100;
+  const ratio=(bpm/origBpm*100).toFixed(0);
+  const mult=(bpm/origBpm).toFixed(2);
+  const ratioClass=bpm<origBpm?'tempo-ratio-bar__value--slower':bpm>origBpm?'tempo-ratio-bar__value--faster':'tempo-ratio-bar__value--same';
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('템포 변경 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const rat=bpm/origBpm;const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);const ch=[];
+        if(optSound){
+          const ss=doc.querySelectorAll('sound[tempo]');
+          if(ss.length)ss.forEach(s=>{s.setAttribute('tempo',String(bpm));ch.push('sound tempo 변경')});
+          else{
+            const fm=doc.querySelector('part > measure');
+            if(fm){const dir=doc.createElement('direction');dir.setAttribute('placement','above');
+              const dt=doc.createElement('direction-type');const met=doc.createElement('metronome');
+              const bu=doc.createElement('beat-unit');bu.textContent='quarter';met.appendChild(bu);
+              const pm=doc.createElement('per-minute');pm.textContent=String(bpm);met.appendChild(pm);
+              dt.appendChild(met);dir.appendChild(dt);
+              const snd=doc.createElement('sound');snd.setAttribute('tempo',String(bpm));dir.appendChild(snd);
+              const fn=fm.querySelector('note');if(fn)fm.insertBefore(dir,fn);else fm.appendChild(dir);
+              ch.push('새 direction+sound 삽입');
+            }
+          }
+        }
+        if(optMetro)doc.querySelectorAll('metronome per-minute').forEach(pm=>{pm.textContent=String(bpm);ch.push('metronome 변경')});
+        if(optStretch&&rat!==1){let sc=0;doc.querySelectorAll('note duration').forEach(d=>{const old=parseInt(d.textContent);if(old>0){d.textContent=String(Math.round(old/rat));sc++}});if(sc)ch.push(`${sc}개 duration 변환`)}
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name} → ${bpm} BPM`,t:'ok'});
+        ch.forEach(c=>lines.push({m:`    ${c}`}));
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,bpm,origBpm,optSound,optMetro,optStretch,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">템포 조절</h2>
+    <p className="panel__description">악보의 템포(BPM)를 변경합니다.</p>
+    <div className="card"><div className="card__title">📄 원본 템포</div><div className="card__text">{detectMsg}</div></div>
+    <div className="card"><div className="card__title">⏱️ 목표 템포</div>
+      <div className="tempo-display">
+        <div className="tempo-display__bpm">{bpm}<span className="tempo-display__unit">BPM</span></div>
+        <div className="tempo-display__term">{getTempoTerm(bpm)}</div>
+      </div>
+      <div className="tempo-slider-wrap">
+        <input className="tempo-slider" type="range" min={20} max={300} value={bpm}
+          style={{'--fill':fillPct+'%'}}
+          onChange={e=>setBpm(parseInt(e.target.value))}/>
+        <div className="tempo-marks">
+          {[20,60,120,180,240,300].map(v=><span key={v} className="tempo-marks__tick" onClick={()=>setBpm(v)}>{v}</span>)}
+        </div>
+      </div>
+      <div className="tempo-ratio-bar">
+        <div><div className="tempo-ratio-bar__label">원본 대비</div><div className={`tempo-ratio-bar__value ${ratioClass}`}>{ratio}%</div></div>
+        <div className="tempo-ratio-bar__divider"/>
+        <div><div className="tempo-ratio-bar__label">배속</div><div className="tempo-ratio-bar__value tempo-ratio-bar__value--speed">×{mult}</div></div>
+        <div className="tempo-ratio-bar__divider"/>
+        <div><div className="tempo-ratio-bar__label">원본</div><div className="tempo-ratio-bar__value tempo-ratio-bar__value--muted">{origBpm}</div></div>
+      </div>
+    </div>
+    <div className="card"><div className="card__title">🎼 프리셋</div>
+      <div className="tempo-presets">{TEMPO_PRESETS.map(p=>
+        <div key={p.name} className={`tempo-preset${bpm>=p.min&&bpm<=p.max?' tempo-preset--active':''}`}
+          onClick={()=>setBpm(p.bpm)}>
+          <div className="tempo-preset__name">{p.name}</div>
+          <div className="tempo-preset__range">{p.min}–{p.max}</div>
+        </div>
+      )}</div>
+    </div>
+    <div className="card"><div className="card__title">⚙️ 옵션</div>
+      <div className="chip-group">
+        <Chip on={optSound} onClick={()=>setOptSound(!optSound)}>sound tempo</Chip>
+        <Chip on={optMetro} onClick={()=>setOptMetro(!optMetro)}>metronome 표기</Chip>
+        <Chip on={optStretch} onClick={()=>setOptStretch(!optStretch)}>duration 비례 변환</Chip>
+      </div>
+    </div>
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 템포 변경 실행</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: KEY CHANGE (마디별 조바꿈)
+   ============================================================== */
+function KeyChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [changes,setChanges]=useState([{measure:1,key:0}]);
+  const [log,setLog]=useState([]);
+
+  const totalMeasures=useMemo(()=>{
+    if(!files.length)return 0;
+    const parts=files[0].xmlDoc.querySelectorAll('part');
+    return parts[0]?.querySelectorAll('measure')?.length||0;
+  },[files]);
+
+  const addChange=useCallback(()=>{
+    const last=changes[changes.length-1];
+    setChanges(c=>[...c,{measure:Math.min((last?.measure||1)+8,totalMeasures||999),key:(last?.key+7)%12||0}]);
+  },[changes,totalMeasures]);
+  const removeChange=useCallback(i=>setChanges(c=>c.filter((_,j)=>j!==i)),[]);
+  const updateChange=useCallback((i,field,val)=>setChanges(c=>c.map((x,j)=>j===i?{...x,[field]:val}:x)),[]);
+
+  const segments=useMemo(()=>{
+    if(!totalMeasures||!changes.length)return[];
+    const sorted=[...changes].sort((a,b)=>a.measure-b.measure);
+    const segs=[];
+    // Original key before first change
+    const origFifths=parseInt(files[0]?.xmlDoc.querySelector('key fifths')?.textContent||'0');
+    const origIdx=KEY_FIFTHS.indexOf(origFifths);
+    const origKey=origIdx>=0?origIdx:0;
+    if(sorted[0].measure>1){
+      segs.push({from:1,to:sorted[0].measure-1,keyIdx:origKey,label:KEY_NAMES[origKey]});
+    }
+    sorted.forEach((ch,i)=>{
+      const end=i<sorted.length-1?sorted[i+1].measure-1:totalMeasures;
+      segs.push({from:ch.measure,to:end,keyIdx:ch.key,label:KEY_NAMES[ch.key]});
+    });
+    return segs;
+  },[changes,totalMeasures,files]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!changes.length){alert('조바꿈 지점을 추가해주세요.');return}
+    setLog([]);showProgress('마디별 조바꿈 처리 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);
+        const origFifths=parseInt(doc.querySelector('key fifths')?.textContent||'0');
+        const origIdx=KEY_FIFTHS.indexOf(origFifths);
+        const origKeySemi=origIdx>=0?origIdx:0;
+        const sorted=[...changes].sort((a,b)=>a.measure-b.measure);
+        let changeCount=0;
+
+        doc.querySelectorAll('part').forEach(part=>{
+          const measures=part.querySelectorAll('measure');
+          let currentKeySemi=origKeySemi;
+
+          sorted.forEach(ch=>{
+            const targetKeySemi=ch.key;
+            const semitones=(targetKeySemi-currentKeySemi+12)%12;
+            if(semitones===0){currentKeySemi=targetKeySemi;return}
+
+            for(let m=ch.measure-1;m<measures.length;m++){
+              const measure=measures[m];
+              if(!measure)continue;
+
+              // Transpose notes in this measure
+              measure.querySelectorAll('note').forEach(note=>{
+                const p=getNotePitch(note);if(!p)return;
+                const np=transposeNote(p.step,p.alter,p.octave,semitones);
+                setNotePitch(note,np.step,np.alter,np.octave);
+                let acc=note.querySelector('accidental');
+                if(acc){if(np.alter===1)acc.textContent='sharp';else if(np.alter===-1)acc.textContent='flat';else acc.remove()}
+                else if(np.alter!==0){
+                  acc=doc.createElement('accidental');acc.textContent=np.alter===1?'sharp':'flat';
+                  const pi=note.querySelector('pitch');if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);else note.appendChild(acc);
+                }
+              });
+
+              // Insert key signature change at the start measure
+              if(m===ch.measure-1){
+                let attrs=measure.querySelector('attributes');
+                if(!attrs){attrs=doc.createElement('attributes');const first=measure.firstChild;if(first)measure.insertBefore(attrs,first);else measure.appendChild(attrs)}
+                let key=attrs.querySelector('key');
+                if(!key){key=doc.createElement('key');attrs.appendChild(key)}
+                let fifths=key.querySelector('fifths');
+                if(!fifths){fifths=doc.createElement('fifths');key.appendChild(fifths)}
+                fifths.textContent=KEY_FIFTHS[targetKeySemi];
+                changeCount++;
+              }
+            }
+            currentKeySemi=targetKeySemi;
+          });
+        });
+
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${changeCount}개 조바꿈 적용`,t:'ok'});
+        sorted.forEach(ch=>lines.push({m:`    마디 ${ch.measure}부터 → ${KEY_NAMES[ch.key]} Major`}));
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,changes,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">마디별 조바꿈</h2>
+    <p className="panel__description">
+      특정 마디부터 새로운 조로 전환합니다. 여러 지점을 추가하면 곡 중간에 여러 번 조바꿈할 수 있습니다.
+      해당 마디부터 끝까지(또는 다음 조바꿈 지점까지) 모든 음표가 자동으로 이조됩니다.
+    </p>
+
+    {totalMeasures>0 && <div className="card">
+      <div className="card__title">📄 악보 정보</div>
+      <div className="card__text">총 {totalMeasures}마디 · 원본 조: {KEY_NAMES[KEY_FIFTHS.indexOf(parseInt(files[0]?.xmlDoc.querySelector('key fifths')?.textContent||'0'))]||'C'} Major</div>
+    </div>}
+
+    <div className="card">
+      <div className="card__title">🔀 조바꿈 지점 설정</div>
+      <div className="change-list">
+        {changes.map((ch,i)=>
+          <div className="change-entry" key={i}>
+            <div className="change-entry__field change-entry__field--narrow">
+              <span className="change-entry__micro">시작 마디</span>
+              <input className="measure-input" type="number" min={1} max={totalMeasures||9999}
+                value={ch.measure} onChange={e=>updateChange(i,'measure',parseInt(e.target.value)||1)}/>
+            </div>
+            <span className="change-entry__arrow">→</span>
+            <div className="change-entry__field">
+              <span className="change-entry__micro">목표 조</span>
+              <select className="measure-input" value={ch.key} onChange={e=>updateChange(i,'key',parseInt(e.target.value))}>
+                {KEY_NAMES.map((n,j)=><option key={j} value={j}>{n} Major</option>)}
+              </select>
+            </div>
+            <button className="change-entry__remove" onClick={()=>removeChange(i)}>✕</button>
+          </div>
+        )}
+      </div>
+      <div className="btn-row">
+        <button className="btn btn--secondary" onClick={addChange}>+ 조바꿈 지점 추가</button>
+      </div>
+    </div>
+
+    {segments.length>0 && <div className="card">
+      <div className="card__title">👁️ 타임라인 미리보기</div>
+      <div className="timeline">
+        <div className="timeline__track">
+          {segments.map((seg,i)=>{
+            const span=seg.to-seg.from+1;
+            const flexVal=Math.max(span,1);
+            return <div key={i} className={`timeline__segment timeline__segment--${i%8}`}
+              style={{'--seg-flex':flexVal}}>
+              <span className="timeline__segment-label">{seg.label}</span>
+              <span className="timeline__segment-range">m.{seg.from}–{seg.to}</span>
+            </div>;
+          })}
+        </div>
+        <div className="timeline__legend">
+          {segments.map((seg,i)=>
+            <span key={i}><span className={`timeline__legend-dot timeline__segment--${i%8}`}/>{seg.label} (마디 {seg.from}–{seg.to})</span>
+          )}
+        </div>
+      </div>
+    </div>}
+
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 조바꿈 실행</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: CAPO
+   ============================================================== */
+function CapoPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [capos,setCapos]=useState([{measure:1,fret:2}]);
+  const [log,setLog]=useState([]);
+
+  const totalMeasures=useMemo(()=>{
+    if(!files.length)return 0;
+    return files[0].xmlDoc.querySelector('part')?.querySelectorAll('measure')?.length||0;
+  },[files]);
+
+  const origKeyName=useMemo(()=>{
+    if(!files.length)return 'C';
+    const f=parseInt(files[0].xmlDoc.querySelector('key fifths')?.textContent||'0');
+    const idx=KEY_FIFTHS.indexOf(f);return idx>=0?KEY_NAMES[idx]:'C';
+  },[files]);
+
+  const addCapo=useCallback(()=>{
+    const last=capos[capos.length-1];
+    setCapos(c=>[...c,{measure:Math.min((last?.measure||1)+16,totalMeasures||999),fret:last?.fret||2}]);
+  },[capos,totalMeasures]);
+  const removeCapo=useCallback(i=>setCapos(c=>c.filter((_,j)=>j!==i)),[]);
+  const updateCapo=useCallback((i,field,val)=>setCapos(c=>c.map((x,j)=>j===i?{...x,[field]:val}:x)),[]);
+
+  const segments=useMemo(()=>{
+    if(!totalMeasures||!capos.length)return[];
+    const sorted=[...capos].sort((a,b)=>a.measure-b.measure);
+    const segs=[];
+    if(sorted[0].measure>1)segs.push({from:1,to:sorted[0].measure-1,fret:0,label:'No Capo'});
+    sorted.forEach((cp,i)=>{
+      const end=i<sorted.length-1?sorted[i+1].measure-1:totalMeasures;
+      segs.push({from:cp.measure,to:end,fret:cp.fret,label:`Capo ${cp.fret}`});
+    });
+    return segs;
+  },[capos,totalMeasures]);
+
+  // Preview: show how chords change with capo
+  const previewChords=useMemo(()=>{
+    const fret=capos[0]?.fret||2;
+    const samples=['C','D','E','F','G','A','Am','Em','Dm'];
+    return samples.map(ch=>{
+      const p=parseChordSymbol(ch);if(!p)return{orig:ch,capo:ch};
+      const origMidi=STEP_TO_SEMI[p.rootStep]+(p.rootAlter||0);
+      const newMidi=((origMidi-fret)%12+12)%12;
+      const nn=SEMI_TO_STEP[newMidi];
+      const rootStr=nn.step+(nn.alter===1?'#':nn.alter===-1?'♭':'');
+      const kindSuffix={major:'',minor:'m',dominant:'7','major-seventh':'maj7','minor-seventh':'m7',
+        diminished:'dim',augmented:'aug','half-diminished':'m7♭5','suspended-fourth':'sus4'}[p.kind]||'';
+      return{orig:ch,capo:rootStr+kindSuffix};
+    });
+  },[capos]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!capos.length){alert('카포 설정을 추가해주세요.');return}
+    setLog([]);showProgress('카포 적용 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);
+        const sorted=[...capos].sort((a,b)=>a.measure-b.measure);
+
+        doc.querySelectorAll('part').forEach((part,partIdx)=>{
+          const measures=part.querySelectorAll('measure');
+
+          sorted.forEach(cp=>{
+            const semi=-cp.fret; // capo raises pitch, so written goes DOWN
+
+            for(let m=cp.measure-1;m<measures.length;m++){
+              const measure=measures[m];if(!measure)continue;
+
+              // Transpose notes
+              measure.querySelectorAll('note').forEach(note=>{
+                const p=getNotePitch(note);if(!p)return;
+                const np=transposeNote(p.step,p.alter,p.octave,semi);
+                setNotePitch(note,np.step,np.alter,np.octave);
+                let acc=note.querySelector('accidental');
+                if(acc){if(np.alter===1)acc.textContent='sharp';else if(np.alter===-1)acc.textContent='flat';else acc.remove()}
+                else if(np.alter!==0){
+                  acc=doc.createElement('accidental');acc.textContent=np.alter===1?'sharp':'flat';
+                  const pi=note.querySelector('pitch');
+                  if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);else note.appendChild(acc);
+                }
+              });
+
+              // Transpose chord symbols (harmony)
+              measure.querySelectorAll('harmony').forEach(harm=>{
+                const rs=harm.querySelector('root root-step');
+                const ra=harm.querySelector('root root-alter');
+                if(!rs)return;
+                const rootStep=rs.textContent;
+                const rootAlter=parseInt(ra?.textContent||'0');
+                const origMidi=STEP_TO_SEMI[rootStep]+(rootAlter||0);
+                const newMidi=((origMidi+semi)%12+12)%12;
+                const nn=SEMI_TO_STEP[newMidi];
+                rs.textContent=nn.step;
+                if(nn.alter!==0){
+                  if(!ra){const a=doc.createElement('root-alter');harm.querySelector('root').appendChild(a);a.textContent=nn.alter}
+                  else ra.textContent=nn.alter;
+                }else if(ra)ra.remove();
+              });
+
+              // Update key signature at the capo start measure
+              if(m===cp.measure-1){
+                let attrs=measure.querySelector('attributes');
+                if(!attrs){attrs=doc.createElement('attributes');const f=measure.firstChild;if(f)measure.insertBefore(attrs,f);else measure.appendChild(attrs)}
+                let key=attrs.querySelector('key');
+                if(!key){key=doc.createElement('key');attrs.appendChild(key)}
+                let fifths=key.querySelector('fifths');
+                if(!fifths){fifths=doc.createElement('fifths');key.appendChild(fifths)}
+                const oldFifths=parseInt(fifths.textContent||'0');
+                const fifthsUpBySemi=[0,-5,2,-3,4,-1,6,1,-4,3,-2,5];
+                const semiAbs=((semi%12)+12)%12;
+                let newFifths=oldFifths+fifthsUpBySemi[semiAbs];
+                while(newFifths>7)newFifths-=12;while(newFifths<-7)newFifths+=12;
+                fifths.textContent=newFifths;
+              }
+            }
+
+            // Insert "Capo N Fret" text at the capo measure (first part only)
+            if(partIdx===0){
+              const measure=measures[cp.measure-1];if(!measure)return;
+              const direction=doc.createElement('direction');
+              direction.setAttribute('placement','above');
+              const dirType=doc.createElement('direction-type');
+              const words=doc.createElement('words');
+              words.setAttribute('font-size','12');
+              words.setAttribute('font-weight','bold');
+              words.textContent=`Capo ${cp.fret} Fret`;
+              dirType.appendChild(words);
+              direction.appendChild(dirType);
+              const firstNote=measure.querySelector('note');
+              if(firstNote)measure.insertBefore(direction,firstNote);
+              else measure.appendChild(direction);
+            }
+          });
+        });
+
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}`,t:'ok'});
+        sorted.forEach(cp=>lines.push({m:`    마디 ${cp.measure}부터 Capo ${cp.fret} Fret 적용`}));
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,capos,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">카포 (Capo)</h2>
+    <p className="panel__description">
+      카포를 적용하면 기타 연주자가 쉬운 코드 폼으로 연주할 수 있도록 악보를 자동 변환합니다.
+      카포 프렛만큼 조표, 멜로디, 코드 기호가 내려가고, 해당 마디에 "Capo N Fret" 텍스트가 표시됩니다.
+    </p>
+
+    {totalMeasures>0 && <div className="card">
+      <div className="card__title">📄 악보 정보</div>
+      <div className="card__text">총 {totalMeasures}마디 · 원본 조: {origKeyName} Major</div>
+    </div>}
+
+    <div className="card">
+      <div className="card__title">🎸 카포 설정</div>
+      <div className="change-list">
+        {capos.map((cp,i)=>
+          <div className="change-entry" key={i}>
+            <div className="change-entry__field change-entry__field--narrow">
+              <span className="change-entry__micro">시작 마디</span>
+              <input className="measure-input" type="number" min={1} max={totalMeasures||9999}
+                value={cp.measure} onChange={e=>updateCapo(i,'measure',parseInt(e.target.value)||1)}/>
+            </div>
+            <span className="change-entry__arrow">→</span>
+            <div className="change-entry__field change-entry__field--narrow">
+              <span className="change-entry__micro">프렛 번호</span>
+              <select className="measure-input" value={cp.fret} onChange={e=>updateCapo(i,'fret',parseInt(e.target.value))}>
+                {[1,2,3,4,5,6,7,8,9,10,11,12].map(f=><option key={f} value={f}>{f}프렛</option>)}
+              </select>
+            </div>
+            <div className="change-entry__field">
+              <span className="change-entry__micro">결과 조</span>
+              <div className="info-box__value info-box__value--accent">
+                {origKeyName} → {KEY_NAMES[((KEY_NAMES.indexOf(origKeyName)>=0?KEY_NAMES.indexOf(origKeyName):0)-cp.fret+12)%12]} 표기
+              </div>
+            </div>
+            <button className="change-entry__remove" onClick={()=>removeCapo(i)}>✕</button>
+          </div>
+        )}
+      </div>
+      <div className="btn-row">
+        <button className="btn btn--secondary" onClick={addCapo}>+ 카포 지점 추가</button>
+      </div>
+    </div>
+
+    <div className="card">
+      <div className="card__title">🎹 프렛 빠른 선택</div>
+      <div className="key-grid">
+        {[1,2,3,4,5,6,7,8,9,10,11,12].map(f=>
+          <div key={f} className={`key-grid__btn${capos[capos.length-1]?.fret===f?' key-grid__btn--selected':''}`}
+            onClick={()=>{if(capos.length)updateCapo(capos.length-1,'fret',f)}}>
+            {f}F
+          </div>
+        )}
+      </div>
+    </div>
+
+    <div className="card">
+      <div className="card__title">👁️ 코드 변환 미리보기</div>
+      <div className="card__text">Capo {capos[0]?.fret||2} 적용 시 코드가 이렇게 바뀝니다:</div>
+      <div className="preview-grid">
+        {previewChords.map((p,i)=>
+          <div className="preview-cell" key={i}>
+            <div className="preview-cell__top">{p.orig}</div>
+            <div className="preview-cell__arrow">↓</div>
+            <div className="preview-cell__bottom preview-cell__bottom--accent">{p.capo}</div>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {segments.length>0 && <div className="card">
+      <div className="card__title">📏 타임라인</div>
+      <div className="timeline">
+        <div className="timeline__track">
+          {segments.map((seg,i)=>{
+            const span=seg.to-seg.from+1;
+            return <div key={i} className={`timeline__segment timeline__segment--${seg.fret===0?0:((seg.fret-1)%7)+1}`}
+              style={{'--seg-flex':Math.max(span,1)}}>
+              <span className="timeline__segment-label">{seg.label}</span>
+              <span className="timeline__segment-range">m.{seg.from}–{seg.to}</span>
+            </div>;
+          })}
+        </div>
+      </div>
+    </div>}
+
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 카포 적용 실행</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: TEMPO CHANGE (마디별 템포)
+   ============================================================== */
+function TempoChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [changes,setChanges]=useState([{measure:1,bpm:120}]);
+  const [log,setLog]=useState([]);
+
+  const totalMeasures=useMemo(()=>{
+    if(!files.length)return 0;
+    const parts=files[0].xmlDoc.querySelectorAll('part');
+    return parts[0]?.querySelectorAll('measure')?.length||0;
+  },[files]);
+
+  const origBpm=useMemo(()=>{
+    if(!files.length)return 120;
+    const s=files[0].xmlDoc.querySelector('sound[tempo]');
+    if(s)return parseFloat(s.getAttribute('tempo'))||120;
+    const pm=files[0].xmlDoc.querySelector('metronome per-minute');
+    if(pm)return parseFloat(pm.textContent)||120;
+    return 120;
+  },[files]);
+
+  const addChange=useCallback(()=>{
+    const last=changes[changes.length-1];
+    setChanges(c=>[...c,{measure:Math.min((last?.measure||1)+8,totalMeasures||999),bpm:last?.bpm||120}]);
+  },[changes,totalMeasures]);
+  const removeChange=useCallback(i=>setChanges(c=>c.filter((_,j)=>j!==i)),[]);
+  const updateChange=useCallback((i,field,val)=>setChanges(c=>c.map((x,j)=>j===i?{...x,[field]:val}:x)),[]);
+
+  const segments=useMemo(()=>{
+    if(!totalMeasures||!changes.length)return[];
+    const sorted=[...changes].sort((a,b)=>a.measure-b.measure);
+    const segs=[];
+    if(sorted[0].measure>1){
+      segs.push({from:1,to:sorted[0].measure-1,bpm:origBpm,term:getTempoTerm(origBpm)});
+    }
+    sorted.forEach((ch,i)=>{
+      const end=i<sorted.length-1?sorted[i+1].measure-1:totalMeasures;
+      segs.push({from:ch.measure,to:end,bpm:ch.bpm,term:getTempoTerm(ch.bpm)});
+    });
+    return segs;
+  },[changes,totalMeasures,origBpm]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!changes.length){alert('템포 변경 지점을 추가해주세요.');return}
+    setLog([]);showProgress('마디별 템포 변경 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);
+        const sorted=[...changes].sort((a,b)=>a.measure-b.measure);
+        let insertCount=0;
+
+        // Work on the first part for direction/sound elements
+        const firstPart=doc.querySelector('part');
+        if(!firstPart)continue;
+        const measures=firstPart.querySelectorAll('measure');
+
+        sorted.forEach(ch=>{
+          const measure=measures[ch.measure-1];
+          if(!measure)return;
+
+          // Check if there's already a direction with sound tempo in this measure
+          let existingSound=null;
+          measure.querySelectorAll('direction sound[tempo]').forEach(s=>{existingSound=s});
+
+          if(existingSound){
+            existingSound.setAttribute('tempo',String(ch.bpm));
+            // Update associated metronome if exists
+            const dir=existingSound.closest('direction');
+            if(dir){const pm=dir.querySelector('per-minute');if(pm)pm.textContent=String(ch.bpm)}
+          }else{
+            // Create new direction with metronome + sound
+            const direction=doc.createElement('direction');
+            direction.setAttribute('placement','above');
+
+            const dirType=doc.createElement('direction-type');
+            const metronome=doc.createElement('metronome');
+            const beatUnit=doc.createElement('beat-unit');
+            beatUnit.textContent='quarter';
+            metronome.appendChild(beatUnit);
+            const perMinute=doc.createElement('per-minute');
+            perMinute.textContent=String(ch.bpm);
+            metronome.appendChild(perMinute);
+            dirType.appendChild(metronome);
+            direction.appendChild(dirType);
+
+            const sound=doc.createElement('sound');
+            sound.setAttribute('tempo',String(ch.bpm));
+            direction.appendChild(sound);
+
+            // Insert before the first note in the measure
+            const firstNote=measure.querySelector('note');
+            if(firstNote)measure.insertBefore(direction,firstNote);
+            else measure.appendChild(direction);
+          }
+          insertCount++;
+        });
+
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${insertCount}개 템포 변경 삽입`,t:'ok'});
+        sorted.forEach(ch=>lines.push({m:`    마디 ${ch.measure} → ${ch.bpm} BPM (${getTempoTerm(ch.bpm)})`}));
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,changes,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">마디별 템포 변경</h2>
+    <p className="panel__description">
+      특정 마디부터 새로운 템포로 전환합니다. 여러 지점을 추가하면 accel., rit., 구간별 템포 전환 등을 표현할 수 있습니다.
+      각 지점에 ♩=BPM 형태의 메트로놈 기호와 sound tempo 속성이 삽입됩니다.
+    </p>
+
+    {totalMeasures>0 && <div className="card">
+      <div className="card__title">📄 악보 정보</div>
+      <div className="card__text">총 {totalMeasures}마디 · 원본 템포: {origBpm} BPM ({getTempoTerm(origBpm)})</div>
+    </div>}
+
+    <div className="card">
+      <div className="card__title">📐 템포 변경 지점 설정</div>
+      <div className="change-list">
+        {changes.map((ch,i)=>
+          <div className="change-entry" key={i}>
+            <div className="change-entry__field change-entry__field--narrow">
+              <span className="change-entry__micro">시작 마디</span>
+              <input className="measure-input" type="number" min={1} max={totalMeasures||9999}
+                value={ch.measure} onChange={e=>updateChange(i,'measure',parseInt(e.target.value)||1)}/>
+            </div>
+            <span className="change-entry__arrow">→</span>
+            <div className="change-entry__field change-entry__field--narrow">
+              <span className="change-entry__micro">BPM</span>
+              <input className="measure-input" type="number" min={20} max={300}
+                value={ch.bpm} onChange={e=>updateChange(i,'bpm',parseInt(e.target.value)||120)}/>
+            </div>
+            <div className="change-entry__field">
+              <span className="change-entry__micro">빠르기</span>
+              <div className="tempo-preset__name">{getTempoTerm(ch.bpm)}</div>
+            </div>
+            <button className="change-entry__remove" onClick={()=>removeChange(i)}>✕</button>
+          </div>
+        )}
+      </div>
+      <div className="btn-row">
+        <button className="btn btn--secondary" onClick={addChange}>+ 템포 변경 지점 추가</button>
+      </div>
+    </div>
+
+    <div className="card">
+      <div className="card__title">🎼 프리셋 빠른 입력</div>
+      <div className="card__text">마지막 항목의 BPM을 프리셋으로 설정합니다.</div>
+      <div className="tempo-presets">
+        {TEMPO_PRESETS.map(p=>
+          <div key={p.name} className="tempo-preset" onClick={()=>{
+            if(changes.length)updateChange(changes.length-1,'bpm',p.bpm);
+          }}>
+            <div className="tempo-preset__name">{p.name}</div>
+            <div className="tempo-preset__range">{p.bpm} BPM</div>
+          </div>
+        )}
+      </div>
+    </div>
+
+    {segments.length>0 && <div className="card">
+      <div className="card__title">👁️ 타임라인 미리보기</div>
+      <div className="timeline">
+        <div className="timeline__track">
+          {segments.map((seg,i)=>{
+            const span=seg.to-seg.from+1;
+            const flexVal=Math.max(span,1);
+            return <div key={i} className={`timeline__segment timeline__segment--${i%8}`}
+              style={{'--seg-flex':flexVal}}>
+              <span className="timeline__segment-label">{seg.bpm}</span>
+              <span className="timeline__segment-range">{seg.term} · m.{seg.from}–{seg.to}</span>
+            </div>;
+          })}
+        </div>
+        <div className="timeline__legend">
+          {segments.map((seg,i)=>
+            <span key={i}><span className={`timeline__legend-dot timeline__segment--${i%8}`}/>{seg.bpm} BPM (마디 {seg.from}–{seg.to})</span>
+          )}
+        </div>
+      </div>
+    </div>}
+
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 템포 변경 실행</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: OSSIA
+   ============================================================== */
+function OssiaPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [startMeasure,setStartMeasure]=useState(1);
+  const [endMeasure,setEndMeasure]=useState(1);
+  const [transposeSemi,setTransposeSemi]=useState(0);
+  const [octaveShift,setOctaveShift]=useState(0);
+  const [ossiaLabel,setOssiaLabel]=useState('Ossia');
+  const [log,setLog]=useState([]);
+
+  const totalMeasures=useMemo(()=>{
+    if(!files.length)return 0;
+    const parts=files[0].xmlDoc.querySelectorAll('part');
+    return parts[0]?.querySelectorAll('measure')?.length||0;
+  },[files]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(startMeasure>endMeasure){alert('시작 마디가 끝 마디보다 클 수 없습니다.');return}
+    setLog([]);showProgress('Ossia 오버레이 생성 중...');
+    await new Promise(r=>setTimeout(r,50));
+
+    // 직접 자식 중 tagName이 일치하는 첫번째 요소 찾기 (":scope >" 대체)
+    const directChild=(parent,tagName)=>{
+      if(!parent)return null;
+      for(const c of parent.children){
+        if(c.tagName.toLowerCase()===tagName.toLowerCase())return c;
+      }
+      return null;
+    };
+
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        try{
+          const ossiaDoc=cloneDoc(file.xmlDoc);
+          const partList=ossiaDoc.querySelector('part-list');
+          const firstPart=ossiaDoc.querySelector('part');
+          if(!partList||!firstPart){
+            lines.push({m:`❌ ${file.name}: part를 찾을 수 없음`,t:'err'});
+            updatedFiles.push(file);continue;
+          }
+
+          // 원본 첫 마디의 attributes 저장
+          const origFirstMeasure=firstPart.querySelector('measure');
+          const origAttrsClone=origFirstMeasure?cloneEl(directChild(origFirstMeasure,'attributes')):null;
+
+          // 여러 part 중 첫번째 part만 남기기
+          const allParts=ossiaDoc.querySelectorAll('part');
+          for(let i=1;i<allParts.length;i++)allParts[i].remove();
+          const allScoreParts=partList.querySelectorAll('score-part');
+          for(let i=1;i<allScoreParts.length;i++)allScoreParts[i].remove();
+          // part-group 제거 (단일 파트이므로 불필요)
+          partList.querySelectorAll('part-group').forEach(el=>el.remove());
+
+          // score-part 정리 및 이름 설정
+          const firstScorePart=partList.querySelector('score-part');
+          if(firstScorePart){
+            Array.from(firstScorePart.children).forEach(c=>{
+              const tn=c.tagName.toLowerCase();
+              if(tn==='part-name'||tn==='part-abbreviation'||tn==='part-name-display'||tn==='part-abbreviation-display')c.remove();
+            });
+            const pn=ossiaDoc.createElement('part-name');
+            pn.textContent=ossiaLabel||'Ossia';
+            firstScorePart.insertBefore(pn,firstScorePart.firstChild);
+          }
+
+          // 범위 외 마디 제거
+          const allMeasures=Array.from(firstPart.querySelectorAll('measure'));
+          allMeasures.forEach((measure,idx)=>{
+            const measureNum=idx+1;
+            if(measureNum<startMeasure||measureNum>endMeasure)measure.remove();
+          });
+
+          const keptMeasures=Array.from(firstPart.querySelectorAll('measure'));
+          if(keptMeasures.length===0){
+            lines.push({m:`❌ ${file.name}: 범위 내 마디가 없음`,t:'err'});
+            updatedFiles.push(file);continue;
+          }
+
+          // 첫번째 남은 마디에 attributes 보정
+          const firstKept=keptMeasures[0];
+          let firstKeptAttrs=directChild(firstKept,'attributes');
+          if(!firstKeptAttrs){
+            if(origAttrsClone){
+              firstKept.insertBefore(origAttrsClone,firstKept.firstChild);
+            }else{
+              // 기본 attributes 생성
+              const a=ossiaDoc.createElement('attributes');
+              const div=ossiaDoc.createElement('divisions');div.textContent='4';a.appendChild(div);
+              const key=ossiaDoc.createElement('key');const f=ossiaDoc.createElement('fifths');f.textContent='0';key.appendChild(f);a.appendChild(key);
+              const time=ossiaDoc.createElement('time');const b=ossiaDoc.createElement('beats');b.textContent='4';time.appendChild(b);const bt=ossiaDoc.createElement('beat-type');bt.textContent='4';time.appendChild(bt);a.appendChild(time);
+              const clef=ossiaDoc.createElement('clef');const s=ossiaDoc.createElement('sign');s.textContent='G';clef.appendChild(s);const ln=ossiaDoc.createElement('line');ln.textContent='2';clef.appendChild(ln);a.appendChild(clef);
+              firstKept.insertBefore(a,firstKept.firstChild);
+            }
+          }else if(origAttrsClone){
+            // 누락된 필수 하위요소 병합
+            ['divisions','key','time','clef','staves'].forEach(tag=>{
+              if(!directChild(firstKeptAttrs,tag)){
+                const el=directChild(origAttrsClone,tag);
+                if(el)firstKeptAttrs.insertBefore(el.cloneNode(true),firstKeptAttrs.firstChild);
+              }
+            });
+          }
+
+          // 마디 번호 재지정 + 변형 + 가사/화음 제거
+          const totalShift=transposeSemi+octaveShift*12;
+          keptMeasures.forEach((measure,idx)=>{
+            measure.setAttribute('number',String(idx+1));
+            if(totalShift!==0){
+              measure.querySelectorAll('note').forEach(note=>{
+                const p=getNotePitch(note);if(!p)return;
+                const np=transposeNote(p.step,p.alter,p.octave,totalShift);
+                setNotePitch(note,np.step,np.alter,np.octave);
+                let acc=note.querySelector('accidental');
+                if(acc){
+                  if(np.alter===1)acc.textContent='sharp';
+                  else if(np.alter===-1)acc.textContent='flat';
+                  else acc.remove();
+                }else if(np.alter!==0){
+                  acc=ossiaDoc.createElement('accidental');
+                  acc.textContent=np.alter===1?'sharp':'flat';
+                  const pi=note.querySelector('pitch');
+                  if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);
+                  else note.appendChild(acc);
+                }
+              });
+            }
+            measure.querySelectorAll('harmony,lyric').forEach(el=>el.remove());
+          });
+
+          // 제목/작곡가/신용 정보만 제거 (defaults는 유지 — OSMD 렌더에 필요)
+          ossiaDoc.querySelectorAll('work,movement-title,movement-number,credit').forEach(el=>el.remove());
+
+          const ossiaMxml=new XMLSerializer().serializeToString(ossiaDoc);
+          console.log('[Ossia] Generated XML length:',ossiaMxml.length,'| kept measures:',keptMeasures.length);
+          updatedFiles.push({...file,ossiaMxml,ossiaMeta:{startMeasure,endMeasure,label:ossiaLabel}});
+          lines.push({m:`✓ ${file.name}: Ossia 오버레이 생성 (마디 ${startMeasure}-${endMeasure})`,t:'ok'});
+          if(totalShift!==0){
+            lines.push({m:`    변형: ${transposeSemi>0?'+':''}${transposeSemi}반음, ${octaveShift>0?'+':''}${octaveShift}옥타브`});
+          }
+        }catch(fileErr){
+          console.error('[Ossia] 파일 처리 에러:',fileErr);
+          lines.push({m:`❌ ${file.name}: ${fileErr.message}`,t:'err'});
+          updatedFiles.push(file);
+        }
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료! 악보 좌측 상단에 Ossia가 표시됩니다.',t:'ok'});
+      setLog(lines);
+    }catch(e){
+      console.error('[Ossia] 전역 에러:',e);
+      setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}]);
+    }
+    hideProgress();
+
+    function cloneEl(el){return el?el.cloneNode(true):null}
+  },[files,startMeasure,endMeasure,transposeSemi,octaveShift,ossiaLabel,showProgress,hideProgress,onFilesUpdate]);
+
+  const clearOssia=useCallback(()=>{
+    if(!files.length)return;
+    const updated=files.map(f=>{const{ossiaMxml,ossiaMeta,...rest}=f;return rest});
+    onFilesUpdate(updated);
+    setLog([{m:'✅ Ossia 오버레이 제거됨',t:'ok'}]);
+  },[files,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">Ossia 마디 추가</h2>
+    <p className="panel__description">
+      선택한 마디 범위에 대체 연주법(Ossia)을 추가합니다. 별도의 파트로 추가되며,
+      조옮김/옥타브 변형을 함께 적용할 수 있습니다. (Finale의 Ossia Staff와 유사)
+    </p>
+
+    {totalMeasures>0 && <div className="card">
+      <div className="card__title">📄 악보 정보</div>
+      <div className="card__text">총 {totalMeasures}마디</div>
+    </div>}
+
+    <div className="card">
+      <div className="card__title">📐 Ossia 적용 마디 범위</div>
+      <div className="change-entry">
+        <div className="change-entry__field change-entry__field--narrow">
+          <span className="change-entry__micro">시작 마디</span>
+          <input className="measure-input" type="number" min={1} max={totalMeasures||9999}
+            value={startMeasure} onChange={e=>setStartMeasure(parseInt(e.target.value)||1)}/>
+        </div>
+        <span className="change-entry__arrow">~</span>
+        <div className="change-entry__field change-entry__field--narrow">
+          <span className="change-entry__micro">끝 마디</span>
+          <input className="measure-input" type="number" min={1} max={totalMeasures||9999}
+            value={endMeasure} onChange={e=>setEndMeasure(parseInt(e.target.value)||1)}/>
+        </div>
+      </div>
+    </div>
+
+    <div className="card">
+      <div className="card__title">🎵 변형 옵션</div>
+      <label className="form-label">조옮김 (반음, -12 ~ +12)</label>
+      <input className="form-input form-input--mono" type="number" value={transposeSemi} min={-12} max={12}
+        onChange={e=>setTransposeSemi(parseInt(e.target.value)||0)}/>
+      <label className="form-label">옥타브 이동 (-2 ~ +2)</label>
+      <input className="form-input form-input--mono" type="number" value={octaveShift} min={-2} max={2}
+        onChange={e=>setOctaveShift(parseInt(e.target.value)||0)}/>
+    </div>
+
+    <div className="card">
+      <div className="card__title">🏷️ Ossia 파트 이름</div>
+      <input className="form-input" type="text" value={ossiaLabel}
+        onChange={e=>setOssiaLabel(e.target.value)} placeholder="Ossia"/>
+    </div>
+
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={run}>▶ Ossia 추가</button>
+      <button className="btn btn--secondary" onClick={clearOssia}>🗑️ Ossia 제거</button>
+    </div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: PARTS
+   ============================================================== */
+function PartsPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [partStates,setPartStates]=useState({});
+  const [log,setLog]=useState([]);
+  const [history,setHistory]=useState([]); /* 되돌리기 스택 */
+
+  const parts=useMemo(()=>{
+    if(!files.length)return[];
+    const pl=files[0].xmlDoc.querySelector('part-list');if(!pl)return[];
+    return Array.from(pl.querySelectorAll('score-part')).map(sp=>({
+      id:sp.getAttribute('id'),name:sp.querySelector('part-name')?.textContent||sp.getAttribute('id')
+    }));
+  },[files]);
+
+  useEffect(()=>{const s={};parts.forEach(p=>s[p.id]=true);setPartStates(s)},[parts]);
+
+  const toggle=useCallback(id=>{setPartStates(s=>({...s,[id]:!s[id]}))},[]);
+
+  const run=useCallback(async()=>{
+    if(!files.length)return;
+    setLog([]);showProgress('파트 추출 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      const keep=Object.entries(partStates).filter(([_,v])=>v).map(([k])=>k);
+      if(!keep.length){setLog([{m:'❌ 최소 1개 파트는 유지해야 합니다.',t:'err'}]);hideProgress();return;}
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);
+        doc.querySelectorAll('part-list score-part').forEach(sp=>{if(!keep.includes(sp.getAttribute('id')))sp.remove()});
+        doc.querySelectorAll('part').forEach(p=>{if(!keep.includes(p.getAttribute('id')))p.remove()});
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${keep.length}파트 유지`,t:'ok'});
+      }
+      /* 실행 전 스냅샷을 스택에 저장 */
+      setHistory(h=>[...h,files]);
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료! (되돌리기 가능)',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,partStates,showProgress,hideProgress,onFilesUpdate]);
+
+  const undo=useCallback(()=>{
+    if(!history.length)return;
+    const prev=history[history.length-1];
+    setHistory(h=>h.slice(0,-1));
+    onFilesUpdate(prev);
+    setLog([{m:`↩ 되돌리기 완료 (남은 단계: ${history.length-1})`,t:'ok'}]);
+  },[history,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">파트 추출 / 삭제</h2>
+    <p className="panel__description">원하는 파트만 남기고 나머지를 삭제합니다. 실행 후 되돌리기가 가능합니다.</p>
+    <div className="card"><div className="card__title">🎼 파트 목록</div>
+      {!parts.length?<div className="card__text">파일을 업로드하면 파트 목록이 표시됩니다.</div>:
+      <div className="parts-list">{parts.map(p=>
+        <div className="parts-list__item" key={p.id}>
+          <div><div className="parts-list__name">{p.name}</div><div className="parts-list__id">{p.id}</div></div>
+          <Toggle on={partStates[p.id]} onClick={()=>toggle(p.id)}/>
+        </div>
+      )}</div>}
+    </div>
+    {history.length>0&&<div className="card">
+      <div className="card__title">↩ 되돌리기</div>
+      <div className="card__text">저장된 단계: {history.length}단계 — 가장 최근 실행을 취소합니다.</div>
+      <div className="btn-row" style={{marginTop:'8px'}}>
+        <button className="btn btn--secondary" onClick={undo}>↩ 되돌리기 ({history.length})</button>
+      </div>
+    </div>}
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={run}>▶ 추출 실행</button>
+    </div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: NOTATION EDITING
+   ============================================================== */
+function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [hideStaff,setHideStaff]=useState({});
+  const [lyrics,setLyrics]=useState(false);
+  const [chords,setChords]=useState(false);
+  const [oneLine,setOneLine]=useState(false);
+  const [slash,setSlash]=useState(false);
+  const [rmAcc,setRmAcc]=useState(true);
+  const [rmKey,setRmKey]=useState(true);
+  const [slashPitch,setSlashPitch]=useState(true);
+  const [slashKeep,setSlashKeep]=useState(false);
+  const [log,setLog]=useState([]);
+  const baselineRef=useRef(null);
+  const lastOutRef=useRef(null);
+
+  useEffect(()=>{
+    if(files===lastOutRef.current)return;
+    baselineRef.current=files.map(f=>({name:f.name,xmlDoc:cloneDoc(f.xmlDoc)}));
+  },[files]);
+
+  const parts=useMemo(()=>{
+    const src=baselineRef.current?.[0]?.xmlDoc||files[0]?.xmlDoc;
+    if(!src)return[];
+    const pl=src.querySelector('part-list');if(!pl)return[];
+    return Array.from(pl.querySelectorAll('score-part')).map(sp=>({
+      id:sp.getAttribute('id'),name:sp.querySelector('part-name')?.textContent||sp.getAttribute('id')
+    }));
+  },[files]);
+
+  useEffect(()=>{const s={};parts.forEach(p=>s[p.id]=false);setHideStaff(s)},[parts]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    const hIds=Object.entries(hideStaff).filter(([_,v])=>v).map(([k])=>k);
+    setLog([]);showProgress('표기 변환 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      const baseline=baselineRef.current||files.map(f=>({name:f.name,xmlDoc:cloneDoc(f.xmlDoc)}));
+      if(!baselineRef.current)baselineRef.current=baseline;
+      for(let fi=0;fi<files.length;fi++){
+        const file=files[fi];const baseDoc=baseline[fi]?.xmlDoc||file.xmlDoc;
+        const doc=cloneDoc(baseDoc);const ch=[];
+        if(hIds.length){hIds.forEach(id=>{doc.querySelector(`part-list score-part[id="${id}"]`)?.remove();doc.querySelector(`part[id="${id}"]`)?.remove()});ch.push(`${hIds.length}파트 제거`)}
+        if(lyrics){const ls=doc.querySelectorAll('lyric');ch.push(`가사 ${ls.length}개 제거`);ls.forEach(l=>l.remove())}
+        if(chords){const hs=doc.querySelectorAll('harmony');ch.push(`코드 ${hs.length}개 제거`);hs.forEach(h=>h.remove())}
+        if(oneLine){
+          doc.querySelectorAll('attributes').forEach(attr=>{
+            let sd=attr.querySelector('staff-details');if(!sd){sd=doc.createElement('staff-details');attr.appendChild(sd)}
+            let sl=sd.querySelector('staff-lines');if(!sl){sl=doc.createElement('staff-lines');sd.appendChild(sl)}sl.textContent='1';
+            if(rmKey){const k=attr.querySelector('key fifths');if(k)k.textContent='0'}
+            let cl=attr.querySelector('clef');if(cl){let sg=cl.querySelector('sign');if(sg)sg.textContent='percussion';let ln=cl.querySelector('line');if(ln)ln.textContent='2'}
+          });
+          let mv=0;doc.querySelectorAll('note').forEach(n=>{const p=n.querySelector('pitch');if(!p)return;
+            p.querySelector('step').textContent='B';p.querySelector('octave').textContent='4';
+            const a=p.querySelector('alter');if(a)a.remove();if(rmAcc){const ac=n.querySelector('accidental');if(ac)ac.remove()}mv++});
+          ch.push(`1줄 보표 (${mv}음표)`);
+        }
+        if(slash){
+          let sc=0;doc.querySelectorAll('note').forEach(n=>{if(n.querySelector('rest'))return;
+            let nh=n.querySelector('notehead');if(!nh){nh=doc.createElement('notehead');insertNoteheadInOrder(n,nh)}
+            nh.textContent='slash';nh.removeAttribute('color');nh.removeAttribute('filled');
+            if(slashPitch){const p=n.querySelector('pitch');if(p){p.querySelector('step').textContent='B';p.querySelector('octave').textContent='4';const a=p.querySelector('alter');if(a)a.remove()}const ac=n.querySelector('accidental');if(ac)ac.remove()}
+            sc++});
+          if(!slashKeep)doc.querySelectorAll('harmony').forEach(h=>h.remove());
+          ch.push(`슬래시 ${sc}개`);
+        }
+        updatedFiles.push({...file,xmlDoc:doc});
+        const label=ch.length?'':' (원본 복원)';
+        lines.push({m:`✓ ${file.name}${label}`,t:'ok'});ch.forEach(c=>lines.push({m:`    ${c}`}));
+      }
+      lastOutRef.current=updatedFiles;
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,hideStaff,lyrics,chords,oneLine,slash,rmAcc,rmKey,slashPitch,slashKeep,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">악보 표기 변환</h2>
+    <p className="panel__description">악보 요소를 숨기거나 변환합니다. 여러 옵션을 동시에 적용할 수 있습니다.</p>
+    <div className="card"><div className="card__title">👁️‍🗨️ 스태프 숨기기</div>
+      {!parts.length?<div className="card__text">파일을 업로드하면 파트 목록이 표시됩니다.</div>:
+      <div className="parts-list">{parts.map(p=>
+        <div className="parts-list__item" key={p.id}>
+          <div><div className="parts-list__name">{p.name}</div>
+            <div className="parts-list__id">{p.id} — <span className={hideStaff[p.id]?'parts-list__status--hidden':'parts-list__status--visible'}>{hideStaff[p.id]?'숨김':'표시'}</span></div>
+          </div>
+          <Toggle on={hideStaff[p.id]} onClick={()=>setHideStaff(s=>({...s,[p.id]:!s[p.id]}))}/>
+        </div>
+      )}</div>}
+    </div>
+    <div className="card"><div className="toggle-row"><div className="card__title">🔇 가사 숨기기</div><Toggle on={lyrics} onClick={()=>setLyrics(!lyrics)}/></div></div>
+    <div className="card"><div className="toggle-row"><div className="card__title">🔇 코드 심볼 숨기기</div><Toggle on={chords} onClick={()=>setChords(!chords)}/></div></div>
+    <div className="card"><div className="toggle-row"><div className="card__title">📏 1줄 보표 변환</div><Toggle on={oneLine} onClick={()=>setOneLine(!oneLine)}/></div>
+      {oneLine && <div className="chip-group section-gap">
+        <Chip on={rmAcc} onClick={()=>setRmAcc(!rmAcc)}>임시표 제거</Chip>
+        <Chip on={rmKey} onClick={()=>setRmKey(!rmKey)}>조표 초기화</Chip>
+      </div>}
+    </div>
+    <div className="card"><div className="toggle-row"><div className="card__title">⧸ 슬래시 음표 변환</div><Toggle on={slash} onClick={()=>setSlash(!slash)}/></div>
+      {slash && <><div className="chip-group section-gap">
+        <Chip on={slashPitch} onClick={()=>setSlashPitch(!slashPitch)}>음높이 B4 통일</Chip>
+        <Chip on={slashKeep} onClick={()=>setSlashKeep(!slashKeep)}>코드 심볼 유지</Chip>
+      </div>
+      <div className="slash-preview section-gap">
+        <div><div className="slash-preview__label">원본</div><div className="slash-preview__original">♩♪♫</div></div>
+        <div className="slash-preview__arrow">→</div>
+        <div><div className="slash-preview__label">슬래시</div><div className="slash-preview__converted">⧸ ⧸ ⧸</div></div>
+      </div></>}
+    </div>
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 표기 변환 실행</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: EXPORT (이미지 / PDF)
+   ============================================================== */
+function ExportPanel({files,showProgress,hideProgress}){
+  const [selIdx,setSelIdx]=useState(0);
+  const [format,setFormat]=useState('png');
+  const [scale,setScale]=useState(1.5);
+  const [bgWhite,setBgWhite]=useState(true);
+  const [previewing,setPreviewing]=useState(false);
+  const [previewReady,setPreviewReady]=useState(false);
+  const [log,setLog]=useState([]);
+  const previewRef=useRef(null);
+  const osmdRef=useRef(null);
+
+  // Detect total measures
+  const totalMeasures=useMemo(()=>{
+    if(!files.length)return 0;
+    return files[0].xmlDoc.querySelector('part')?.querySelectorAll('measure')?.length||0;
+  },[files]);
+
+  // Load preview with OSMD
+  const loadPreview=useCallback(async()=>{
+    if(!files.length||!previewRef.current)return;
+    const file=files[selIdx]||files[0];
+    setPreviewing(true);setPreviewReady(false);
+    try{
+      previewRef.current.innerHTML='';
+      const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(previewRef.current,{
+        autoResize:false,
+        backend:'svg',
+        drawTitle:true,
+        drawComposer:true,
+        drawPartNames:true,
+        drawMeasureNumbers:true,
+      });
+      osmdRef.current=osmd;
+      const xmlStr=new XMLSerializer().serializeToString(file.xmlDoc);
+      await osmd.load(xmlStr);
+      osmd.render();
+      setPreviewReady(true);
+    }catch(e){
+      previewRef.current.innerHTML='';
+      setLog(l=>[...l,{m:'❌ 렌더링 오류: '+e.message,t:'err'}]);
+    }
+    setPreviewing(false);
+  },[files,selIdx]);
+
+  // Export as PNG
+  const exportPNG=useCallback(async()=>{
+    if(!previewRef.current||!previewReady){alert('먼저 미리보기를 실행해주세요.');return}
+    setLog([]);showProgress('PNG 생성 중...');await new Promise(r=>setTimeout(r,100));
+    try{
+      const svgEl=previewRef.current.querySelector('svg');
+      if(!svgEl)throw new Error('SVG를 찾을 수 없습니다.');
+
+      const svgRect=svgEl.getBoundingClientRect();
+      const w=svgRect.width*scale;
+      const h=svgRect.height*scale;
+
+      // Clone SVG and set explicit dimensions
+      const svgClone=svgEl.cloneNode(true);
+      svgClone.setAttribute('width',svgRect.width);
+      svgClone.setAttribute('height',svgRect.height);
+
+      const svgData=new XMLSerializer().serializeToString(svgClone);
+      const svgBlob=new Blob([svgData],{type:'image/svg+xml;charset=utf-8'});
+      const url=URL.createObjectURL(svgBlob);
+
+      const img=new Image();
+      img.onload=()=>{
+        const canvas=document.createElement('canvas');
+        canvas.width=w;canvas.height=h;
+        const ctx=canvas.getContext('2d');
+        if(bgWhite){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h)}
+        ctx.drawImage(img,0,0,w,h);
+        URL.revokeObjectURL(url);
+
+        canvas.toBlob(blob=>{
+          if(!blob){setLog([{m:'❌ PNG 변환 실패',t:'err'}]);hideProgress();return}
+          const fn=files[selIdx]?.name?.replace(/\.(mxl|xml|musicxml)$/i,'')||'score';
+          downloadBlob(blob,fn+'.png');
+          setLog([{m:`✓ ${fn}.png (${Math.round(w)}×${Math.round(h)}px, ${(blob.size/1024).toFixed(0)}KB)`,t:'ok'},{m:'✅ 다운로드 완료!',t:'ok'}]);
+          hideProgress();
+        },'image/png');
+      };
+      img.onerror=()=>{URL.revokeObjectURL(url);setLog([{m:'❌ 이미지 로드 실패',t:'err'}]);hideProgress()};
+      img.src=url;
+    }catch(e){setLog([{m:'❌ '+e.message,t:'err'}]);hideProgress()}
+  },[previewReady,scale,bgWhite,files,selIdx,showProgress,hideProgress]);
+
+  // Export as PDF
+  const exportPDF=useCallback(async()=>{
+    if(!previewRef.current||!previewReady){alert('먼저 미리보기를 실행해주세요.');return}
+    setLog([]);showProgress('PDF 생성 중...');await new Promise(r=>setTimeout(r,100));
+    try{
+      const svgEl=previewRef.current.querySelector('svg');
+      if(!svgEl)throw new Error('SVG를 찾을 수 없습니다.');
+
+      const fn=files[selIdx]?.name?.replace(/\.(mxl|xml|musicxml)$/i,'')||'score';
+      const svgClone=svgEl.cloneNode(true);
+      const svgRect=svgEl.getBoundingClientRect();
+      svgClone.setAttribute('width',svgRect.width);
+      svgClone.setAttribute('height',svgRect.height);
+      const svgData=new XMLSerializer().serializeToString(svgClone);
+
+      const printWindow=window.open('','_blank');
+      if(!printWindow){setLog([{m:'❌ 팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.',t:'err'}]);hideProgress();return}
+
+      printWindow.document.write(`<!DOCTYPE html><html><head><title>${fn}</title>
+        <style>@page{margin:10mm}body{margin:0;padding:0;background:#fff}svg{max-width:100%;height:auto}</style>
+        </head><body>${svgData}</body></html>`);
+      printWindow.document.close();
+
+      setTimeout(()=>{printWindow.print();
+        setLog([{m:`✓ ${fn}.pdf — 인쇄 대화상자에서 "PDF로 저장"을 선택하세요.`,t:'ok'}]);
+        hideProgress();
+      },800);
+    }catch(e){setLog([{m:'❌ '+e.message,t:'err'}]);hideProgress()}
+  },[previewReady,files,selIdx,showProgress,hideProgress]);
+
+  // Export all files as PNG zip
+  const exportAllPNG=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('전체 파일 PNG 변환 중...');
+    try{
+      const zip=new JSZip();const lines=[];
+      const container=document.createElement('div');
+      container.id='osmd-batch-'+Date.now();
+      document.body.appendChild(container);
+
+      for(let fi=0;fi<files.length;fi++){
+        showProgress(`PNG 변환 중... (${fi+1}/${files.length})`);
+        await new Promise(r=>setTimeout(r,50));
+        container.innerHTML='';
+
+        const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(container,{
+          autoResize:false,backend:'svg',drawTitle:true,drawComposer:true,drawPartNames:true,drawMeasureNumbers:true,
+        });
+        const xmlStr=new XMLSerializer().serializeToString(files[fi].xmlDoc);
+        await osmd.load(xmlStr);
+        osmd.render();
+
+        const svgEl=container.querySelector('svg');
+        if(!svgEl){lines.push({m:`⚠ ${files[fi].name}: SVG 렌더링 실패`,t:'warn'});continue}
+
+        const svgRect=svgEl.getBoundingClientRect();
+        const w=svgRect.width*scale;const h=svgRect.height*scale;
+        const svgClone=svgEl.cloneNode(true);
+        svgClone.setAttribute('width',svgRect.width);svgClone.setAttribute('height',svgRect.height);
+        const svgData=new XMLSerializer().serializeToString(svgClone);
+        const svgBlob=new Blob([svgData],{type:'image/svg+xml;charset=utf-8'});
+        const url=URL.createObjectURL(svgBlob);
+
+        const blob=await new Promise((resolve,reject)=>{
+          const img=new Image();
+          img.onload=()=>{
+            const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
+            const ctx=canvas.getContext('2d');
+            if(bgWhite){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h)}
+            ctx.drawImage(img,0,0,w,h);URL.revokeObjectURL(url);
+            canvas.toBlob(b=>b?resolve(b):reject(new Error('toBlob 실패')),'image/png');
+          };
+          img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('이미지 로드 실패'))};
+          img.src=url;
+        });
+
+        const bn=files[fi].name.replace(/\.(mxl|xml|musicxml)$/i,'');
+        zip.file(`${bn}.png`,blob);
+        lines.push({m:`✓ ${bn}.png (${Math.round(w)}×${Math.round(h)}px)`,t:'ok'});
+      }
+
+      document.body.removeChild(container);
+      const zipBlob=await zip.generateAsync({type:'blob'});
+      downloadBlob(zipBlob,'scores_png.zip');
+      lines.push({m:'✅ 전체 다운로드 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,scale,bgWhite,showProgress,hideProgress]);
+
+  // Export SVG directly
+  const exportSVG=useCallback(()=>{
+    if(!previewRef.current||!previewReady){alert('먼저 미리보기를 실행해주세요.');return}
+    const svgEl=previewRef.current.querySelector('svg');
+    if(!svgEl)return;
+    const svgData=new XMLSerializer().serializeToString(svgEl);
+    const blob=new Blob([svgData],{type:'image/svg+xml'});
+    const fn=files[selIdx]?.name?.replace(/\.(mxl|xml|musicxml)$/i,'')||'score';
+    downloadBlob(blob,fn+'.svg');
+    setLog([{m:`✓ ${fn}.svg 다운로드 완료`,t:'ok'}]);
+  },[previewReady,files,selIdx]);
+
+  return <div>
+    <h2 className="panel__heading">이미지 / PDF 내보내기</h2>
+    <p className="panel__description">
+      악보를 PNG 이미지, SVG 벡터 파일, 또는 PDF로 내보냅니다.
+      먼저 미리보기로 렌더링 결과를 확인한 후 원하는 형식으로 저장하세요.
+    </p>
+
+    {files.length>0 && <div className="card">
+      <div className="card__title">📄 파일 선택</div>
+      <select className="form-select" value={selIdx} onChange={e=>setSelIdx(parseInt(e.target.value))}>
+        {files.map((f,i)=><option key={i} value={i}>{f.name}</option>)}
+      </select>
+    </div>}
+
+    <div className="card">
+      <div className="card__title">⚙️ 내보내기 설정</div>
+      <div className="export-settings">
+        <div className="export-settings__row">
+          <div className="export-settings__field">
+            <label className="form-label">배율 (PNG)</label>
+            <select className="form-select" value={scale} onChange={e=>setScale(parseFloat(e.target.value))}>
+              <option value={1}>1× (원본)</option>
+              <option value={1.5}>1.5× (추천)</option>
+              <option value={2}>2× (고해상도)</option>
+              <option value={3}>3× (인쇄용)</option>
+              <option value={4}>4× (초고해상도)</option>
+            </select>
+          </div>
+          <div className="export-settings__field">
+            <label className="form-label">배경</label>
+            <div className="chip-group">
+              <Chip on={bgWhite} onClick={()=>setBgWhite(true)}>흰색 배경</Chip>
+              <Chip on={!bgWhite} onClick={()=>setBgWhite(false)}>투명 배경</Chip>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={loadPreview} disabled={!files.length||previewing}>
+        {previewing?'렌더링 중...':'👁️ 미리보기'}
+      </button>
+    </div>
+
+    <div className="export-preview" ref={previewRef}/>
+
+    {previewReady && <div className="card export-actions-card">
+      <div className="card__title">📤 내보내기</div>
+      <div className="export-actions">
+        <button className="btn btn--primary" onClick={exportPNG}>📷 PNG 저장</button>
+        <button className="btn btn--secondary" onClick={exportSVG}>🖼️ SVG 저장</button>
+        <button className="btn btn--secondary" onClick={exportPDF}>📄 PDF 저장 (인쇄)</button>
+        <button className="btn btn--secondary" onClick={exportAllPNG}>📦 전체 파일 PNG (ZIP)</button>
+      </div>
+    </div>}
+
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: COLOR
+   ============================================================== */
+function ColorPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [doStem,setDoStem]=useState(false);
+  const [log,setLog]=useState([]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('색깔 악보 생성 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);let cnt=0;
+        doc.querySelectorAll('note').forEach(note=>{
+          const p=getNotePitch(note);if(!p)return;
+          const color=NOTE_COLORS[p.step];if(!color)return;
+          note.setAttribute('color',color);
+          let nh=note.querySelector('notehead');if(!nh){nh=doc.createElement('notehead');nh.textContent='normal';insertNoteheadInOrder(note,nh)}
+          nh.setAttribute('color',color);nh.setAttribute('filled','yes');
+          if(doStem){let st=note.querySelector('stem');if(st)st.setAttribute('color',color)}
+          cnt++;
+        });
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${cnt}개 색상 적용`,t:'ok'});
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,doStem,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">색깔 악보 만들기</h2>
+    <p className="panel__description">붐웨이커 색상 체계를 기반으로 음표에 색상을 자동 부여합니다.</p>
+    <div className="card"><div className="card__title">🎨 색상 체계</div>
+      <div className="color-legend">
+        {Object.entries(NOTE_COLORS).map(([n,c])=>
+          <div className="color-swatch" key={n}><div className="color-swatch__dot" style={{'--dot-color':c}}/>{n}</div>
+        )}
+      </div>
+    </div>
+    <div className="card"><div className="card__title">⚙️ 옵션</div>
+      <div className="chip-group"><Chip on={doStem} onClick={()=>setDoStem(!doStem)}>기둥(Stem) 색상</Chip></div>
+    </div>
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 색깔 악보 생성</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: HARMONY STACKING
+   ============================================================== */
+function HarmonyPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [mode,setMode]=useState('up');
+  const [chromatic,setChromatic]=useState(false);
+  const [target,setTarget]=useState('all');
+  const [log,setLog]=useState([]);
+
+  const preview=useMemo(()=>{
+    const notes=['C4','D4','E4','F4','G4','A4','B4'];
+    const doUp=mode==='up'||mode==='both',doDown=mode==='down'||mode==='both';
+    return notes.map(n=>{
+      const p=parseNoteStr(n);const midi=noteToMidi(p.step,p.alter,p.octave);
+      const r=[n];
+      if(doUp)r.push(fmtNote(midiToNote(chromatic?midi+4:getDiaThirdAbove(midi,0))));
+      if(doDown)r.unshift(fmtNote(midiToNote(chromatic?midi-4:getDiaThirdBelow(midi,0))));
+      return{base:n,notes:r};
+    });
+  },[mode,chromatic]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('화성 쌓기 중...');await new Promise(r=>setTimeout(r,50));
+    const doUp=mode==='up'||mode==='both',doDown=mode==='down'||mode==='both';
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);const kr=getKeyRoot(doc);let added=0;
+        const parts=doc.querySelectorAll('part');
+        const tParts=target==='first'?[parts[0]]:Array.from(parts);
+        tParts.forEach(part=>{if(!part)return;
+          part.querySelectorAll('note').forEach(note=>{
+            if(note.querySelector('rest')||note.querySelector('chord'))return;
+            const p=getNotePitch(note);if(!p)return;
+            const midi=noteToMidi(p.step,p.alter,p.octave);
+            const addCN=newMidi=>{
+              const nn=midiToNote(newMidi);const cn=doc.createElement('note');
+              cn.appendChild(doc.createElement('chord'));
+              const pi=doc.createElement('pitch');const st=doc.createElement('step');st.textContent=nn.step;pi.appendChild(st);
+              if(nn.alter!==0){const al=doc.createElement('alter');al.textContent=nn.alter;pi.appendChild(al)}
+              const oc=doc.createElement('octave');oc.textContent=nn.octave;pi.appendChild(oc);cn.appendChild(pi);
+              const dur=note.querySelector('duration');if(dur){const d=doc.createElement('duration');d.textContent=dur.textContent;cn.appendChild(d)}
+              const typ=note.querySelector('type');if(typ){const t=doc.createElement('type');t.textContent=typ.textContent;cn.appendChild(t)}
+              if(note.nextSibling)note.parentNode.insertBefore(cn,note.nextSibling);else note.parentNode.appendChild(cn);
+              added++;
+            };
+            if(doUp)addCN(chromatic?midi+4:getDiaThirdAbove(midi,kr));
+            if(doDown)addCN(chromatic?midi-4:getDiaThirdBelow(midi,kr));
+          });
+        });
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${added}개 화음 추가`,t:'ok'});
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,mode,chromatic,target,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">화성 쌓기</h2>
+    <p className="panel__description">멜로디에 3도 위/아래 화음을 자동으로 추가합니다.</p>
+    <div className="card"><div className="card__title">🔗 모드</div>
+      <div className="chip-group">
+        <Chip on={mode==='up'} onClick={()=>setMode('up')}>3도 위</Chip>
+        <Chip on={mode==='down'} onClick={()=>setMode('down')}>3도 아래</Chip>
+        <Chip on={mode==='both'} onClick={()=>setMode('both')}>위+아래 모두</Chip>
+      </div>
+    </div>
+    <div className="card"><div className="card__title">⚙️ 간격</div>
+      <div className="chip-group">
+        <Chip on={!chromatic} onClick={()=>setChromatic(false)}>다이어토닉 (조성 기반)</Chip>
+        <Chip on={chromatic} onClick={()=>setChromatic(true)}>크로매틱 (항상 장3도)</Chip>
+      </div>
+    </div>
+    <div className="card"><div className="card__title">🎯 대상</div>
+      <select className="form-select" value={target} onChange={e=>setTarget(e.target.value)}>
+        <option value="all">모든 파트</option><option value="first">첫 번째 파트만</option>
+      </select>
+    </div>
+    <div className="card"><div className="card__title">👁️ 미리보기 (C Major)</div>
+      <div className="preview-grid">{preview.map((p,i)=>
+        <div className="preview-cell" key={i}>
+          {p.notes.map((n,j)=><div key={j} className={n===p.base?'preview-cell__top':'preview-cell__bottom preview-cell__bottom--accent'}>{n}</div>)}
+        </div>
+      )}</div>
+    </div>
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 화성 쌓기 실행</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: CHORD TOOLS
+   ============================================================== */
+const KIND_INTERVALS={
+  'major':[0,4,7],'minor':[0,3,7],'augmented':[0,4,8],'diminished':[0,3,6],
+  'dominant':[0,4,7,10],'major-seventh':[0,4,7,11],'minor-seventh':[0,3,7,10],
+  'diminished-seventh':[0,3,6,9],'half-diminished':[0,3,6,10],'minor-major':[0,3,7,11],
+  'augmented-seventh':[0,4,8,10],'suspended-fourth':[0,5,7],'suspended-second':[0,2,7],
+  'major-sixth':[0,4,7,9],'minor-sixth':[0,3,7,9],
+  'dominant-ninth':[0,4,7,10,14],'major-ninth':[0,4,7,11,14],'minor-ninth':[0,3,7,10,14],
+  'dominant-11th':[0,4,7,10,14,17],'major-11th':[0,4,7,11,14,17],'minor-11th':[0,3,7,10,14,17],
+  'dominant-13th':[0,4,7,10,14,17,21],'major-13th':[0,4,7,11,14,17,21],'minor-13th':[0,3,7,10,14,17,21],
+};
+const STEP_SEMI={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
+const PC_STEP_ALTER=[['C',0],['D',-1],['D',0],['E',-1],['E',0],['F',0],['G',-1],['G',0],['A',-1],['A',0],['B',-1],['B',0]];
+
+function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [rules,setRules]=useState([{from:'',to:''}]);
+  const [replaceExisting,setReplaceExisting]=useState(false);
+  const [inv,setInv]=useState(1);
+  const [log,setLog]=useState([]);
+
+  const addRule=useCallback(()=>setRules(r=>[...r,{from:'',to:''}]),[]);
+  const removeRule=useCallback(i=>setRules(r=>r.filter((_,j)=>j!==i)),[]);
+  const updateRule=useCallback((i,field,val)=>setRules(r=>r.map((x,j)=>j===i?{...x,[field]:val}:x)),[]);
+
+  const runReplace=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    const valid=rules.filter(r=>r.from.trim()&&r.to.trim());
+    if(!valid.length){alert('변경 규칙을 입력해주세요.');return}
+    setLog([]);showProgress('코드 변경 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);let cnt=0;
+        doc.querySelectorAll('harmony').forEach(h=>{
+          const cs=harmonyToString(h);
+          valid.forEach(rule=>{if(cs===rule.from){
+            const p=parseChordSymbol(rule.to);if(!p)return;
+            h.querySelector('root root-step').textContent=p.rootStep;
+            let ra=h.querySelector('root root-alter');
+            if(p.rootAlter!==0){if(!ra){ra=doc.createElement('root-alter');h.querySelector('root').appendChild(ra)}ra.textContent=p.rootAlter}
+            else if(ra)ra.remove();
+            h.querySelector('kind').textContent=p.kind;cnt++;
+          }});
+        });
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${cnt}개 변경`,t:'ok'});
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,rules,showProgress,hideProgress,onFilesUpdate]);
+
+  const runAutoInsert=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('코드 분석 & 삽입 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);let ins=0;
+        if(replaceExisting)doc.querySelectorAll('harmony').forEach(h=>h.remove());
+        const parts=doc.querySelectorAll('part');
+        const mc=parts[0]?.querySelectorAll('measure')?.length||0;
+        for(let m=0;m<mc;m++){
+          const ns=[];
+          parts.forEach(part=>{const meas=part.querySelectorAll('measure')[m];if(!meas)return;
+            meas.querySelectorAll('note').forEach(note=>{if(note.querySelector('rest'))return;
+              const p=getNotePitch(note);if(!p)return;ns.push(noteToMidi(p.step,p.alter,p.octave)%12)})});
+          const chord=detectChord(ns);if(!chord||chord==='?')continue;
+          const meas=parts[0].querySelectorAll('measure')[m];if(!meas)continue;
+          if(!replaceExisting&&meas.querySelector('harmony'))continue;
+          const parsed=parseChordSymbol(chord);if(!parsed)continue;
+          const harm=doc.createElement('harmony');const root=doc.createElement('root');
+          const rs=doc.createElement('root-step');rs.textContent=parsed.rootStep;root.appendChild(rs);
+          if(parsed.rootAlter!==0){const ra=doc.createElement('root-alter');ra.textContent=parsed.rootAlter;root.appendChild(ra)}
+          harm.appendChild(root);const kind=doc.createElement('kind');kind.textContent=parsed.kind;harm.appendChild(kind);
+          const fn=meas.querySelector('note');if(fn)meas.insertBefore(harm,fn);else meas.appendChild(harm);ins++;
+        }
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${ins}마디 코드 삽입`,t:'ok'});
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,replaceExisting,showProgress,hideProgress,onFilesUpdate]);
+
+  const runInversion=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress(`${inv}st/nd/rd inversion 적용 중...`);await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);let ok=0,skip=0;
+        doc.querySelectorAll('harmony').forEach(h=>{
+          const rootEl=h.querySelector('root');const kindEl=h.querySelector('kind');
+          if(!rootEl||!kindEl){skip++;return}
+          const rs=rootEl.querySelector('root-step')?.textContent||'';
+          const ra=parseInt(rootEl.querySelector('root-alter')?.textContent||'0');
+          const kind=kindEl.textContent||'major';
+          const intervals=KIND_INTERVALS[kind];if(!intervals){skip++;return}
+          if(inv>=intervals.length){skip++;return}
+          const rootPc=STEP_SEMI[rs];if(rootPc===undefined){skip++;return}
+          const bassPc=((rootPc+ra+intervals[inv])%12+12)%12;
+          const [bStep,bAlter]=PC_STEP_ALTER[bassPc];
+          h.querySelectorAll('inversion').forEach(e=>e.remove());
+          h.querySelectorAll('bass').forEach(e=>e.remove());
+          const invEl=doc.createElement('inversion');invEl.textContent=String(inv);
+          if(kindEl.nextSibling)kindEl.parentNode.insertBefore(invEl,kindEl.nextSibling);else kindEl.parentNode.appendChild(invEl);
+          const bass=doc.createElement('bass');
+          const bs=doc.createElement('bass-step');bs.textContent=bStep;bass.appendChild(bs);
+          if(bAlter!==0){const baEl=doc.createElement('bass-alter');baEl.textContent=String(bAlter);bass.appendChild(baEl)}
+          if(invEl.nextSibling)invEl.parentNode.insertBefore(bass,invEl.nextSibling);else invEl.parentNode.appendChild(bass);
+          ok++;
+        });
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${ok}개 적용${skip?`, ${skip}개 생략`:''}`,t:'ok'});
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 자리바꿈 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,inv,showProgress,hideProgress,onFilesUpdate]);
+
+  const runInversionReset=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('원위치 복원 중...');await new Promise(r=>setTimeout(r,50));
+    const lines=[];const updatedFiles=[];
+    for(const file of files){
+      const doc=cloneDoc(file.xmlDoc);let n=0;
+      doc.querySelectorAll('harmony').forEach(h=>{
+        const invEl=h.querySelector('inversion');const bassEl=h.querySelector('bass');
+        if(invEl){invEl.remove();n++}if(bassEl){bassEl.remove();n++}
+      });
+      updatedFiles.push({...file,xmlDoc:doc});
+      lines.push({m:`✓ ${file.name}: ${n}개 요소 제거`,t:'ok'});
+    }
+    onFilesUpdate(updatedFiles);
+    lines.push({m:'✅ 원위치 복원 완료',t:'ok'});setLog(lines);hideProgress();
+  },[files,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">코드 도구</h2>
+    <p className="panel__description">코드 심볼을 일괄 변경하거나, 마디별 음표 분석을 통해 코드를 자동 삽입합니다.</p>
+    <div className="card"><div className="card__title">🔄 코드 심볼 일괄 변경</div>
+      <div className="card__text">기존 코드 기호를 찾아 다른 코드로 일괄 교체합니다.</div>
+      {rules.map((r,i)=>
+        <div className="chord-rule" key={i}>
+          <input className="form-input form-input--mono" placeholder="원본 (예: Am)" value={r.from} onChange={e=>updateRule(i,'from',e.target.value)}/>
+          <span className="chord-rule__arrow">→</span>
+          <input className="form-input form-input--mono" placeholder="변경 (예: Am7)" value={r.to} onChange={e=>updateRule(i,'to',e.target.value)}/>
+          <button className="chord-rule__remove" onClick={()=>removeRule(i)}>✕</button>
+        </div>
+      )}
+      <button className="btn btn--secondary" onClick={addRule}>+ 규칙 추가</button>
+      <div className="btn-row"><button className="btn btn--primary" onClick={runReplace}>▶ 코드 일괄 변경</button></div>
+    </div>
+    <div className="card"><div className="card__title">🎸 코드 자동 분석 & 삽입</div>
+      <div className="card__text">수직적 음표를 마디 단위로 분석하여 코드를 악보 상단에 자동 삽입합니다.</div>
+      <div className="chip-group"><Chip on={replaceExisting} onClick={()=>setReplaceExisting(!replaceExisting)}>기존 코드 덮어쓰기</Chip></div>
+      <div className="btn-row"><button className="btn btn--primary" onClick={runAutoInsert}>▶ 코드 분석 & 삽입</button></div>
+    </div>
+    <div className="card"><div className="card__title">🔁 코드 자리바꿈 (Inversion)</div>
+      <div className="card__text">모든 코드 기호에 자리바꿈 번호와 베이스 음을 지정합니다. (예: C major + 1st → C/E)</div>
+      <div className="chip-group">
+        <Chip on={inv===1} onClick={()=>setInv(1)}>1st inversion</Chip>
+        <Chip on={inv===2} onClick={()=>setInv(2)}>2nd inversion</Chip>
+        <Chip on={inv===3} onClick={()=>setInv(3)}>3rd inversion</Chip>
+        <Chip on={inv===4} onClick={()=>setInv(4)}>4th inversion</Chip>
+        <Chip on={inv===5} onClick={()=>setInv(5)}>5th inversion</Chip>
+      </div>
+      <div className="btn-row">
+        <button className="btn btn--primary" onClick={runInversion}>▶ 자리바꿈 적용</button>
+        <button className="btn btn--secondary" onClick={runInversionReset}>↺ 원위치</button>
+      </div>
+    </div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: NUMBER NOTATION
+   ============================================================== */
+function NumberingPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [mode,setMode]=useState('solfege');
+  const [showOct,setShowOct]=useState(true);
+  const [showSharp,setShowSharp]=useState(false);
+  const [keepLyrics,setKeepLyrics]=useState(false);
+  const [log,setLog]=useState([]);
+  const baselineRef=useRef(null);
+  const lastOutRef=useRef(null);
+
+  useEffect(()=>{
+    if(files===lastOutRef.current)return;
+    baselineRef.current=files.map(f=>({name:f.name,xmlDoc:cloneDoc(f.xmlDoc)}));
+  },[files]);
+
+  const preview=useMemo(()=>{
+    if(mode==='original')return[];
+    const ex=[{s:'C',a:0,o:4},{s:'D',a:0,o:4},{s:'E',a:0,o:4},{s:'F',a:0,o:4},{s:'G',a:0,o:4},{s:'A',a:0,o:4},{s:'B',a:0,o:4},{s:'C',a:0,o:5},{s:'F',a:1,o:4}];
+    return ex.map(n=>({note:n.s+(n.a===1?'#':n.a===-1?'♭':'')+n.o,num:noteToNumStr(n.s,n.a,n.o,0,mode,showOct,showSharp)}));
+  },[mode,showOct,showSharp]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress(mode==='original'?'기존 가사 복원 중...':'숫자 악보 생성 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      const baseline=baselineRef.current||files.map(f=>({name:f.name,xmlDoc:cloneDoc(f.xmlDoc)}));
+      if(!baselineRef.current)baselineRef.current=baseline;
+      for(let fi=0;fi<files.length;fi++){
+        const file=files[fi];
+        if(mode==='original'){
+          const baseDoc=baseline[fi]?.xmlDoc;
+          if(!baseDoc){lines.push({m:`⚠ ${file.name}: 원본 정보 없음`,t:'warn'});continue}
+          const doc=cloneDoc(file.xmlDoc);
+          const baseNotes=baseDoc.querySelectorAll('note');
+          const curNotes=doc.querySelectorAll('note');
+          let cnt=0;
+          curNotes.forEach((note,i)=>{
+            note.querySelectorAll('lyric').forEach(l=>l.remove());
+            const src=baseNotes[i];if(!src)return;
+            src.querySelectorAll('lyric').forEach(origLyric=>{
+              note.appendChild(doc.importNode(origLyric,true));cnt++;
+            });
+          });
+          updatedFiles.push({...file,xmlDoc:doc});
+          lines.push({m:`✓ ${file.name}: ${cnt}개 원본 가사 복원`,t:'ok'});
+          continue;
+        }
+        const doc=cloneDoc(file.xmlDoc);const kr=getKeyRoot(doc);let cnt=0;
+        doc.querySelectorAll('note').forEach(note=>{
+          if(note.querySelector('rest'))return;
+          const p=getNotePitch(note);if(!p)return;
+          const numStr=noteToNumStr(p.step,p.alter,p.octave,kr,mode,showOct,showSharp);
+          let ln=1;
+          if(keepLyrics){note.querySelectorAll('lyric').forEach(l=>{const n=parseInt(l.getAttribute('number')||'1');if(n>=ln)ln=n+1})}
+          else note.querySelectorAll('lyric').forEach(l=>l.remove());
+          const lyric=doc.createElement('lyric');lyric.setAttribute('number',String(ln));
+          const syl=doc.createElement('syllabic');syl.textContent='single';lyric.appendChild(syl);
+          const txt=doc.createElement('text');txt.textContent=numStr;lyric.appendChild(txt);
+          note.appendChild(lyric);cnt++;
+        });
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${cnt}개 숫자 삽입`,t:'ok'});
+      }
+      lastOutRef.current=updatedFiles;
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,mode,showOct,showSharp,keepLyrics,showProgress,hideProgress,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">숫자 악보</h2>
+    <p className="panel__description">음높이를 숫자로 변환하여 가사(Lyric) 위치에 삽입합니다.</p>
+    <div className="card"><div className="card__title">🔢 번호 체계</div>
+      <div className="chip-group">
+        <Chip on={mode==='solfege'} onClick={()=>setMode('solfege')}>숫자 (도=1)</Chip>
+        <Chip on={mode==='fixed'} onClick={()=>setMode('fixed')}>고정 도법 (C=1)</Chip>
+        <Chip on={mode==='movable'} onClick={()=>setMode('movable')}>이동 도법</Chip>
+        <Chip on={mode==='korean'} onClick={()=>setMode('korean')}>한국어 계이름</Chip>
+      </div>
+    </div>
+    <div className="card"><div className="card__title">⚙️ 옵션</div>
+      <div className="chip-group">
+        <Chip on={showOct} onClick={()=>setShowOct(!showOct)}>옥타브 점 표시</Chip>
+        <Chip on={showSharp} onClick={()=>setShowSharp(!showSharp)}># / ♭ 표시</Chip>
+        <Chip on={keepLyrics} onClick={()=>setKeepLyrics(!keepLyrics)}>기존 가사 유지</Chip>
+      </div>
+    </div>
+    <div className="card"><div className="card__title">👁️ 미리보기</div>
+      <div className="preview-grid">{preview.map((p,i)=>
+        <div className="preview-cell preview-cell--number" key={i}>
+          <div className="preview-cell__note-label">{p.note}</div>
+          <div className="preview-cell__number-value">{p.num}</div>
+        </div>
+      )}</div>
+    </div>
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 숫자 악보 생성</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: LYRIC STYLE
+   ============================================================== */
+const LYRIC_FONT_FAMILIES=[
+  {id:'',label:'기본값'},
+  {id:'Malgun Gothic',label:'맑은 고딕'},
+  {id:'Nanum Gothic',label:'나눔고딕'},
+  {id:'Nanum Myeongjo',label:'나눔명조'},
+  {id:'Gothic',label:'고딕'},
+  {id:'Times New Roman',label:'Times New Roman'},
+  {id:'Arial',label:'Arial'},
+  {id:'Georgia',label:'Georgia'},
+  {id:'Courier New',label:'Courier New'},
+  {id:'Comic Sans MS',label:'Comic Sans MS'},
+];
+
+function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [size,setSize]=useState(10);
+  const [applySize,setApplySize]=useState(true);
+  const [bold,setBold]=useState(false);
+  const [applyBold,setApplyBold]=useState(true);
+  const [italic,setItalic]=useState(false);
+  const [applyItalic,setApplyItalic]=useState(true);
+  const [family,setFamily]=useState('');
+  const [applyFamily,setApplyFamily]=useState(false);
+  const [log,setLog]=useState([]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('가사 스타일 적용 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);let cnt=0;
+        doc.querySelectorAll('lyric').forEach(lyric=>{
+          const targets=lyric.querySelectorAll('text, syllabic, elision, extend');
+          const texts=lyric.querySelectorAll('text');
+          if(!texts.length)return;
+          texts.forEach(t=>{
+            if(applySize)t.setAttribute('font-size',String(size));
+            if(applyBold)t.setAttribute('font-weight',bold?'bold':'normal');
+            if(applyItalic)t.setAttribute('font-style',italic?'italic':'normal');
+            if(applyFamily){if(family)t.setAttribute('font-family',family);else t.removeAttribute('font-family')}
+            cnt++;
+          });
+        });
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${cnt}개 가사 텍스트 수정`,t:'ok'});
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 가사 스타일 적용 완료',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,size,applySize,bold,applyBold,italic,applyItalic,family,applyFamily,showProgress,hideProgress,onFilesUpdate]);
+
+  const runReset=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('가사 스타일 초기화 중...');await new Promise(r=>setTimeout(r,50));
+    const lines=[];const updatedFiles=[];
+    for(const file of files){
+      const doc=cloneDoc(file.xmlDoc);let cnt=0;
+      doc.querySelectorAll('lyric text').forEach(t=>{
+        ['font-size','font-weight','font-style','font-family','color'].forEach(a=>t.removeAttribute(a));cnt++;
+      });
+      updatedFiles.push({...file,xmlDoc:doc});
+      lines.push({m:`✓ ${file.name}: ${cnt}개 초기화`,t:'ok'});
+    }
+    onFilesUpdate(updatedFiles);
+    lines.push({m:'✅ 초기화 완료',t:'ok'});setLog(lines);hideProgress();
+  },[files,showProgress,hideProgress,onFilesUpdate]);
+
+  const runColorByPitch=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('계이름 색상 적용 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];const updatedFiles=[];
+      for(const file of files){
+        const doc=cloneDoc(file.xmlDoc);let cnt=0;let skipRest=0;
+        doc.querySelectorAll('note').forEach(note=>{
+          const lyrics=note.querySelectorAll('lyric');if(!lyrics.length)return;
+          if(note.querySelector('rest')){skipRest++;return}
+          const p=getNotePitch(note);if(!p)return;
+          const color=NOTE_COLORS[p.step];if(!color)return;
+          lyrics.forEach(lyric=>{
+            lyric.querySelectorAll('text').forEach(t=>{t.setAttribute('color',color);cnt++});
+          });
+        });
+        updatedFiles.push({...file,xmlDoc:doc});
+        lines.push({m:`✓ ${file.name}: ${cnt}개 가사에 계이름 색상 적용`,t:'ok'});
+      }
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 가사 색상 적용 완료',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,showProgress,hideProgress,onFilesUpdate]);
+
+  const previewStyle={
+    fontSize:applySize?`${size*1.5}px`:undefined,
+    fontWeight:applyBold?(bold?'bold':'normal'):undefined,
+    fontStyle:applyItalic?(italic?'italic':'normal'):undefined,
+    fontFamily:applyFamily&&family?family:undefined,
+  };
+
+  return <div>
+    <h2 className="panel__heading">가사 스타일</h2>
+    <p className="panel__description">악보 내 모든 가사(lyric)의 글꼴·크기·굵기·기울기를 일괄 변경합니다.</p>
+
+    <div className="card"><div className="card__title">🔠 크기</div>
+      <div className="chip-group"><Chip on={applySize} onClick={()=>setApplySize(!applySize)}>크기 적용</Chip></div>
+      <label className="form-label">폰트 크기 (pt)</label>
+      <input className="form-input form-input--mono" type="number" value={size} min={4} max={72}
+        onChange={e=>setSize(parseFloat(e.target.value)||10)} disabled={!applySize}/>
+    </div>
+
+    <div className="card"><div className="card__title">𝐁 굵기</div>
+      <div className="chip-group">
+        <Chip on={applyBold} onClick={()=>setApplyBold(!applyBold)}>굵기 적용</Chip>
+        <Chip on={bold} onClick={()=>setBold(!bold)}>Bold</Chip>
+      </div>
+    </div>
+
+    <div className="card"><div className="card__title">𝐼 기울기</div>
+      <div className="chip-group">
+        <Chip on={applyItalic} onClick={()=>setApplyItalic(!applyItalic)}>기울기 적용</Chip>
+        <Chip on={italic} onClick={()=>setItalic(!italic)}>Italic</Chip>
+      </div>
+    </div>
+
+    <div className="card"><div className="card__title">🔤 글꼴</div>
+      <div className="chip-group"><Chip on={applyFamily} onClick={()=>setApplyFamily(!applyFamily)}>글꼴 적용</Chip></div>
+      <div className="chip-group">
+        {LYRIC_FONT_FAMILIES.map(f=><Chip key={f.id||'default'} on={family===f.id} onClick={()=>setFamily(f.id)}>{f.label}</Chip>)}
+      </div>
+    </div>
+
+    <div className="card"><div className="card__title">👁️ 미리보기</div>
+      <div style={{padding:'12px',background:'#fff',border:'1px solid #e5e7eb',borderRadius:'6px',textAlign:'center',...previewStyle}}>
+        나는 가사입니다 Lyric Sample
+      </div>
+    </div>
+
+    <div className="card"><div className="card__title">🎨 계이름 색상으로 가사 채색</div>
+      <div className="card__text">각 음표(C·D·E·F·G·A·B)의 고유 색상을 해당 가사 텍스트에 적용합니다.</div>
+      <div className="chip-group">
+        {Object.entries(NOTE_COLORS).map(([n,c])=>
+          <span key={n} style={{display:'inline-flex',alignItems:'center',gap:'4px',padding:'4px 8px',border:'1px solid #e5e7eb',borderRadius:'4px',marginRight:'4px'}}>
+            <span style={{width:'10px',height:'10px',borderRadius:'50%',background:c,display:'inline-block'}}/>
+            <span style={{color:c,fontWeight:'bold'}}>{n}</span>
+          </span>
+        )}
+      </div>
+      <div className="btn-row"><button className="btn btn--primary" onClick={runColorByPitch}>▶ 계이름 색상 적용</button></div>
+    </div>
+
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={run}>▶ 가사 스타일 적용</button>
+      <button className="btn btn--secondary" onClick={runReset}>↺ 초기화</button>
+    </div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: CHORD ANALYSIS
+   ============================================================== */
+function ChordsPanel({files,showProgress,hideProgress}){
+  const [log,setLog]=useState([]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('코드 분석 중...');await new Promise(r=>setTimeout(r,50));
+    const lines=[];
+    for(const file of files){
+      lines.push({m:`── ${file.name} ──`,t:'info'});
+      const parts=file.xmlDoc.querySelectorAll('part');
+      const mc=parts[0]?.querySelectorAll('measure')?.length||0;
+      for(let m=0;m<mc;m++){
+        const ns=[];
+        parts.forEach(part=>{const meas=part.querySelectorAll('measure')[m];if(!meas)return;
+          meas.querySelectorAll('note').forEach(note=>{if(note.querySelector('rest'))return;
+            const p=getNotePitch(note);if(!p)return;ns.push(noteToMidi(p.step,p.alter,p.octave)%12)})});
+        const chord=detectChord(ns);
+        if(chord)lines.push({m:`  마디 ${m+1}: ${chord}`});
+      }
+    }
+    lines.push({m:'✅ 분석 완료',t:'ok'});setLog(lines);hideProgress();
+  },[files,showProgress,hideProgress]);
+
+  const runIdentify=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('코드 기호 파악 중...');await new Promise(r=>setTimeout(r,50));
+    const lines=[];let grandTotal=0;const grandTally={};
+    for(const file of files){
+      lines.push({m:`── ${file.name} ──`,t:'info'});
+      const parts=file.xmlDoc.querySelectorAll('part');
+      const mc=parts[0]?.querySelectorAll('measure')?.length||0;
+      const tally={};let count=0;
+      for(let m=0;m<mc;m++){
+        const seen=[];
+        parts.forEach(part=>{const meas=part.querySelectorAll('measure')[m];if(!meas)return;
+          meas.querySelectorAll('harmony').forEach(h=>{
+            const cs=harmonyToString(h);if(!cs)return;
+            seen.push(cs);tally[cs]=(tally[cs]||0)+1;grandTally[cs]=(grandTally[cs]||0)+1;count++;grandTotal++;
+          });
+        });
+        if(seen.length)lines.push({m:`  마디 ${m+1}: ${seen.join(', ')}`});
+      }
+      if(!count){lines.push({m:'  (코드 기호 없음)',t:'warn'});continue}
+      const sorted=Object.entries(tally).sort((a,b)=>b[1]-a[1]);
+      lines.push({m:`  총 ${count}개 · 고유 ${sorted.length}종: ${sorted.map(([k,v])=>`${k}(${v})`).join(', ')}`,t:'ok'});
+    }
+    if(files.length>1&&grandTotal){
+      const sorted=Object.entries(grandTally).sort((a,b)=>b[1]-a[1]);
+      lines.push({m:`── 전체 합계 ──`,t:'info'});
+      lines.push({m:`총 ${grandTotal}개 · 고유 ${sorted.length}종: ${sorted.map(([k,v])=>`${k}(${v})`).join(', ')}`,t:'ok'});
+    }
+    lines.push({m:'✅ 코드 기호 파악 완료',t:'ok'});setLog(lines);hideProgress();
+  },[files,showProgress,hideProgress]);
+
+  return <div>
+    <h2 className="panel__heading">코드 분석</h2>
+    <p className="panel__description">악보에 존재하는 코드 기호(harmony)를 파악하거나, 수직 음향을 분석해 마디별 코드를 추출합니다.</p>
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={runIdentify}>🔖 코드 기호 파악</button>
+      <button className="btn btn--secondary" onClick={run}>▶ 수직 음향 분석</button>
+    </div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: STATISTICS
+   ============================================================== */
+function StatsPanel({files,showProgress,hideProgress}){
+  const [basicData,setBasicData]=useState(null);
+  const [composerData,setComposerData]=useState(null);
+
+  const runBasic=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    showProgress('통계 분석 중...');await new Promise(r=>setTimeout(r,50));
+    const nc={C:0,D:0,E:0,F:0,G:0,A:0,B:0};const rc={};
+    let tn=0,tr=0,tm=0,lo=127,hi=0;
+    const rKo={whole:'온음표',half:'2분음표',quarter:'4분음표',eighth:'8분음표','16th':'16분음표','32nd':'32분음표',
+      '점whole':'점온음표','점half':'점2분음표','점quarter':'점4분음표','점eighth':'점8분음표'};
+    for(const file of files){
+      const doc=file.xmlDoc;tm+=doc.querySelectorAll('measure').length;
+      doc.querySelectorAll('note').forEach(note=>{
+        if(note.querySelector('rest')){tr++;return}
+        const p=getNotePitch(note);if(!p)return;tn++;nc[p.step]=(nc[p.step]||0)+1;
+        const midi=noteToMidi(p.step,p.alter,p.octave);if(midi<lo)lo=midi;if(midi>hi)hi=midi;
+        const te=note.querySelector('type');if(te){let rn=te.textContent;if(note.querySelector('dot'))rn='점'+rn;rc[rn]=(rc[rn]||0)+1}
+      });
+    }
+    const loN=lo<127?midiToNote(lo):null;const hiN=hi>0?midiToNote(hi):null;
+    const rcDisplay={};Object.entries(rc).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>{rcDisplay[rKo[k]||k]=v});
+    setBasicData({fileCount:files.length,totalNotes:tn,totalRests:tr,totalMeasures:tm,
+      lowest:fmtNote(loN),highest:fmtNote(hiN),noteCounts:nc,rhythmCounts:rcDisplay});
+    hideProgress();
+  },[files,showProgress,hideProgress]);
+
+  const runComposer=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    showProgress('작곡 스타일 분석 중...');await new Promise(r=>setTimeout(r,50));
+    const allIv={},allProg={},phrases=[];
+    let tn=0,tm=0,steps=0,leaps=0,reps=0;
+    const ksc={},tsc={},tempos=[];let rMin=127,rMax=0;
+    for(const file of files){
+      const doc=file.xmlDoc;const measures=doc.querySelectorAll('part:first-of-type > measure');tm+=measures.length;
+      const ks=doc.querySelector('key fifths');if(ks){const k=ks.textContent;ksc[k]=(ksc[k]||0)+1}
+      const ts=doc.querySelector('time');if(ts){const sig=(ts.querySelector('beats')?.textContent||'?')+'/'+(ts.querySelector('beat-type')?.textContent||'?');tsc[sig]=(tsc[sig]||0)+1}
+      const snd=doc.querySelector('sound[tempo]');if(snd)tempos.push(parseFloat(snd.getAttribute('tempo')));
+      let prevChord=null,pLen=0;
+      measures.forEach(measure=>{const ns=[];
+        measure.querySelectorAll('note').forEach(note=>{if(note.querySelector('rest')){if(pLen>0){phrases.push(pLen);pLen=0}return}
+          tn++;pLen++;const p=getNotePitch(note);if(!p)return;
+          const midi=noteToMidi(p.step,p.alter,p.octave);if(midi<rMin)rMin=midi;if(midi>rMax)rMax=midi;
+          ns.push(midi%12)});
+        const chord=detectChord(ns);if(chord&&prevChord){const pr=prevChord+' → '+chord;allProg[pr]=(allProg[pr]||0)+1}if(chord)prevChord=chord;
+      });if(pLen>0)phrases.push(pLen);
+      let pm=null;doc.querySelectorAll('part:first-of-type note').forEach(note=>{
+        if(note.querySelector('rest')||note.querySelector('chord'))return;
+        const p=getNotePitch(note);if(!p)return;const midi=noteToMidi(p.step,p.alter,p.octave);
+        if(pm!==null){const iv=Math.abs(midi-pm);allIv[getIntervalName(Math.min(iv,12))]=(allIv[getIntervalName(Math.min(iv,12))]||0)+1;
+          if(iv===0)reps++;else if(iv<=2)steps++;else leaps++}pm=midi});
+    }
+    const move=steps+leaps+reps||1;
+    const avgPh=phrases.length?(phrases.reduce((a,b)=>a+b,0)/phrases.length).toFixed(1):'-';
+    const avgTm=tempos.length?(tempos.reduce((a,b)=>a+b,0)/tempos.length).toFixed(0):'-';
+    const topProg={};Object.entries(allProg).sort((a,b)=>b[1]-a[1]).slice(0,10).forEach(([k,v])=>topProg[k]=v);
+    const pBk={};phrases.forEach(l=>{const b=l<=4?'1-4':l<=8?'5-8':l<=12?'9-12':l<=16?'13-16':'17+';pBk[b]=(pBk[b]||0)+1});
+    const topKeys=Object.entries(ksc).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>{const idx=KEY_FIFTHS.indexOf(parseInt(k));return{name:idx>=0?KEY_NAMES[idx]:k,count:v}});
+    const topTime=Object.entries(tsc).sort((a,b)=>b[1]-a[1]).slice(0,5);
+    setComposerData({fileCount:files.length,totalNotes:tn,totalMeasures:tm,avgTempo:avgTm,
+      lowest:fmtNote(rMin<127?midiToNote(rMin):null),highest:fmtNote(rMax>0?midiToNote(rMax):null),
+      avgPhrase:avgPh,stepPct:(steps/move*100).toFixed(1),leapPct:(leaps/move*100).toFixed(1),repPct:(reps/move*100).toFixed(1),
+      topKeys,topTime,intervals:allIv,progressions:topProg,phraseBuckets:pBk});
+    hideProgress();
+  },[files,showProgress,hideProgress]);
+
+  return <div>
+    <h2 className="panel__heading">통계 분석</h2>
+    <p className="panel__description">음표 빈도, 리듬 패턴, 음정 도약, 코드 진행 등을 분석합니다.</p>
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={runBasic}>▶ 기본 분석</button>
+      <button className="btn btn--secondary" onClick={runComposer}>📋 작곡 스타일 분석</button>
+    </div>
+
+    {basicData && <div>
+      <div className="stats-row">
+        <div className="stat-tile"><div className="stat-tile__value">{basicData.fileCount}</div><div className="stat-tile__label">파일 수</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{basicData.totalNotes}</div><div className="stat-tile__label">총 음표</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{basicData.totalRests}</div><div className="stat-tile__label">총 쉼표</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{basicData.totalMeasures}</div><div className="stat-tile__label">총 마디</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{basicData.lowest}</div><div className="stat-tile__label">최저음</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{basicData.highest}</div><div className="stat-tile__label">최고음</div></div>
+      </div>
+      <div className="card"><div className="card__title">📊 음표 분포</div>
+        <BarChart data={basicData.noteCounts} labelWidth={48}/></div>
+      <div className="card"><div className="card__title">🎵 리듬 유형</div>
+        <BarChart data={basicData.rhythmCounts} labelWidth={80}/></div>
+    </div>}
+
+    {composerData && <div>
+      <div className="stats-row">
+        <div className="stat-tile"><div className="stat-tile__value">{composerData.fileCount}</div><div className="stat-tile__label">분석 곡 수</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{composerData.totalNotes}</div><div className="stat-tile__label">총 음표</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{composerData.totalMeasures}</div><div className="stat-tile__label">총 마디</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{composerData.avgTempo}</div><div className="stat-tile__label">평균 BPM</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{composerData.lowest}–{composerData.highest}</div><div className="stat-tile__label">음역대</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{composerData.avgPhrase}</div><div className="stat-tile__label">평균 프레이즈</div></div>
+      </div>
+      <div className="card"><div className="card__title">음직임 패턴</div>
+        <div className="composer-movement">
+          <span className="composer-metric--step">순차: {composerData.stepPct}%</span>{' · '}
+          <span className="composer-metric--leap">도약: {composerData.leapPct}%</span>{' · '}
+          <span className="composer-metric--repeat">반복: {composerData.repPct}%</span>
+        </div>
+        <div className="composer-keys">
+          조성: {composerData.topKeys.map(k=><span key={k.name}><span className="composer-tag">{k.name}</span>({k.count}곡) </span>)}<br/>
+          박자: {composerData.topTime.map(([t,v])=><span key={t}><span className="composer-tag">{t}</span>({v}곡) </span>)}
+        </div>
+      </div>
+      <div className="card"><div className="card__title">📊 음정 도약 분포</div>
+        <BarChart data={composerData.intervals} barColor="var(--green)" labelWidth={80}/></div>
+      <div className="card"><div className="card__title">🎹 코드 진행 Top 10</div>
+        <BarChart data={composerData.progressions} barColor="var(--amber)" labelWidth={140}/></div>
+      <div className="card"><div className="card__title">📏 프레이즈 길이</div>
+        <BarChart data={composerData.phraseBuckets} labelWidth={48}/></div>
+    </div>}
+  </div>;
+}
+
+/* ==============================================================
+   PANEL: CLEF
+   ============================================================== */
+const CLEF_SYMBOLS={treble:'𝄞',bass:'𝄢',alto:'𝄡',tenor:'𝄡',neutral:'𝄥'};
+
+function ClefPanel({files,showProgress,hideProgress,onFilesUpdate}){
+  const [targetClef,setTargetClef]=useState('treble');
+  const [autoTranspose,setAutoTranspose]=useState(true);
+  const [log,setLog]=useState([]);
+
+  const currentClef=useMemo(()=>{
+    if(!files.length)return null;
+    return getCurrentClef(files[0].xmlDoc);
+  },[files]);
+
+  const run=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    setLog([]);showProgress('음자리표 변환 중...');
+    await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[];
+      const cfg=CLEF_CONFIGS.find(c=>c.id===targetClef);
+      const updatedFiles=files.map(file=>{
+        const doc=cloneDoc(file.xmlDoc);
+
+        // Compute octave shift to bring notes into the new clef's range
+        let semiShift=0;
+        if(autoTranspose&&cfg.center!==null){
+          const pitchedNotes=[...doc.querySelectorAll('note')].filter(n=>!n.querySelector('rest')&&getNotePitch(n));
+          if(pitchedNotes.length>0){
+            const avgMidi=pitchedNotes.reduce((s,n)=>{
+              const p=getNotePitch(n);return s+noteToMidi(p.step,p.alter,p.octave);
+            },0)/pitchedNotes.length;
+            semiShift=Math.round((cfg.center-avgMidi)/12)*12;
+          }
+        }
+
+        // Apply octave transposition to all pitched notes
+        if(semiShift!==0){
+          doc.querySelectorAll('note').forEach(note=>{
+            const p=getNotePitch(note);if(!p)return;
+            const np=transposeNote(p.step,p.alter,p.octave,semiShift);
+            setNotePitch(note,np.step,np.alter,np.octave);
+            let acc=note.querySelector('accidental');
+            if(acc){if(np.alter===1)acc.textContent='sharp';else if(np.alter===-1)acc.textContent='flat';else acc.remove();}
+          });
+        }
+
+        // Update clef element in every attributes block
+        doc.querySelectorAll('attributes').forEach(attr=>{
+          let clefEl=attr.querySelector('clef');
+          if(!clefEl){clefEl=doc.createElement('clef');attr.appendChild(clefEl);}
+          let signEl=clefEl.querySelector('sign');
+          if(!signEl){signEl=doc.createElement('sign');clefEl.insertBefore(signEl,clefEl.firstChild);}
+          signEl.textContent=cfg.sign;
+          let lineEl=clefEl.querySelector('line');
+          if(cfg.sign==='percussion'){if(lineEl)lineEl.remove();}
+          else{
+            if(!lineEl){lineEl=doc.createElement('line');clefEl.appendChild(lineEl);}
+            lineEl.textContent=cfg.line;
+          }
+        });
+
+        const shiftStr=semiShift!==0?` (${semiShift>0?'+':''}${semiShift}반음 이동)`:'';
+        lines.push({m:`✓ ${file.name} → ${cfg.label}${shiftStr}`,t:'ok'});
+        return{...file,xmlDoc:doc};
+      });
+      onFilesUpdate(updatedFiles);
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    hideProgress();
+  },[files,targetClef,autoTranspose,showProgress,hideProgress,onFilesUpdate]);
+
+  const currentCfg=CLEF_CONFIGS.find(c=>c.id===currentClef);
+
+  return <div>
+    <h2 className="panel__heading">음자리표 변환</h2>
+    <p className="panel__description">음자리표를 변환합니다. 자동 조옮김 옵션을 켜면 새 음자리표의 음역대에 맞게 옥타브 단위로 자동 이동합니다.</p>
+
+    {currentClef&&<div className="card">
+      <div className="card__title">현재 음자리표</div>
+      <div style={{display:'flex',alignItems:'center',gap:'10px',padding:'6px 0'}}>
+        <span style={{fontSize:'32px',fontFamily:"'Bravura','FreeSerif','Times New Roman',serif",lineHeight:1}}>{CLEF_SYMBOLS[currentClef]}</span>
+        <div>
+          <div style={{fontWeight:600,fontSize:'13px'}}>{currentCfg?.label}</div>
+          <div style={{fontSize:'11px',color:'var(--text-muted)'}}>{currentCfg?.sub}</div>
+        </div>
+      </div>
+    </div>}
+
+    <div className="card">
+      <div className="card__title">🎼 목표 음자리표</div>
+      <div className="clef-grid">
+        {CLEF_CONFIGS.map(cfg=>(
+          <div key={cfg.id}
+            className={`clef-btn${targetClef===cfg.id?' clef-btn--selected':''}`}
+            onClick={()=>setTargetClef(cfg.id)}>
+            <div className="clef-btn__symbol">{CLEF_SYMBOLS[cfg.id]}</div>
+            <div className="clef-btn__label">{cfg.label}</div>
+            <div className="clef-btn__sub">{cfg.sub}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+    <div className="card">
+      <div className="toggle-row">
+        <div className="card__title">🔀 음역대 자동 조옮김</div>
+        <Toggle on={autoTranspose} onClick={()=>setAutoTranspose(v=>!v)}/>
+      </div>
+      {autoTranspose&&targetClef!=='neutral'&&(
+        <div className="card__text">모든 음표를 새 음자리표 중심 음역대로 옥타브 단위 자동 이동합니다.</div>
+      )}
+    </div>
+
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={run}>▶ 변환 실행</button>
+    </div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
+   SCORE VIEW — center panel always-visible score renderer
+   ============================================================== */
+function applyLyricStylesToSvg(container,xmlDoc){
+  const svg=container.querySelector('svg');if(!svg)return;
+  const specs=[];
+  xmlDoc.querySelectorAll('lyric text').forEach(t=>{
+    const fs=t.getAttribute('font-size'),fw=t.getAttribute('font-weight'),
+      fst=t.getAttribute('font-style'),ff=t.getAttribute('font-family'),col=t.getAttribute('color');
+    if(!fs&&!fw&&!fst&&!ff&&!col)return;
+    specs.push({text:(t.textContent||'').trim(),fs,fw,fst,ff,col});
+  });
+  if(!specs.length)return;
+  const byText=new Map();
+  specs.forEach(s=>{const k=s.text;if(!k)return;if(!byText.has(k))byText.set(k,[]);byText.get(k).push(s)});
+  const used=new Map();
+  Array.from(svg.querySelectorAll('text')).forEach(el=>{
+    const key=(el.textContent||'').trim();if(!key||!byText.has(key))return;
+    const list=byText.get(key);const i=used.get(key)||0;if(i>=list.length)return;
+    const spec=list[i];used.set(key,i+1);
+    if(spec.fs)el.setAttribute('font-size',spec.fs);
+    if(spec.fw)el.setAttribute('font-weight',spec.fw);
+    if(spec.fst)el.setAttribute('font-style',spec.fst);
+    if(spec.ff)el.setAttribute('font-family',spec.ff);
+    if(spec.col){el.setAttribute('fill',spec.col);el.setAttribute('stroke',spec.col)}
+  });
+}
+
+/* ==============================================================
+   MENUBAR — top dropdown menu for all panels
+   ============================================================== */
+function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF,files}){
+  const [open,setOpen]=useState(null);
+  const [ddPos,setDdPos]=useState({top:78,left:0});
+  const navRef=useRef();
+
+  useEffect(()=>{
+    if(!open)return;
+    const handler=e=>{if(navRef.current&&!navRef.current.contains(e.target))setOpen(null)};
+    document.addEventListener('mousedown',handler);
+    return()=>document.removeEventListener('mousedown',handler);
+  },[open]);
+
+  const openMenu=useCallback((id,e)=>{
+    const rect=e.currentTarget.getBoundingClientRect();
+    setDdPos({top:rect.bottom+2,left:rect.left});
+    setOpen(o=>o===id?null:id);
+  },[]);
+
+  const sel=useCallback((side,id)=>{
+    if(side==='left')onSelectLeft(id);else onSelectRight(id);
+    setOpen(null);
+  },[onSelectLeft,onSelectRight]);
+
+  const close=useCallback(fn=>{fn();setOpen(null);},[]);
+
+  const groups=[
+    {id:'file',label:'파일',items:[
+      {icon:'📂',label:'파일 업로드',         onClick:()=>sel('left','upload')},
+      {sep:true},
+      {icon:'⬇',label:'MXL 내보내기',         onClick:()=>close(onExportMXL), dis:!files.length},
+      {icon:'🖼',label:'PNG 내보내기',         onClick:()=>close(onExportPNG), dis:!files.length},
+      {icon:'📄',label:'PDF 내보내기',         onClick:()=>close(onExportPDF), dis:!files.length},
+    ]},
+    {id:'transform',label:'변환',items:[
+      {icon:'🔄',label:'조옮김 (Transpose)',   onClick:()=>sel('left','transpose')},
+      {icon:'🔀',label:'마디별 조바꿈',        onClick:()=>sel('left','keychange')},
+      {icon:'🎸',label:'카포 (Capo)',           onClick:()=>sel('left','capo')},
+      {icon:'𝄞', label:'음자리표 변환',        onClick:()=>sel('left','clef')},
+    ]},
+    {id:'range',label:'음역 / 악기',items:[
+      {icon:'🎵',label:'음역대 자동 조정',     onClick:()=>sel('left','range')},
+      {icon:'🎺',label:'이조 악기 변환',       onClick:()=>sel('left','instrument')},
+    ]},
+    {id:'tempo',label:'템포',items:[
+      {icon:'⏱',label:'템포 조절',             onClick:()=>sel('left','tempo')},
+      {icon:'📐',label:'마디별 템포 변경',     onClick:()=>sel('left','tempochange')},
+    ]},
+    {id:'score',label:'악보 편집',items:[
+      {icon:'🎶',label:'Ossia 마디 추가',      onClick:()=>sel('left','ossia')},
+      {sep:true},
+      {icon:'🎼',label:'파트 추출 / 삭제',    onClick:()=>sel('right','parts')},
+      {icon:'✏️',label:'악보 표기 변환',       onClick:()=>sel('right','notation')},
+      {icon:'📤',label:'이미지 / PDF 내보내기',onClick:()=>sel('right','export')},
+    ]},
+    {id:'tools',label:'도구',items:[
+      {icon:'🎨',label:'색깔 악보',            onClick:()=>sel('right','color')},
+      {icon:'🔗',label:'화성 쌓기',            onClick:()=>sel('right','harmony')},
+      {icon:'🔧',label:'코드 도구',            onClick:()=>sel('right','chordtools')},
+      {icon:'🔢',label:'숫자 악보',            onClick:()=>sel('right','numbering')},
+      {icon:'🔡',label:'가사 스타일',          onClick:()=>sel('right','lyricstyle')},
+    ]},
+    {id:'analysis',label:'분석',items:[
+      {icon:'🎸',label:'코드 분석',            onClick:()=>sel('right','chords')},
+      {icon:'📊',label:'통계 분석',            onClick:()=>sel('right','stats')},
+    ]},
+  ];
+
+  const activeGroup=groups.find(g=>g.id===open);
+
+  return <nav className="menubar" ref={navRef}>
+    {groups.map((g,gi)=><React.Fragment key={g.id}>
+      {gi===1&&<div className="menubar__sep"/>}
+      <button
+        className={`menubar__btn${open===g.id?' menubar__btn--open':''}`}
+        onClick={e=>openMenu(g.id,e)}>
+        {g.label}
+      </button>
+    </React.Fragment>)}
+    {activeGroup&&<div className="menubar__dropdown" style={{top:ddPos.top,left:ddPos.left}}>
+      {activeGroup.items.map((item,i)=>
+        item.sep
+          ?<div key={i} className="menubar__dropdown-sep"/>
+          :<button key={i} className="menubar__dropdown-item" onClick={item.onClick} disabled={item.dis}>
+              <span style={{width:'18px',textAlign:'center',flexShrink:0}}>{item.icon}</span>
+              {item.label}
+            </button>
+      )}
+    </div>}
+  </nav>;
+}
+
+function ScoreView({files,activeFile,onOsmdReady}){
+  const containerRef=useRef(null);
+  const ossiaRef=useRef(null);
+  const osmdRef=useRef(null);
+  const ossiaOsmdRef=useRef(null);
+  const [rendered,setRendered]=useState(false);
+
+  useEffect(()=>{
+    if(!files.length||!containerRef.current){setRendered(false);if(onOsmdReady)onOsmdReady(null);return}
+    const file=files[activeFile]||files[0];
+    let cancelled=false;
+    if(onOsmdReady)onOsmdReady(null);
+    (async()=>{
+      try{
+        containerRef.current.innerHTML='';
+        const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(containerRef.current,{
+          autoResize:true,backend:'svg',drawTitle:true,drawComposer:true,
+          drawPartNames:true,drawMeasureNumbers:true,
+        });
+        osmdRef.current=osmd;
+        await osmd.load(new XMLSerializer().serializeToString(file.xmlDoc));
+        if(cancelled)return;
+        osmd.render();
+        if(onOsmdReady)onOsmdReady(osmd);
+        applyLyricStylesToSvg(containerRef.current,file.xmlDoc);
+
+        // Ossia 오버레이 렌더링 (있는 경우)
+        if(ossiaRef.current){
+          ossiaRef.current.innerHTML='';
+          if(file.ossiaMxml){
+            try{
+              const ossiaOsmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(ossiaRef.current,{
+                autoResize:false,backend:'svg',drawTitle:false,drawComposer:false,
+                drawPartNames:true,drawMeasureNumbers:true,drawCredits:false,
+              });
+              ossiaOsmdRef.current=ossiaOsmd;
+              await ossiaOsmd.load(file.ossiaMxml);
+              if(cancelled)return;
+              ossiaOsmd.zoom=0.65;
+              ossiaOsmd.render();
+            }catch(oe){
+              ossiaRef.current.innerHTML='<div style="padding:8px;color:#c33;font-size:11px">Ossia 렌더링 실패: '+oe.message+'</div>';
+            }
+          }
+        }
+
+        setRendered(true);
+      }catch(e){
+        if(containerRef.current)containerRef.current.innerHTML='<div style="text-align:center;color:#aeaeb2;padding:40px">렌더링 실패: '+e.message+'</div>';
+      }
+    })();
+    return()=>{cancelled=true};
+  },[files,activeFile]);
+
+  if(!files.length)return <div className="main-score">
+    <div className="score-empty">
+      <div className="score-empty__staff">
+        <div className="score-empty__line"/>
+        <div className="score-empty__line"/>
+        <div className="score-empty__line"/>
+        <div className="score-empty__line"/>
+        <div className="score-empty__line"/>
+      </div>
+      <div className="score-empty__title">메인 악보 편집 영역</div>
+      <div className="score-empty__subtitle">좌측 인스펙터에서 파일을 업로드하세요</div>
+    </div>
+  </div>;
+
+  return <div className="main-score">
+    <div className="score-container" ref={containerRef}/>
+    <div className="ossia-overlay" ref={ossiaRef}/>
+  </div>;
+}
+
+/* ==============================================================
+   TRANSPORT BAR — bottom playback / tempo bar
+   ============================================================== */
+function TransportBar({files,bpm,onBpmChange,osmdRef}){
+  const [isPlaying,setIsPlaying]=useState(false);
+  const timerRef=useRef(null);
+  const playingRef=useRef(false);
+  const bpmRef=useRef(bpm);
+
+  useEffect(()=>{bpmRef.current=bpm;},[bpm]);
+
+  const fileCount=files.length;
+  const totalNotes=useMemo(()=>{
+    let n=0;files.forEach(f=>{n+=f.xmlDoc.querySelectorAll('note:not([rest])').length});return n;
+  },[files]);
+  const totalMeasures=useMemo(()=>{
+    if(!files.length)return 0;
+    return files[0].xmlDoc.querySelector('part')?.querySelectorAll('measure')?.length||0;
+  },[files]);
+
+  /* ── 정지 (내부용) ── */
+  const doStop=useCallback(()=>{
+    clearTimeout(timerRef.current);
+    timerRef.current=null;
+    playingRef.current=false;
+    setIsPlaying(false);
+  },[]);
+
+  /* 파일 바뀌면 자동 정지 */
+  useEffect(()=>{doStop();},[files,doStop]);
+
+  /* ── 한 스텝씩 커서 전진 ── */
+  const tick=useCallback(()=>{
+    const osmd=osmdRef?.current;
+    if(!osmd?.cursor||!playingRef.current)return;
+    try{
+      /* 현재 음표 길이(4분음표 단위) 읽기 → 다음 tick 간격 계산 */
+      let qLen=1;
+      try{
+        const notes=osmd.cursor.NotesUnderCursor?.();
+        if(notes&&notes.length>0&&notes[0].length?.realValue)
+          qLen=notes[0].length.realValue;
+      }catch(_){}
+      const ms=Math.max(60,Math.round(qLen*(60000/bpmRef.current)));
+
+      timerRef.current=setTimeout(()=>{
+        if(!playingRef.current)return;
+        const o=osmdRef?.current;
+        if(!o?.cursor)return;
+        if(o.cursor.Iterator?.EndReached){doStop();return;}
+        o.cursor.next();
+        if(o.cursor.Iterator?.EndReached){doStop();return;}
+        tick();
+      },ms);
+    }catch(e){doStop();}
+  },[osmdRef,doStop]);
+
+  /* ── 재생 / 일시정지 ── */
+  const handlePlay=useCallback(()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return;}
+    const osmd=osmdRef?.current;
+    if(!osmd?.cursor){alert('악보가 아직 렌더링되지 않았습니다.');return;}
+    if(playingRef.current){doStop();return;}       /* 일시정지 */
+    try{
+      osmd.cursor.show();
+      playingRef.current=true;
+      setIsPlaying(true);
+      tick();
+    }catch(e){doStop();}
+  },[files.length,osmdRef,doStop,tick]);
+
+  /* ── 정지 + 처음으로 ── */
+  const handleStop=useCallback(()=>{
+    doStop();
+    try{const osmd=osmdRef?.current;if(osmd?.cursor){osmd.cursor.reset();osmd.cursor.show();}}catch(_){}
+  },[osmdRef,doStop]);
+
+  /* ── 처음으로 (재생 상태 유지) ── */
+  const handleRewind=useCallback(()=>{
+    const wasPlaying=playingRef.current;
+    doStop();
+    try{
+      const osmd=osmdRef?.current;
+      if(osmd?.cursor){osmd.cursor.reset();osmd.cursor.show();}
+    }catch(_){}
+    if(wasPlaying){
+      playingRef.current=true;
+      setIsPlaying(true);
+      tick();
+    }
+  },[osmdRef,doStop,tick]);
+
+  return <div className="transport">
+    <div className="transport-inner">
+      <div className="transport__section">
+        <button className="transport__btn" onClick={handleRewind} title="처음으로">⏮</button>
+        <button
+          className={`transport__btn transport__btn--play${isPlaying?' transport__btn--playing':''}`}
+          onClick={handlePlay}
+          title={isPlaying?'일시정지':'재생'}>
+          {isPlaying?'⏸':'▶'}
+        </button>
+        <button className="transport__btn" onClick={handleStop} title="정지 / 처음으로">⏹</button>
+      </div>
+
+      <div className="transport__divider"/>
+
+      <div className="transport__section">
+        <div>
+          <div className="transport__label">Tempo</div>
+          <div className="transport__value transport__value--accent">{bpm} BPM</div>
+        </div>
+        <input className="transport__tempo-slider" type="range" min={20} max={300} value={bpm}
+          onChange={e=>onBpmChange(parseInt(e.target.value))}/>
+      </div>
+
+      <div className="transport__divider"/>
+
+      <div className="transport__section">
+        <div>
+          <div className="transport__label">마디</div>
+          <div className="transport__value">{totalMeasures}</div>
+        </div>
+      </div>
+
+      <div className="transport__divider"/>
+
+      <div className="transport__section">
+        <div>
+          <div className="transport__label">음표</div>
+          <div className="transport__value">{totalNotes}</div>
+        </div>
+      </div>
+
+      <div className="transport__section--right">
+        <div>
+          <div className="transport__label">파일</div>
+          <div className="transport__value">{fileCount}개</div>
+        </div>
+      </div>
+    </div>
+  </div>;
+}
+
+/* ==============================================================
+   APP — IDE 4-panel grid layout
+   ============================================================== */
+
+/* Activity bar icons — left strip */
+const LEFT_ACTIVITY_ITEMS=[
+  {id:'upload',icon:'📂'},{id:'sep1',sep:true},
+  {id:'transpose',icon:'transpose_svg'},{id:'keychange',icon:'🔀'},{id:'capo',icon:'capo_svg'},
+  {id:'range',icon:'panflute_svg'},{id:'instrument',icon:'🎺'},{id:'tempo',icon:'⏱️'},
+  {id:'tempochange',icon:'📐'},{id:'ossia',icon:'🎶'},{id:'clef',icon:'𝄞'},
+];
+
+/* Activity bar icons — right strip */
+const RIGHT_ACTIVITY_ITEMS=[
+  {id:'parts',icon:'🎼'},{id:'sep2',sep:true},
+  {id:'notation',icon:'✏️'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
+  {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
+  {id:'numbering',icon:'🔢'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
+  {id:'chords',icon:'🎸'},{id:'stats',icon:'📊'},
+];
+
+const RIGHT_PANEL_IDS=new Set(RIGHT_ACTIVITY_ITEMS.filter(i=>!i.sep).map(i=>i.id));
+
+/* Panel labels for inspector header */
+const PANEL_LABELS={
+  upload:'파일 업로드',transpose:'조옮김',keychange:'마디별 조바꿈',capo:'카포 (Capo)',
+  range:'음역대 조정',instrument:'이조 악기',tempo:'템포 조절',tempochange:'마디별 템포',
+  ossia:'Ossia 마디',clef:'음자리표 변환',
+  parts:'파트 추출',notation:'악보 표기 변환',export:'이미지 / PDF',
+  color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
+  lyricstyle:'가사 스타일',chords:'코드 분석',stats:'통계 분석',
+};
+
+function App(){
+  const [leftPanel,setLeftPanel]=useState('upload');
+  const [rightPanel,setRightPanel]=useState('chords');
+  const [files,setFiles]=useState([]);
+  const [activeFile,setActiveFile]=useState(0);
+  const [showLeft,setShowLeft]=useState(true);
+  const [showRight,setShowRight]=useState(true);
+  const [progress,setProgress]=useState({visible:false,msg:''});
+  const [bpm,setBpm]=useState(120);
+  const osmdRef=useRef(null);
+  const handleOsmdReady=useCallback(osmd=>{osmdRef.current=osmd;},[]);
+
+  const showProgress=useCallback(msg=>setProgress({visible:true,msg}),[]);
+  const hideProgress=useCallback(()=>setProgress({visible:false,msg:''}),[]);
+
+  /* Detect tempo from first file */
+  useEffect(()=>{
+    if(!files.length)return;
+    const doc=files[0].xmlDoc;
+    const s=doc.querySelector('sound[tempo]');
+    if(s){const t=parseFloat(s.getAttribute('tempo'));if(t>0){setBpm(t);return}}
+    const pm=doc.querySelector('metronome per-minute');
+    if(pm){const t=parseFloat(pm.textContent);if(t>0){setBpm(t);return}}
+    setBpm(120);
+  },[files]);
+
+  const addFiles=useCallback(async(fileList)=>{
+    showProgress('파일 읽는 중...');
+    const newFiles=[];
+    for(const file of fileList){
+      try{
+        const ext=file.name.split('.').pop().toLowerCase();
+        let xmlString;
+        if(ext==='mxl'){
+          const zip=await JSZip.loadAsync(file);let xmlFile=null;
+          const container=zip.file('META-INF/container.xml');
+          if(container){const cx=await container.async('string');const cd=new DOMParser().parseFromString(cx,'text/xml');
+            const rf=cd.querySelector('rootfile');if(rf){xmlFile=zip.file(rf.getAttribute('full-path'))}}
+          if(!xmlFile)zip.forEach((path,entry)=>{if(!entry.dir&&path.endsWith('.xml')&&!path.startsWith('META-INF'))xmlFile=entry});
+          if(!xmlFile)throw new Error('XML not found in MXL');
+          xmlString=await xmlFile.async('string');
+        }else{xmlString=await file.text()}
+        const xmlDoc=new DOMParser().parseFromString(xmlString,'text/xml');
+        if(xmlDoc.querySelector('parsererror'))throw new Error('XML 파싱 오류');
+        newFiles.push({name:file.name,xmlDoc,xmlString});
+      }catch(e){alert(`${file.name}: ${e.message}`)}
+    }
+    setFiles(f=>[...f,...newFiles]);hideProgress();
+  },[showProgress,hideProgress]);
+
+  const removeFile=useCallback(i=>{setFiles(f=>f.filter((_,j)=>j!==i));if(activeFile>=files.length-1)setActiveFile(Math.max(0,files.length-2))},[activeFile,files.length]);
+  const clearFiles=useCallback(()=>{setFiles([]);setActiveFile(0)},[]);
+
+  const updateFiles=useCallback(newFiles=>setFiles(newFiles),[]);
+  const panelProps={files,showProgress,hideProgress,onFilesUpdate:updateFiles};
+
+  const exportMXL=useCallback(()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    const file=files[activeFile]||files[0];
+    const xmlStr=new XMLSerializer().serializeToString(file.xmlDoc);
+    const blob=new Blob([xmlStr],{type:'text/xml'});
+    downloadBlob(blob,file.name.replace(/\.(mxl|xml|musicxml)$/i,'')+'.xml');
+  },[files,activeFile]);
+
+  const exportPNG=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    const svgEl=document.querySelector('.main-score svg');
+    if(!svgEl){alert('악보가 렌더링되지 않았습니다.');return}
+    showProgress('PNG 생성 중...');
+    try{
+      const svgRect=svgEl.getBoundingClientRect();
+      const scale=2;
+      const w=svgRect.width*scale;const h=svgRect.height*scale;
+      const svgClone=svgEl.cloneNode(true);
+      svgClone.setAttribute('width',svgRect.width);svgClone.setAttribute('height',svgRect.height);
+      const svgData=new XMLSerializer().serializeToString(svgClone);
+      const svgBlob=new Blob([svgData],{type:'image/svg+xml;charset=utf-8'});
+      const url=URL.createObjectURL(svgBlob);
+      const img=new Image();
+      img.onload=()=>{
+        const canvas=document.createElement('canvas');
+        canvas.width=w;canvas.height=h;
+        const ctx=canvas.getContext('2d');
+        ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h);
+        ctx.drawImage(img,0,0,w,h);
+        URL.revokeObjectURL(url);
+        canvas.toBlob(blob=>{
+          if(!blob){hideProgress();return}
+          const fn=(files[activeFile]||files[0]).name.replace(/\.(mxl|xml|musicxml)$/i,'');
+          downloadBlob(blob,fn+'.png');
+          hideProgress();
+        },'image/png');
+      };
+      img.onerror=()=>{URL.revokeObjectURL(url);hideProgress()};
+      img.src=url;
+    }catch(e){alert(e.message);hideProgress()}
+  },[files,activeFile,showProgress,hideProgress]);
+
+  const exportPDF=useCallback(()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    const svgEl=document.querySelector('.main-score svg');
+    if(!svgEl){alert('악보가 렌더링되지 않았습니다.');return}
+    const fn=(files[activeFile]||files[0]).name.replace(/\.(mxl|xml|musicxml)$/i,'');
+    const svgClone=svgEl.cloneNode(true);
+    const svgRect=svgEl.getBoundingClientRect();
+    svgClone.setAttribute('width',svgRect.width);svgClone.setAttribute('height',svgRect.height);
+    const svgData=new XMLSerializer().serializeToString(svgClone);
+    const win=window.open('','_blank');
+    if(!win){alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.');return}
+    win.document.write(`<!DOCTYPE html><html><head><title>${fn}</title><style>@page{margin:10mm}body{margin:0;padding:0;background:#fff}svg{max-width:100%;height:auto}</style></head><body>${svgData}</body></html>`);
+    win.document.close();
+    setTimeout(()=>win.print(),800);
+  },[files,activeFile]);
+
+  const selectLeftPanel=useCallback(id=>{setLeftPanel(id);setShowLeft(true);},[]);
+  const selectRightPanel=useCallback(id=>{setRightPanel(id);setShowRight(true);},[]);
+
+  const ALL_PANELS={
+    upload:<UploadPanel files={files} onFilesAdd={addFiles} onRemove={removeFile} onClear={clearFiles}/>,
+    transpose:<TransposePanel {...panelProps}/>,
+    keychange:<KeyChangePanel {...panelProps}/>,
+    capo:<CapoPanel {...panelProps}/>,
+    range:<RangePanel {...panelProps}/>,
+    instrument:<InstrumentPanel {...panelProps}/>,
+    tempo:<TempoPanel {...panelProps}/>,
+    tempochange:<TempoChangePanel {...panelProps}/>,
+    ossia:<OssiaPanel {...panelProps}/>,
+    clef:<ClefPanel {...panelProps}/>,
+    parts:<PartsPanel {...panelProps}/>,
+    notation:<NotationPanel {...panelProps}/>,
+    export:<ExportPanel {...panelProps}/>,
+    color:<ColorPanel {...panelProps}/>,
+    harmony:<HarmonyPanel {...panelProps}/>,
+    chordtools:<ChordToolsPanel {...panelProps}/>,
+    numbering:<NumberingPanel {...panelProps}/>,
+    lyricstyle:<LyricStylePanel {...panelProps}/>,
+    chords:<ChordsPanel {...panelProps}/>,
+    stats:<StatsPanel {...panelProps}/>,
+  };
+
+  const rootClass=`app-root${!showLeft?' app-root--left-closed':''}${!showRight?' app-root--right-closed':''}`;
+
+  return <div className={rootClass}>
+    {/* ── HEADER (메뉴바 포함) ── */}
+    <header className="header">
+      <div className="header__left">
+        <div className="header__brand">
+          <div className="header__icon">♫</div>
+          <h1 className="header__title">악보 디자이너</h1>
+        </div>
+      </div>
+      <MenuBar
+        onSelectLeft={selectLeftPanel}
+        onSelectRight={selectRightPanel}
+        onExportMXL={exportMXL}
+        onExportPNG={exportPNG}
+        onExportPDF={exportPDF}
+        files={files}
+      />
+      <div className="header__right">
+        <button className={`header__toggle${showLeft?' header__toggle--active':''}`}
+          onClick={()=>setShowLeft(!showLeft)} title="인스펙터 토글">☰</button>
+        <div className="header__badge">파일 {files.length}개</div>
+        <div className="header__export-group">
+          <button className="header__export-btn" onClick={exportMXL} disabled={!files.length} title="MXL 내보내기">MXL</button>
+          <button className="header__export-btn" onClick={exportPNG} disabled={!files.length} title="PNG 내보내기">PNG</button>
+          <button className="header__export-btn" onClick={exportPDF} disabled={!files.length} title="PDF 내보내기">PDF</button>
+        </div>
+      </div>
+    </header>
+
+    {/* ── LEFT ACTIVITY BAR (icon strip) ── */}
+    <nav className="activity-bar">
+      {LEFT_ACTIVITY_ITEMS.map(item=>
+        item.sep
+          ? <div className="activity-bar__sep" key={item.id}/>
+          : <button key={item.id}
+              className={`activity-bar__btn${leftPanel===item.id?' activity-bar__btn--active':''}`}
+              onClick={()=>{setLeftPanel(item.id);if(!showLeft)setShowLeft(true)}}
+              title={PANEL_LABELS[item.id]||item.id}>
+              {item.icon==='capo_svg'?<svg id="Fill" enableBackground="new 0 0 64 64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><g><g><g><path d="m53.9844437 12.04v1.2600002l-22.1299992 3.71-9.5599995 1.6100006c-2.1276703.2700176-2.8390522 3.2936745-1.0499039 4.4800148 4.4422474 3.2166824 24.5818214 17.7894573 29.4199028 21.2899837l-.4599991.5900002-18.4500007-11.2000007c-.2600002-.1499977-.5799999-.1800003-.8600006-.079998-.2799988.0999985-.5099983.3199997-.6099987.6100006l-4.1800003 12.0099983h-1.2900009l3.4400005-13.8400002c.1000004-.4300003-.0799999-.8699989-.4599991-1.1000004l-9.9099998-6.0099983c-1.2125359-.7878056-2.9595737.191925-2.9099655 1.6400509-.0032091 6.0960388.0022526 18.8394089-.0000353 24.9899483h-2.3599997l-2.5799999-32.2999992c-.3102512-3.0670624 2.248661-5.9857826 5.3400478-6.0399542-.0000486-.0000468 38.6099511-1.6200466 38.6099511-1.6200466zm-36.0699997 6.8399992c-.101759-3.9959745-5.9388266-3.9951725-6.0399981.0000916.1043539 3.9818439 5.9362364 3.981039 6.0399981-.0000916z" fill="currentColor"/><path d="m16.974 34.39h.97v13.3h-.97z" fill="currentColor"/><path d="m14.8944445 17.8500004c1.3369493.0188828 1.3467607 2.0289402-.000041 2.0499973-1.344841-.0265503-1.3345757-2.0260124.000041-2.0499973z" fill="currentColor"/></g></g></g></g></svg>:item.icon==='panflute_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><rect x="8" y="4" width="6" height="12" rx="3" fill="currentColor"/><rect x="16" y="4" width="6" height="14" rx="3" fill="currentColor"/><rect x="24" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="32" y="4" width="6" height="18" rx="3" fill="currentColor"/><rect x="40" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="48" y="4" width="6" height="14" rx="3" fill="currentColor"/><path d="M6 22 Q6 16 12 16 L52 16 Q58 16 58 22 L58 28 Q58 30 56 30 L8 30 Q6 30 6 28 Z" fill="#E85A5A"/><circle cx="14" cy="24" r="2.5" fill="#3D4550"/><circle cx="24" cy="24" r="2.5" fill="#3D4550"/><circle cx="34" cy="24" r="2.5" fill="#3D4550"/><circle cx="44" cy="24" r="2.5" fill="#3D4550"/><circle cx="54" cy="24" r="2.5" fill="#3D4550"/></g></svg>:item.icon==='transpose_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><line x1="4" y1="16" x2="60" y2="16" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="24" x2="60" y2="24" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="32" x2="60" y2="32" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="40" x2="60" y2="40" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="48" x2="60" y2="48" stroke="#A89A6B" strokeWidth="2"/><text x="12" y="42" fontSize="24" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">9</text><text x="14" y="52" fontSize="16" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">8</text><path d="M 20 26 Q 18 32 20 38" stroke="#9B9FD8" strokeWidth="3" fill="none" strokeLinecap="round"/><path d="M 36 32 L 34 22 L 32 28 L 30 22 L 28 32" stroke="#9B9FD8" strokeWidth="2.5" fill="none"/><path d="M 48 26 L 46 16 L 44 22 L 42 16 L 40 26" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/><path d="M 56 28 L 54 18 L 52 24 L 50 18 L 48 28" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/></g></svg>:item.icon}
+            </button>
+      )}
+    </nav>
+
+    {/* ── RIGHT ACTIVITY BAR (icon strip) ── */}
+    <nav className="right-activity-bar">
+      {RIGHT_ACTIVITY_ITEMS.map(item=>
+        item.sep
+          ? <div className="activity-bar__sep" key={item.id}/>
+          : <button key={item.id}
+              className={`activity-bar__btn${rightPanel===item.id?' activity-bar__btn--active':''}`}
+              onClick={()=>{setRightPanel(item.id);if(!showRight)setShowRight(true)}}
+              title={PANEL_LABELS[item.id]||item.id}>
+              {item.icon==='capo_svg'?<svg id="Fill" enableBackground="new 0 0 64 64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><g><g><g><path d="m53.9844437 12.04v1.2600002l-22.1299992 3.71-9.5599995 1.6100006c-2.1276703.2700176-2.8390522 3.2936745-1.0499039 4.4800148 4.4422474 3.2166824 24.5818214 17.7894573 29.4199028 21.2899837l-.4599991.5900002-18.4500007-11.2000007c-.2600002-.1499977-.5799999-.1800003-.8600006-.079998-.2799988.0999985-.5099983.3199997-.6099987.6100006l-4.1800003 12.0099983h-1.2900009l3.4400005-13.8400002c.1000004-.4300003-.0799999-.8699989-.4599991-1.1000004l-9.9099998-6.0099983c-1.2125359-.7878056-2.9595737.191925-2.9099655 1.6400509-.0032091 6.0960388.0022526 18.8394089-.0000353 24.9899483h-2.3599997l-2.5799999-32.2999992c-.3102512-3.0670624 2.248661-5.9857826 5.3400478-6.0399542-.0000486-.0000468 38.6099511-1.6200466 38.6099511-1.6200466zm-36.0699997 6.8399992c-.101759-3.9959745-5.9388266-3.9951725-6.0399981.0000916.1043539 3.9818439 5.9362364 3.981039 6.0399981-.0000916z" fill="currentColor"/><path d="m16.974 34.39h.97v13.3h-.97z" fill="currentColor"/><path d="m14.8944445 17.8500004c1.3369493.0188828 1.3467607 2.0289402-.000041 2.0499973-1.344841-.0265503-1.3345757-2.0260124.000041-2.0499973z" fill="currentColor"/></g></g></g></g></svg>:item.icon==='panflute_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><rect x="8" y="4" width="6" height="12" rx="3" fill="currentColor"/><rect x="16" y="4" width="6" height="14" rx="3" fill="currentColor"/><rect x="24" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="32" y="4" width="6" height="18" rx="3" fill="currentColor"/><rect x="40" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="48" y="4" width="6" height="14" rx="3" fill="currentColor"/><path d="M6 22 Q6 16 12 16 L52 16 Q58 16 58 22 L58 28 Q58 30 56 30 L8 30 Q6 30 6 28 Z" fill="#E85A5A"/><circle cx="14" cy="24" r="2.5" fill="#3D4550"/><circle cx="24" cy="24" r="2.5" fill="#3D4550"/><circle cx="34" cy="24" r="2.5" fill="#3D4550"/><circle cx="44" cy="24" r="2.5" fill="#3D4550"/><circle cx="54" cy="24" r="2.5" fill="#3D4550"/></g></svg>:item.icon==='transpose_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><line x1="4" y1="16" x2="60" y2="16" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="24" x2="60" y2="24" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="32" x2="60" y2="32" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="40" x2="60" y2="40" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="48" x2="60" y2="48" stroke="#A89A6B" strokeWidth="2"/><text x="12" y="42" fontSize="24" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">9</text><text x="14" y="52" fontSize="16" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">8</text><path d="M 20 26 Q 18 32 20 38" stroke="#9B9FD8" strokeWidth="3" fill="none" strokeLinecap="round"/><path d="M 36 32 L 34 22 L 32 28 L 30 22 L 28 32" stroke="#9B9FD8" strokeWidth="2.5" fill="none"/><path d="M 48 26 L 46 16 L 44 22 L 42 16 L 40 26" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/><path d="M 56 28 L 54 18 L 52 24 L 50 18 L 48 28" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/></g></svg>:item.icon}
+            </button>
+      )}
+    </nav>
+
+    {/* ── INSPECTOR (left panel) ── */}
+    <aside className="inspector">
+      <div className="inspector__header">
+        <div className="inspector__title">🛠 인스펙터 — {PANEL_LABELS[leftPanel]||leftPanel}</div>
+      </div>
+      <div className="inspector__content">
+        {Object.entries(ALL_PANELS).filter(([id])=>!RIGHT_PANEL_IDS.has(id)).map(([id,comp])=>
+          <div key={id} className={`panel${leftPanel===id?' panel--visible':''}`}>{comp}</div>
+        )}
+      </div>
+    </aside>
+
+    {/* ── MAIN SCORE VIEW (center) ── */}
+    <ScoreView files={files} activeFile={activeFile} onOsmdReady={handleOsmdReady}/>
+
+    {/* ── RIGHT PANEL (mirrors inspector for right activity bar) ── */}
+    <aside className="analysis">
+      <div className="inspector__header">
+        <div className="inspector__title">🧰 도구 — {PANEL_LABELS[rightPanel]||rightPanel}</div>
+      </div>
+      <div className="inspector__content">
+        {Object.entries(ALL_PANELS).filter(([id])=>RIGHT_PANEL_IDS.has(id)).map(([id,comp])=>
+          <div key={id} className={`panel${rightPanel===id?' panel--visible':''}`}>{comp}</div>
+        )}
+      </div>
+    </aside>
+
+    {/* ── TRANSPORT BAR (bottom) ── */}
+    <TransportBar files={files} bpm={bpm} onBpmChange={setBpm} osmdRef={osmdRef}/>
+
+    {/* ── PROGRESS OVERLAY ── */}
+    <div className={`progress-overlay${progress.visible?'':' progress-overlay--hidden'}`}>
+      <div className="progress-box">
+        <div className="progress-spinner"/>
+        <div className="progress-message">{progress.msg}</div>
+      </div>
+    </div>
+  </div>;
+}
+
+ReactDOM.render(<App/>,document.getElementById('root'));
+</script>
+</body>
+</html>
