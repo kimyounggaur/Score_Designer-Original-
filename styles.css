@@ -1153,6 +1153,17 @@ body {
   margin-bottom: 10px;
 }
 
+.harmony-control-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.harmony-control-grid .chip-group {
+  margin-bottom: 0;
+}
+
 .harmony-result {
   background: var(--bg-grouped);
   border-radius: var(--radius-md);

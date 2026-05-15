@@ -2166,9 +2166,93 @@ function ColorPanel({files,showProgress,hideProgress,onFilesUpdate}){
    ============================================================== */
 function HarmonyPanel({files,showProgress,hideProgress,onFilesUpdate}){
   const [mode,setMode]=useState('up');
-  const [chromatic,setChromatic]=useState(false);
+  const [spacingMode,setSpacingMode]=useState('diatonic-third');
+  const [ivNum,setIvNum]=useState(3);
+  const [ivQual,setIvQual]=useState('major');
+  const [customSemi,setCustomSemi]=useState(4);
   const [target,setTarget]=useState('all');
+  const [measureMode,setMeasureMode]=useState('all');
+  const [measureStart,setMeasureStart]=useState(1);
+  const [measureEnd,setMeasureEnd]=useState(8);
+  const [measureList,setMeasureList]=useState('');
+  const [noteMode,setNoteMode]=useState('all');
+  const [noteList,setNoteList]=useState('');
+  const [pitchList,setPitchList]=useState('');
+  const [voiceMode,setVoiceMode]=useState('chord');
+  const [voiceNumber,setVoiceNumber]=useState(2);
+  const [staffNumber,setStaffNumber]=useState('');
   const [log,setLog]=useState([]);
+
+  function parseNumberSpec(spec){
+    const set=new Set();
+    String(spec||'').split(',').map(s=>s.trim()).filter(Boolean).forEach(token=>{
+      const m=token.match(/^(\d+)\s*-\s*(\d+)$/);
+      if(m){const a=parseInt(m[1]),b=parseInt(m[2]);for(let i=Math.min(a,b);i<=Math.max(a,b);i++)set.add(i)}
+      else{const n=parseInt(token);if(Number.isFinite(n)&&n>0)set.add(n)}
+    });
+    return set;
+  }
+
+  function noteNameKey(p){
+    return `${p.step}${p.alter===1?'#':p.alter===-1?'b':''}${p.octave}`;
+  }
+
+  function getMeasureNumber(measure,fallback){
+    const raw=measure.getAttribute('number');
+    const parsed=parseInt(raw);
+    return Number.isFinite(parsed)?parsed:fallback;
+  }
+
+  function measureAllowed(num){
+    if(measureMode==='all')return true;
+    if(measureMode==='range')return num>=Math.min(measureStart,measureEnd)&&num<=Math.max(measureStart,measureEnd);
+    return parseNumberSpec(measureList).has(num);
+  }
+
+  function makeVoiceElement(doc,value){
+    const voice=doc.createElement('voice');
+    voice.textContent=String(value);
+    return voice;
+  }
+
+  function insertVoiceInOrder(note,voice){
+    const before=note.querySelector('type')||note.querySelector('stem')||note.querySelector('staff')||note.querySelector('beam');
+    if(before)note.insertBefore(voice,before);else note.appendChild(voice);
+  }
+
+  function insertStaffInOrder(note,staff){
+    const before=note.querySelector('beam')||note.querySelector('notations')||note.querySelector('lyric');
+    if(before)note.insertBefore(staff,before);else note.appendChild(staff);
+  }
+
+  function buildHarmonyNote(doc,source,newMidi){
+    const nn=midiToNote(newMidi);const cn=doc.createElement('note');
+    cn.appendChild(doc.createElement('chord'));
+    const pi=doc.createElement('pitch');const st=doc.createElement('step');st.textContent=nn.step;pi.appendChild(st);
+    if(nn.alter!==0){const al=doc.createElement('alter');al.textContent=nn.alter;pi.appendChild(al)}
+    const oc=doc.createElement('octave');oc.textContent=nn.octave;pi.appendChild(oc);cn.appendChild(pi);
+    const dur=source.querySelector('duration');if(dur){const d=doc.createElement('duration');d.textContent=dur.textContent;cn.appendChild(d)}
+    if(voiceMode==='separate')cn.appendChild(makeVoiceElement(doc,voiceNumber));
+    else{
+      const srcVoice=source.querySelector('voice');
+      if(srcVoice)cn.appendChild(makeVoiceElement(doc,srcVoice.textContent));
+    }
+    const typ=source.querySelector('type');if(typ){const t=doc.createElement('type');t.textContent=typ.textContent;cn.appendChild(t)}
+    const dots=source.querySelectorAll('dot');dots.forEach(()=>cn.appendChild(doc.createElement('dot')));
+    const staffValue=staffNumber.trim()||source.querySelector('staff')?.textContent;
+    if(staffValue){const staff=doc.createElement('staff');staff.textContent=staffValue;insertStaffInOrder(cn,staff)}
+    return cn;
+  }
+
+  function harmonyOffsets(midi,kr){
+    const dirs=mode==='both'?[1,-1]:mode==='down'?[-1]:[1];
+    return dirs.map(dir=>{
+      if(spacingMode==='diatonic-third')return dir>0?getDiaThirdAbove(midi,kr):getDiaThirdBelow(midi,kr);
+      if(spacingMode==='custom-semitone')return midi+(customSemi*dir);
+      const semis=computeIntervalSemis(ivNum,ivQual);
+      return midi+((semis||0)*dir);
+    });
+  }
 
   const preview=useMemo(()=>{
     const notes=['C4','D4','E4','F4','G4','A4','B4'];
@@ -2176,71 +2260,124 @@ function HarmonyPanel({files,showProgress,hideProgress,onFilesUpdate}){
     return notes.map(n=>{
       const p=parseNoteStr(n);const midi=noteToMidi(p.step,p.alter,p.octave);
       const r=[n];
-      if(doUp)r.push(fmtNote(midiToNote(chromatic?midi+4:getDiaThirdAbove(midi,0))));
-      if(doDown)r.unshift(fmtNote(midiToNote(chromatic?midi-4:getDiaThirdBelow(midi,0))));
+      const up=()=>{
+        if(spacingMode==='diatonic-third')return getDiaThirdAbove(midi,0);
+        if(spacingMode==='custom-semitone')return midi+customSemi;
+        return midi+(computeIntervalSemis(ivNum,ivQual)||0);
+      };
+      const down=()=>{
+        if(spacingMode==='diatonic-third')return getDiaThirdBelow(midi,0);
+        if(spacingMode==='custom-semitone')return midi-customSemi;
+        return midi-(computeIntervalSemis(ivNum,ivQual)||0);
+      };
+      if(doUp)r.push(fmtNote(midiToNote(up())));
+      if(doDown)r.unshift(fmtNote(midiToNote(down())));
       return{base:n,notes:r};
     });
-  },[mode,chromatic]);
+  },[mode,spacingMode,ivNum,ivQual,customSemi]);
 
   const run=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
     setLog([]);showProgress('화성 쌓기 중...');await new Promise(r=>setTimeout(r,50));
-    const doUp=mode==='up'||mode==='both',doDown=mode==='down'||mode==='both';
     try{
       const lines=[];const updatedFiles=[];
+      const noteSpec=parseNumberSpec(noteList);
+      const pitchSpec=new Set(String(pitchList||'').split(',').map(s=>s.trim()).filter(Boolean));
+      const intervalName=spacingMode==='diatonic-third'?'다이어토닉 3도':spacingMode==='custom-semitone'?`${customSemi}반음`:`${INTERVAL_QUALITIES.find(q=>q.id===ivQual)?.label||ivQual} ${INTERVAL_NUMBERS.find(n=>n.id===ivNum)?.label||ivNum}`;
       for(const file of files){
-        const doc=cloneDoc(file.xmlDoc);const kr=getKeyRoot(doc);let added=0;
+        const doc=cloneDoc(file.xmlDoc);const kr=getKeyRoot(doc);let added=0,skipped=0,measureHits=0;
         const parts=doc.querySelectorAll('part');
         const tParts=target==='first'?[parts[0]]:Array.from(parts);
         tParts.forEach(part=>{if(!part)return;
-          part.querySelectorAll('note').forEach(note=>{
-            if(note.querySelector('rest')||note.querySelector('chord'))return;
-            const p=getNotePitch(note);if(!p)return;
-            const midi=noteToMidi(p.step,p.alter,p.octave);
-            const addCN=newMidi=>{
-              const nn=midiToNote(newMidi);const cn=doc.createElement('note');
-              cn.appendChild(doc.createElement('chord'));
-              const pi=doc.createElement('pitch');const st=doc.createElement('step');st.textContent=nn.step;pi.appendChild(st);
-              if(nn.alter!==0){const al=doc.createElement('alter');al.textContent=nn.alter;pi.appendChild(al)}
-              const oc=doc.createElement('octave');oc.textContent=nn.octave;pi.appendChild(oc);cn.appendChild(pi);
-              const dur=note.querySelector('duration');if(dur){const d=doc.createElement('duration');d.textContent=dur.textContent;cn.appendChild(d)}
-              const typ=note.querySelector('type');if(typ){const t=doc.createElement('type');t.textContent=typ.textContent;cn.appendChild(t)}
-              if(note.nextSibling)note.parentNode.insertBefore(cn,note.nextSibling);else note.parentNode.appendChild(cn);
-              added++;
-            };
-            if(doUp)addCN(chromatic?midi+4:getDiaThirdAbove(midi,kr));
-            if(doDown)addCN(chromatic?midi-4:getDiaThirdBelow(midi,kr));
+          [...part.querySelectorAll('measure')].forEach((measure,mi)=>{
+            const measureNo=getMeasureNumber(measure,mi+1);
+            if(!measureAllowed(measureNo))return;
+            measureHits++;
+            const baseNotes=[...measure.querySelectorAll('note')].filter(note=>!note.querySelector('rest')&&!note.querySelector('chord'));
+            let noteOrdinal=0;
+            baseNotes.forEach(note=>{
+              noteOrdinal++;
+              const p=getNotePitch(note);if(!p){skipped++;return}
+              if(noteMode==='positions'&&!noteSpec.has(noteOrdinal)){skipped++;return}
+              if(noteMode==='pitches'&&!pitchSpec.has(noteNameKey(p))&&!pitchSpec.has(p.step)){skipped++;return}
+              const midi=noteToMidi(p.step,p.alter,p.octave);
+              let lastInserted=note;
+              harmonyOffsets(midi,kr).forEach(newMidi=>{
+                const cn=buildHarmonyNote(doc,note,newMidi);
+                if(lastInserted.nextSibling)note.parentNode.insertBefore(cn,lastInserted.nextSibling);else note.parentNode.appendChild(cn);
+                lastInserted=cn;added++;
+              });
+            });
           });
         });
         updatedFiles.push({...file,xmlDoc:doc});
-        lines.push({m:`✓ ${file.name}: ${added}개 화음 추가`,t:'ok'});
+        lines.push({m:`✓ ${file.name}: ${added}개 화음 추가 · 대상 마디 ${measureHits}개 · ${intervalName}${voiceMode==='separate'?` · ${voiceNumber}성부`:''}`,t:'ok'});
+        if(skipped)lines.push({m:`  필터로 제외된 음표 ${skipped}개`,t:'info'});
       }
       onFilesUpdate(updatedFiles);
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,mode,chromatic,target,showProgress,hideProgress,onFilesUpdate]);
+  },[files,mode,spacingMode,ivNum,ivQual,customSemi,target,measureMode,measureStart,measureEnd,measureList,noteMode,noteList,pitchList,voiceMode,voiceNumber,staffNumber,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">화성 쌓기</h2>
-    <p className="panel__description">멜로디에 3도 위/아래 화음을 자동으로 추가합니다.</p>
+    <p className="panel__description">선택한 마디와 음표에 원하는 음정 간격으로 화음을 추가하고, 같은 화음 또는 다른 성부로 배치합니다.</p>
     <div className="card"><div className="card__title">🔗 모드</div>
       <div className="chip-group">
-        <Chip on={mode==='up'} onClick={()=>setMode('up')}>3도 위</Chip>
-        <Chip on={mode==='down'} onClick={()=>setMode('down')}>3도 아래</Chip>
+        <Chip on={mode==='up'} onClick={()=>setMode('up')}>위로 쌓기</Chip>
+        <Chip on={mode==='down'} onClick={()=>setMode('down')}>아래로 쌓기</Chip>
         <Chip on={mode==='both'} onClick={()=>setMode('both')}>위+아래 모두</Chip>
       </div>
     </div>
-    <div className="card"><div className="card__title">⚙️ 간격</div>
+    <div className="card"><div className="card__title">⚙️ 음정 간격</div>
       <div className="chip-group">
-        <Chip on={!chromatic} onClick={()=>setChromatic(false)}>다이어토닉 (조성 기반)</Chip>
-        <Chip on={chromatic} onClick={()=>setChromatic(true)}>크로매틱 (항상 장3도)</Chip>
+        <Chip on={spacingMode==='diatonic-third'} onClick={()=>setSpacingMode('diatonic-third')}>다이어토닉 3도</Chip>
+        <Chip on={spacingMode==='interval'} onClick={()=>setSpacingMode('interval')}>모든 음정</Chip>
+        <Chip on={spacingMode==='custom-semitone'} onClick={()=>setSpacingMode('custom-semitone')}>반음 직접</Chip>
       </div>
+      {spacingMode==='interval' && <div className="harmony-control-grid">
+        <div><label className="form-label">음정 수</label><div className="chip-group">{INTERVAL_NUMBERS.map(n=><Chip key={n.id} on={ivNum===n.id} onClick={()=>setIvNum(n.id)}>{n.label}</Chip>)}</div></div>
+        <div><label className="form-label">음정 종류</label><div className="chip-group">{INTERVAL_QUALITIES.map(q=><Chip key={q.id} on={ivQual===q.id} onClick={()=>setIvQual(q.id)}>{q.label}</Chip>)}</div></div>
+      </div>}
+      {spacingMode==='custom-semitone' && <div><label className="form-label">반음 간격</label><input className="form-input form-input--mono" type="number" min="1" max="24" value={customSemi} onChange={e=>setCustomSemi(parseInt(e.target.value)||1)}/></div>}
     </div>
     <div className="card"><div className="card__title">🎯 대상</div>
       <select className="form-select" value={target} onChange={e=>setTarget(e.target.value)}>
         <option value="all">모든 파트</option><option value="first">첫 번째 파트만</option>
       </select>
+    </div>
+    <div className="card"><div className="card__title">📍 마디 선택</div>
+      <div className="chip-group">
+        <Chip on={measureMode==='all'} onClick={()=>setMeasureMode('all')}>전체 마디</Chip>
+        <Chip on={measureMode==='range'} onClick={()=>setMeasureMode('range')}>마디 범위</Chip>
+        <Chip on={measureMode==='list'} onClick={()=>setMeasureMode('list')}>마디 지정</Chip>
+      </div>
+      {measureMode==='range' && <div className="harmony-control-grid">
+        <div><label className="form-label">시작 마디</label><input className="form-input form-input--mono" type="number" min="1" value={measureStart} onChange={e=>setMeasureStart(parseInt(e.target.value)||1)}/></div>
+        <div><label className="form-label">끝 마디</label><input className="form-input form-input--mono" type="number" min="1" value={measureEnd} onChange={e=>setMeasureEnd(parseInt(e.target.value)||1)}/></div>
+      </div>}
+      {measureMode==='list' && <div><label className="form-label">마디 번호</label><input className="form-input form-input--mono" value={measureList} onChange={e=>setMeasureList(e.target.value)} placeholder="예: 1, 3, 5-8"/></div>}
+    </div>
+    <div className="card"><div className="card__title">🎵 음표 선택</div>
+      <div className="chip-group">
+        <Chip on={noteMode==='all'} onClick={()=>setNoteMode('all')}>선택 마디의 모든 음표</Chip>
+        <Chip on={noteMode==='positions'} onClick={()=>setNoteMode('positions')}>마디 안 n번째 음표</Chip>
+        <Chip on={noteMode==='pitches'} onClick={()=>setNoteMode('pitches')}>특정 음높이</Chip>
+      </div>
+      {noteMode==='positions' && <div><label className="form-label">음표 순번</label><input className="form-input form-input--mono" value={noteList} onChange={e=>setNoteList(e.target.value)} placeholder="예: 1, 3, 5-6"/></div>}
+      {noteMode==='pitches' && <div><label className="form-label">음높이</label><input className="form-input form-input--mono" value={pitchList} onChange={e=>setPitchList(e.target.value)} placeholder="예: C4, E4, G 또는 Bb4"/></div>}
+    </div>
+    <div className="card"><div className="card__title">🎚️ 성부/보표</div>
+      <div className="chip-group">
+        <Chip on={voiceMode==='chord'} onClick={()=>setVoiceMode('chord')}>같은 화음으로 추가</Chip>
+        <Chip on={voiceMode==='separate'} onClick={()=>setVoiceMode('separate')}>다른 성부로 추가</Chip>
+      </div>
+      {voiceMode==='separate' && <div className="harmony-control-grid">
+        <div><label className="form-label">성부 번호</label><input className="form-input form-input--mono" type="number" min="1" max="8" value={voiceNumber} onChange={e=>setVoiceNumber(parseInt(e.target.value)||2)}/></div>
+        <div><label className="form-label">보표 번호</label><input className="form-input form-input--mono" value={staffNumber} onChange={e=>setStaffNumber(e.target.value)} placeholder="비우면 원본"/></div>
+      </div>}
+      {voiceMode==='separate' && <div className="card__text">다른 성부는 MusicXML voice 값을 분리해 둡니다. 복잡한 다성부 레이아웃은 악보 프로그램에서 추가 정리가 필요할 수 있습니다.</div>}
     </div>
     <div className="card"><div className="card__title">👁️ 미리보기 (C Major)</div>
       <div className="preview-grid">{preview.map((p,i)=>
