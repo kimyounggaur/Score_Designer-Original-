@@ -43,6 +43,7 @@ const KEY_FIFTHS = [0,-5,2,-3,4,-1,6,1,-4,3,-2,5];
 const DEFAULT_MUSIC21_KEY_ENDPOINT = 'http://127.0.0.1:8000/api/analyze-key';
 const DEFAULT_MUSIC21_HARMONY_ENDPOINT = 'http://127.0.0.1:8000/api/analyze-harmony';
 const DEFAULT_MUSIC21_TRANSPOSE_ENDPOINT = 'http://127.0.0.1:8000/api/transpose';
+const DEFAULT_MSCZ_CONVERT_ENDPOINT = 'http://127.0.0.1:8000/api/convert-mscz';
 const NOTE_COLORS = {C:'#e74c3c',D:'#f39c12',E:'#eab308',F:'#22c55e',G:'#3b82f6',A:'#6366f1',B:'#a855f7'};
 const SOLFEGE_KR = ['도','레','미','파','솔','라','시'];
 const STEP_TO_NUM = {C:1,D:2,E:3,F:4,G:5,A:6,B:7};
@@ -317,7 +318,7 @@ function UploadPanel({files,onFilesAdd,onRemove,onClear}){
 
   return <div>
     <h2 className="panel__heading">파일 업로드</h2>
-    <p className="panel__description">MusicXML(.mxl, .xml, .musicxml) 파일을 업로드하세요. 여러 파일을 동시에 가능합니다.</p>
+    <p className="panel__description">MusicXML(.mxl, .xml, .musicxml) 파일을 업로드하세요. MuseScore(.mscz)는 로컬 변환 API가 켜져 있으면 자동 변환됩니다.</p>
 
     <div className={`upload-zone${dragging?' upload-zone--dragging':''}`}
       onClick={()=>inputRef.current.click()}
@@ -326,8 +327,8 @@ function UploadPanel({files,onFilesAdd,onRemove,onClear}){
       onDrop={handleDrop}>
       <div className="upload-zone__icon">📁</div>
       <div className="upload-zone__title">파일을 여기에 드래그하거나 클릭하세요</div>
-      <div className="upload-zone__subtitle">.mxl, .xml, .musicxml 파일 지원</div>
-      <input ref={inputRef} className="upload-zone__input" type="file" multiple accept=".mxl,.xml,.musicxml"
+      <div className="upload-zone__subtitle">.mxl, .xml, .musicxml, .mscz 파일 지원</div>
+      <input ref={inputRef} className="upload-zone__input" type="file" multiple accept=".mxl,.xml,.musicxml,.mscz"
         onChange={e=>onFilesAdd(e.target.files)}/>
     </div>
 
@@ -3697,13 +3698,30 @@ function App(){
     setBpm(120);
   },[files]);
 
+  const convertMsczFile=useCallback(async(file)=>{
+    const endpoint=(()=>{try{return localStorage.getItem('msczConvertEndpoint')||DEFAULT_MSCZ_CONVERT_ENDPOINT}catch(e){return DEFAULT_MSCZ_CONVERT_ENDPOINT}})();
+    const form=new FormData();
+    form.append('file',file,file.name);
+    const res=await fetch(endpoint,{method:'POST',body:form});
+    if(!res.ok){
+      let msg='';
+      try{const data=await res.json();msg=data.detail||JSON.stringify(data)}
+      catch(e){msg=await res.text()}
+      throw new Error(`MSCZ 변환 실패: ${msg||res.status}`);
+    }
+    const data=await res.json();
+    if(data.status==='error')throw new Error(data.detail||'MSCZ 변환 실패');
+    if(!data.xml)throw new Error('MSCZ 변환 결과에 MusicXML이 없습니다.');
+    return {xmlString:data.xml,name:data.name||file.name.replace(/\.mscz$/i,'.musicxml')};
+  },[]);
+
   const addFiles=useCallback(async(fileList)=>{
     showProgress('파일 읽는 중...');
     const newFiles=[];
     for(const file of fileList){
       try{
         const ext=file.name.split('.').pop().toLowerCase();
-        let xmlString;
+        let xmlString;let importedName=file.name;
         if(ext==='mxl'){
           const zip=await JSZip.loadAsync(file);let xmlFile=null;
           const container=zip.file('META-INF/container.xml');
@@ -3712,14 +3730,19 @@ function App(){
           if(!xmlFile)zip.forEach((path,entry)=>{if(!entry.dir&&path.endsWith('.xml')&&!path.startsWith('META-INF'))xmlFile=entry});
           if(!xmlFile)throw new Error('XML not found in MXL');
           xmlString=await xmlFile.async('string');
+        }else if(ext==='mscz'){
+          showProgress(`${file.name} 변환 중...`);
+          const converted=await convertMsczFile(file);
+          xmlString=converted.xmlString;
+          importedName=converted.name;
         }else{xmlString=await file.text()}
         const xmlDoc=new DOMParser().parseFromString(xmlString,'text/xml');
         if(xmlDoc.querySelector('parsererror'))throw new Error('XML 파싱 오류');
-        newFiles.push({name:file.name,xmlDoc,xmlString});
+        newFiles.push({name:importedName,xmlDoc,xmlString,sourceName:file.name});
       }catch(e){alert(`${file.name}: ${e.message}`)}
     }
     setFiles(f=>[...f,...newFiles]);hideProgress();
-  },[showProgress,hideProgress]);
+  },[showProgress,hideProgress,convertMsczFile]);
 
   const removeFile=useCallback(i=>{setFiles(f=>f.filter((_,j)=>j!==i));if(activeFile>=files.length-1)setActiveFile(Math.max(0,files.length-2))},[activeFile,files.length]);
   const clearFiles=useCallback(()=>{setFiles([]);setActiveFile(0)},[]);

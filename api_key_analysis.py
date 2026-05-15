@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from collections import Counter
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -32,6 +37,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+MUSESCORE_EXECUTABLE_CANDIDATES = [
+    os.environ.get("MUSESCORE_PATH"),
+    "MuseScore4",
+    "musescore4",
+    "MuseScore3",
+    "musescore3",
+    "mscore",
+    "musescore",
+    r"C:\Program Files\MuseScore 4\bin\MuseScore4.exe",
+    r"C:\Program Files\MuseScore 3\bin\MuseScore3.exe",
+]
 
 
 def clean_pitch_name(value: str) -> str:
@@ -117,6 +135,45 @@ def score_to_musicxml_string(score_obj: Any) -> str:
     path = score_obj.write("musicxml")
     with open(path, encoding="utf-8") as handle:
         return handle.read()
+
+
+def find_musescore_executable() -> str | None:
+    for candidate in MUSESCORE_EXECUTABLE_CANDIDATES:
+        if not candidate:
+            continue
+        if os.path.isabs(candidate) and Path(candidate).exists():
+            return candidate
+        resolved = shutil.which(candidate)
+        if resolved:
+            return resolved
+    return None
+
+
+def convert_mscz_bytes(filename: str, content: bytes) -> tuple[str, str]:
+    executable = find_musescore_executable()
+    if not executable:
+        raise RuntimeError(
+            "MuseScore CLI를 찾을 수 없습니다. MuseScore Studio를 설치하고 MUSESCORE_PATH 환경변수에 실행 파일 경로를 지정해주세요."
+        )
+
+    safe_stem = Path(filename).stem or "score"
+    with tempfile.TemporaryDirectory() as temp_dir:
+        input_path = Path(temp_dir) / f"{safe_stem}.mscz"
+        output_path = Path(temp_dir) / f"{safe_stem}.musicxml"
+        input_path.write_bytes(content)
+        command = [executable, "-o", str(output_path), str(input_path)]
+        completed = subprocess.run(
+            command,
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+            timeout=90,
+            check=False,
+        )
+        if completed.returncode != 0 or not output_path.exists():
+            details = (completed.stderr or completed.stdout or "").strip()
+            raise RuntimeError(f"MuseScore 변환 실패: {details[:500] or 'unknown error'}")
+        return output_path.name, output_path.read_text(encoding="utf-8", errors="replace")
 
 
 def analyze_one(score_payload: ScorePayload) -> dict[str, Any]:
@@ -301,8 +358,28 @@ def analyze_harmony_one(score_payload: ScorePayload) -> dict[str, Any]:
 
 
 @app.get("/api/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
+def health() -> dict[str, str | bool | None]:
+    return {"status": "ok", "musescore": find_musescore_executable()}
+
+
+@app.post("/api/convert-mscz")
+async def convert_mscz(file: UploadFile = File(...)) -> dict[str, Any]:
+    if not file.filename or not file.filename.lower().endswith(".mscz"):
+        return {"status": "error", "detail": "MSCZ 파일만 변환할 수 있습니다."}
+    content = await file.read()
+    if not content:
+        return {"status": "error", "detail": "업로드된 MSCZ 파일이 비어 있습니다."}
+    try:
+        name, xml = convert_mscz_bytes(file.filename, content)
+        parsed = converter.parseData(xml, format="musicxml")
+        try:
+            parsed.makeAccidentals(inPlace=True)
+            xml = score_to_musicxml_string(parsed)
+        except Exception:
+            pass
+        return {"status": "ok", "name": name, "xml": xml}
+    except Exception as exc:
+        return {"status": "error", "detail": str(exc)}
 
 
 @app.post("/api/analyze-key")
