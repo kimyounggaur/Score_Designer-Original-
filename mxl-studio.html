@@ -38,7 +38,9 @@ const SEMI_TO_STEP = [
   {step:'A',alter:-1},{step:'A',alter:0},{step:'B',alter:-1},{step:'B',alter:0}
 ];
 const KEY_NAMES = ['C','D♭','D','E♭','E','F','F#/G♭','G','A♭','A','B♭','B'];
+const KEY_RELATIVE_MINOR_NAMES = ['A','B♭','B','C','C#','D','D#/E♭','E','F','F#','G','G#'];
 const KEY_FIFTHS = [0,-5,2,-3,4,-1,6,1,-4,3,-2,5];
+const DEFAULT_MUSIC21_KEY_ENDPOINT = 'http://127.0.0.1:8000/api/analyze-key';
 const NOTE_COLORS = {C:'#e74c3c',D:'#f39c12',E:'#eab308',F:'#22c55e',G:'#3b82f6',A:'#6366f1',B:'#a855f7'};
 const SOLFEGE_KR = ['도','레','미','파','솔','라','시'];
 const STEP_TO_NUM = {C:1,D:2,E:3,F:4,G:5,A:6,B:7};
@@ -178,6 +180,14 @@ function getCurrentClef(xmlDoc){
 }
 function getTempoTerm(bpm){for(const p of TEMPO_PRESETS)if(bpm>=p.min&&bpm<=p.max)return p.name;return bpm<20?'Larghissimo':'Prestissimo'}
 function getKeyRoot(doc){const f=parseInt(doc.querySelector('key fifths')?.textContent||'0');const i=KEY_FIFTHS.indexOf(f);return i>=0?i:0}
+function getWrittenKeySummary(doc){
+  const f=parseInt(doc.querySelector('key fifths')?.textContent||'0');
+  const i=KEY_FIFTHS.indexOf(f);
+  return {
+    fifths:Number.isFinite(f)?f:0,
+    label:i>=0?`${KEY_NAMES[i]} Major / ${KEY_RELATIVE_MINOR_NAMES[i]} minor`:`fifths ${Number.isFinite(f)?f:'?'}`
+  };
+}
 function getDiaThirdAbove(midi,kr){const pc=((midi%12)+12)%12;const sc=DIATONIC_SCALES[kr]||DIATONIC_SCALES[0];const idx=sc.indexOf(pc);if(idx===-1)return midi+4;const tpc=sc[(idx+2)%7];let t=Math.floor(midi/12)*12+tpc;if(t<=midi)t+=12;if(t-midi>5)t-=12;return t}
 function getDiaThirdBelow(midi,kr){const pc=((midi%12)+12)%12;const sc=DIATONIC_SCALES[kr]||DIATONIC_SCALES[0];const idx=sc.indexOf(pc);if(idx===-1)return midi-4;const tpc=sc[((idx-2)%7+7)%7];let t=Math.floor(midi/12)*12+tpc;if(t>=midi)t-=12;if(midi-t>5)t+=12;return t}
 
@@ -2684,6 +2694,12 @@ function ChordsPanel({files,showProgress,hideProgress}){
 function StatsPanel({files,showProgress,hideProgress}){
   const [basicData,setBasicData]=useState(null);
   const [composerData,setComposerData]=useState(null);
+  const [keyData,setKeyData]=useState(null);
+  const [keyError,setKeyError]=useState('');
+  const [keyEndpoint,setKeyEndpoint]=useState(()=>{
+    try{return localStorage.getItem('music21KeyEndpoint')||DEFAULT_MUSIC21_KEY_ENDPOINT}
+    catch(e){return DEFAULT_MUSIC21_KEY_ENDPOINT}
+  });
 
   const runBasic=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -2747,13 +2763,98 @@ function StatsPanel({files,showProgress,hideProgress}){
     hideProgress();
   },[files,showProgress,hideProgress]);
 
+  const updateKeyEndpoint=useCallback(e=>{
+    const next=e.target.value;
+    setKeyEndpoint(next);
+    try{localStorage.setItem('music21KeyEndpoint',next)}catch(err){}
+  },[]);
+
+  const runPreciseKey=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    const endpoint=(keyEndpoint||DEFAULT_MUSIC21_KEY_ENDPOINT).trim();
+    if(!endpoint){alert('music21 API 주소를 입력해주세요.');return}
+    setKeyError('');
+    showProgress('music21 조성 분석 중...');
+    const payload={
+      scores:files.map(file=>({
+        name:file.name,
+        xml:new XMLSerializer().serializeToString(file.xmlDoc)
+      }))
+    };
+    try{
+      const res=await fetch(endpoint,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+      if(!res.ok){
+        const msg=await res.text();
+        throw new Error(`${res.status} ${msg.slice(0,160)}`);
+      }
+      const data=await res.json();
+      setKeyData(data);
+    }catch(e){
+      const fallbackResults=files.map(file=>{
+        const written=getWrittenKeySummary(file.xmlDoc);
+        return {name:file.name,status:'fallback',detected_key:null,written_key:written,alternates:[]};
+      });
+      setKeyData({results:fallbackResults,summary:null});
+      setKeyError(`music21 API 연결 실패: ${e.message}`);
+    }finally{
+      hideProgress();
+    }
+  },[files,keyEndpoint,showProgress,hideProgress]);
+
   return <div>
     <h2 className="panel__heading">통계 분석</h2>
-    <p className="panel__description">음표 빈도, 리듬 패턴, 음정 도약, 코드 진행 등을 분석합니다.</p>
+    <p className="panel__description">음표 빈도, 리듬 패턴, 음정 도약, 코드 진행, music21 기반 조성 추정을 분석합니다.</p>
     <div className="btn-row">
       <button className="btn btn--primary" onClick={runBasic}>▶ 기본 분석</button>
       <button className="btn btn--secondary" onClick={runComposer}>📋 작곡 스타일 분석</button>
     </div>
+
+    <div className="card key-analysis-card">
+      <div className="card__title">music21 정밀 조성 분석</div>
+      <div className="card__text">MusicXML 조표가 아니라 실제 음 분포를 기반으로 조성을 추정하고 확신도와 대체 조성을 확인합니다.</div>
+      <label className="form-label">music21 API 주소</label>
+      <input className="form-input form-input--mono" value={keyEndpoint} onChange={updateKeyEndpoint}/>
+      <div className="btn-row">
+        <button className="btn btn--secondary" onClick={runPreciseKey}>정밀 조성 분석</button>
+      </div>
+      {keyError && <div className="key-analysis-warning">{keyError}<br/>서버가 없으면 아래에는 MusicXML 조표 기준 결과만 표시됩니다.</div>}
+    </div>
+
+    {keyData && <div className="key-analysis-results">
+      {keyData.summary && <div className="stats-row">
+        <div className="stat-tile"><div className="stat-tile__value">{keyData.summary.successful}</div><div className="stat-tile__label">분석 성공</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{keyData.summary.failed}</div><div className="stat-tile__label">분석 실패</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{keyData.summary.top_key||'-'}</div><div className="stat-tile__label">대표 조성</div></div>
+      </div>}
+      {keyData.results?.map((r,i)=>{
+        const dk=r.detected_key;
+        const written=r.written_key;
+        return <div className="key-result" key={i}>
+          <div className="key-result__header">
+            <span className="key-result__name">{r.name}</span>
+            <span className={`key-result__badge key-result__badge--${r.status||'ok'}`}>{r.status==='ok'?'music21':r.status==='fallback'?'조표 기준':'오류'}</span>
+          </div>
+          {dk
+            ? <div className="key-result__main">
+                <div><span className="key-result__label">추정 조성</span><strong>{dk.label_ko||dk.label}</strong></div>
+                <div><span className="key-result__label">확신도</span>{dk.correlation!==null&&dk.correlation!==undefined?Number(dk.correlation).toFixed(3):'-'}</div>
+                <div><span className="key-result__label">tonal certainty</span>{dk.tonal_certainty!==null&&dk.tonal_certainty!==undefined?Number(dk.tonal_certainty).toFixed(3):'-'}</div>
+              </div>
+            : <div className="key-result__main">
+                <div><span className="key-result__label">조표 기준</span><strong>{written?.label||'-'}</strong></div>
+              </div>}
+          {written && <div className="key-result__sub">MusicXML 조표: {written.label} ({written.fifths} fifths)</div>}
+          {r.alternates?.length>0 && <div className="key-result__alts">
+            대체 조성: {r.alternates.map(a=><span key={a.label} className="composer-tag">{a.label_ko||a.label}</span>)}
+          </div>}
+          {r.error && <div className="key-analysis-warning">{r.error}</div>}
+        </div>;
+      })}
+    </div>}
 
     {basicData && <div>
       <div className="stats-row">
