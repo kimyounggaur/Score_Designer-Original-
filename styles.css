@@ -1252,6 +1252,82 @@ body {
   font-weight: 500;
 }
 
+/* ===== ROMAN ANALYSIS ===== */
+.roman-cadence-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.roman-progressions {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.roman-progressions li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px;
+  background: var(--bg-primary);
+  border-radius: var(--radius-sm);
+}
+
+.roman-progressions span {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}
+
+.roman-progressions b {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+.roman-table-wrap {
+  max-height: 260px;
+  overflow: auto;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  margin-top: 10px;
+}
+
+.roman-table {
+  width: 100%;
+  min-width: 420px;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.roman-table th,
+.roman-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.roman-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-grouped);
+  color: var(--text-secondary);
+  font-weight: 700;
+  z-index: 1;
+}
+
+.roman-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.roman-table__numeral {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  color: var(--accent);
+}
+
 .key-analysis-card .form-input {
   margin-bottom: 2px;
 }

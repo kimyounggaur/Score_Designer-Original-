@@ -14,6 +14,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
+<script src="roman-analysis-core.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -151,6 +152,7 @@ const NAV = [
     {id:'chordtools',icon:'🔧',label:'코드 도구'},{id:'numbering',icon:'🔢',label:'숫자 악보'},
     {id:'chords',icon:'🎸',label:'코드 분석'},{id:'stats',icon:'📊',label:'통계 분석'},
   ]},
+  {section:'분석',items:[{id:'roman',icon:'Ⅰ',label:'로마 숫자 분석'}]},
 ];
 
 /* ==============================================================
@@ -3283,6 +3285,115 @@ function ChordsPanel({files,showProgress,hideProgress}){
 }
 
 /* ==============================================================
+   PANEL: ROMAN NUMERAL ANALYSIS
+   ============================================================== */
+function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const [analysis,setAnalysis]=useState(null);
+  const [log,setLog]=useState([]);
+  const fileIndex=files[activeFile]?activeFile:0;
+  const file=files[fileIndex];
+  const cadenceTypes=['완전종지 (PAC)','반종지 (HC)','변격종지 (PC)','위종지 (DC)'];
+
+  const keyInfo=useMemo(()=>{
+    if(!file?.xmlDoc||!window.RomanAnalysis)return null;
+    return window.RomanAnalysis.getKeyInfo(file.xmlDoc);
+  },[file]);
+
+  const runAnalysis=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드하세요.');return}
+    if(!window.RomanAnalysis){alert('로마 숫자 분석 모듈을 불러오지 못했습니다.');return}
+    setLog([]);
+    showProgress('로마 숫자 분석 중...');
+    await new Promise(r=>setTimeout(r,50));
+    try{
+      const result=window.RomanAnalysis.detectRomanNumeral(file.xmlDoc);
+      setAnalysis(result);
+      const lines=[
+        {m:`${file.name} · ${result.keyName}장조 · ${result.rows.length}개 코드 분석`,t:'info'},
+        {m:`종지 ${result.cadences.length}개 · 진행 요약 ${result.progressions.length}개`,t:'ok'},
+      ];
+      if(!result.rows.length)lines.push({m:'분석 가능한 수직 음향을 찾지 못했습니다.',t:'warn'});
+      setLog(lines);
+    }catch(e){
+      setLog([{m:e.message,t:'err'}]);
+    }finally{
+      hideProgress();
+    }
+  },[files.length,file,showProgress,hideProgress]);
+
+  const insertIntoScore=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드하세요.');return}
+    if(!window.RomanAnalysis){alert('로마 숫자 분석 모듈을 불러오지 못했습니다.');return}
+    showProgress('로마 숫자를 악보에 삽입 중...');
+    await new Promise(r=>setTimeout(r,50));
+    try{
+      const doc=cloneDoc(file.xmlDoc);
+      const source=window.RomanAnalysis.detectRomanNumeral(doc);
+      const count=window.RomanAnalysis.insertRomanNumerals(doc,source.rows);
+      const xmlString=new XMLSerializer().serializeToString(doc);
+      const updatedFiles=files.map((f,i)=>i===fileIndex?{...f,xmlDoc:doc,xmlString}:f);
+      onFilesUpdate(updatedFiles);
+      setAnalysis(window.RomanAnalysis.detectRomanNumeral(doc));
+      setLog([{m:`${count}개 마디에 로마 숫자를 삽입했습니다.`,t:'ok'}]);
+    }catch(e){
+      setLog([{m:e.message,t:'err'}]);
+    }finally{
+      hideProgress();
+    }
+  },[files,file,fileIndex,onFilesUpdate,showProgress,hideProgress]);
+
+  return <div>
+    <h2 className="panel__heading">로마 숫자 분석</h2>
+    <p className="panel__description">첫 조표를 기준으로 마디별 수직 음향을 로마 숫자 화성으로 해석하고 종지를 요약합니다.</p>
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={runAnalysis} disabled={!files.length}>
+        {keyInfo?`${keyInfo.keyName}장조 분석 시작`:'로마 숫자 분석 시작'}
+      </button>
+      <button className="btn btn--secondary" onClick={insertIntoScore} disabled={!files.length}>
+        악보에 삽입
+      </button>
+    </div>
+
+    {analysis&&<div className="stats-row roman-cadence-grid">
+      {cadenceTypes.map(type=>
+        <div className="stat-tile" key={type}>
+          <div className="stat-tile__value">{analysis.cadenceCounts?.[type]||0}</div>
+          <div className="stat-tile__label">{type}</div>
+        </div>
+      )}
+    </div>}
+
+    {analysis&&<div className="card">
+      <div className="card__title">코드 진행 Top 5</div>
+      {analysis.progressions.length?
+        <ol className="roman-progressions">
+          {analysis.progressions.map(item=><li key={item.pair}><span>{item.pair}</span><b>{item.count}</b></li>)}
+        </ol>:
+        <div className="card__text">반복되는 2-chord 진행이 아직 없습니다.</div>}
+    </div>}
+
+    {analysis&&<div className="roman-table-wrap">
+      <table className="roman-table">
+        <thead><tr><th>마디번호</th><th>박자</th><th>코드명</th><th>로마숫자</th><th>종지여부</th></tr></thead>
+        <tbody>
+          {analysis.rows.map((row,index)=>
+            <tr key={`${row.measure}-${row.beat}-${index}`}>
+              <td>{row.measure}</td>
+              <td>{row.beat}</td>
+              <td>{row.chordName}</td>
+              <td className="roman-table__numeral">{row.roman}</td>
+              <td>{row.cadence||'-'}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>}
+
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
    PANEL: STATISTICS
    ============================================================== */
 function StatsPanel({files,showProgress,hideProgress}){
@@ -3822,6 +3933,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
     ]},
     {id:'analysis',label:'분석',items:[
       {icon:'🎸',label:'코드 분석',            onClick:()=>sel('right','chords')},
+      {icon:'Ⅰ',label:'로마 숫자 분석',      onClick:()=>sel('right','roman')},
       {icon:'📊',label:'통계 분석',            onClick:()=>sel('right','stats')},
     ]},
   ];
@@ -4419,7 +4531,7 @@ const RIGHT_ACTIVITY_ITEMS=[
   {id:'notation',icon:'✏️'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
   {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
   {id:'numbering',icon:'🔢'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
-  {id:'chords',icon:'🎸'},{id:'stats',icon:'📊'},
+  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'stats',icon:'📊'},
 ];
 
 const RIGHT_PANEL_IDS=new Set(RIGHT_ACTIVITY_ITEMS.filter(i=>!i.sep).map(i=>i.id));
@@ -4431,7 +4543,7 @@ const PANEL_LABELS={
   ossia:'Ossia 마디',clef:'음자리표 변환',
   parts:'파트 추출',notation:'악보 표기 변환',export:'이미지 / PDF',
   color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
-  lyricstyle:'가사 스타일',chords:'코드 분석',stats:'통계 분석',
+  lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',stats:'통계 분석',
 };
 
 function App(){
@@ -4516,7 +4628,7 @@ function App(){
   const clearFiles=useCallback(()=>{setFiles([]);setActiveFile(0)},[]);
 
   const updateFiles=useCallback(newFiles=>setFiles(newFiles),[]);
-  const panelProps={files,showProgress,hideProgress,onFilesUpdate:updateFiles};
+  const panelProps={files,activeFile,showProgress,hideProgress,onFilesUpdate:updateFiles};
 
   const exportMXL=useCallback(()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -4599,6 +4711,7 @@ function App(){
     numbering:<NumberingPanel {...panelProps}/>,
     lyricstyle:<LyricStylePanel {...panelProps}/>,
     chords:<ChordsPanel {...panelProps}/>,
+    roman:<RomanAnalysisPanel {...panelProps}/>,
     stats:<StatsPanel {...panelProps}/>,
   };
 
