@@ -14,6 +14,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
+<script src="chord-tools-core.js"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -2747,7 +2748,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
       const lines=[];const updatedFiles=[];
       for(const file of files){
         const doc=cloneDoc(file.xmlDoc);let ins=0;
-        if(replaceExisting)doc.querySelectorAll('harmony').forEach(h=>h.remove());
+        if(replaceExisting)window.ChordToolsCore.preserveNoChordHarmonies(doc);
         const parts=doc.querySelectorAll('part');
         const mc=parts[0]?.querySelectorAll('measure')?.length||0;
         for(let m=0;m<mc;m++){
@@ -2757,6 +2758,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
               const p=getNotePitch(note);if(!p)return;ns.push(noteToMidi(p.step,p.alter,p.octave)%12)})});
           const chord=detectChord(ns);if(!chord||chord==='?')continue;
           const meas=parts[0].querySelectorAll('measure')[m];if(!meas)continue;
+          if(window.ChordToolsCore.measureHasNoChordHarmony(meas))continue;
           if(!replaceExisting&&meas.querySelector('harmony'))continue;
           const parsed=parseChordSymbol(chord);if(!parsed)continue;
           const harm=doc.createElement('harmony');const root=doc.createElement('root');
