@@ -56,7 +56,7 @@
   --activity-w: 48px;
   --inspector-w: 300px;
   --analysis-w: 300px;
-  --transport-h: 56px;
+  --transport-h: 132px;
 }
 
 /* ===== RESET ===== */
@@ -459,6 +459,46 @@ body {
   height: auto;
 }
 
+.score-measure-overlay {
+  position: absolute;
+  top: 18px;
+  right: 28px;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid rgba(0, 122, 255, 0.3);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 122, 255, 0.14);
+  color: var(--accent);
+  box-shadow: 0 6px 18px rgba(0, 122, 255, 0.18);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.score-measure-overlay--visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.score-measure-overlay__label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+
+.score-measure-overlay__value {
+  min-width: 22px;
+  font-family: var(--font-mono);
+  font-size: 18px;
+  font-weight: 700;
+  text-align: center;
+}
+
 /* ===== OSSIA OVERLAY (top-left floating mini-staff) ===== */
 .ossia-overlay {
   position: absolute;
@@ -581,16 +621,18 @@ body {
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-top: 0.5px solid var(--border-subtle);
   display: flex;
-  align-items: center;
+  align-items: stretch;
   z-index: 40;
+  overflow: hidden;
 }
 
 .transport-inner {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   width: 100%;
-  padding: 0 20px;
-  gap: 24px;
+  min-width: 0;
+  padding: 10px 16px;
+  gap: 12px;
 }
 
 .transport__section {
@@ -704,6 +746,161 @@ body {
   border: 2px solid white;
   box-shadow: 0 1px 3px rgba(0,0,0,0.2);
   cursor: pointer;
+}
+
+.midi-player {
+  --midi-progress: 0%;
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(240px, 1.2fr) auto auto minmax(170px, 0.7fr);
+  grid-template-areas:
+    "controls progress measure files parts"
+    "tempo instrument volume loop parts";
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.midi-player__controls {
+  grid-area: controls;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.midi-player__progress-wrap {
+  grid-area: progress;
+  min-width: 0;
+}
+
+.midi-player__progress,
+.midi-player__mini-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent) 0 var(--midi-progress), var(--bg-tertiary) var(--midi-progress) 100%);
+  outline: none;
+}
+
+.midi-player__mini-range {
+  background: var(--bg-tertiary);
+}
+
+.midi-player__progress::-webkit-slider-thumb,
+.midi-player__mini-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid white;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+  cursor: pointer;
+}
+
+.midi-player__time {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.midi-player__stat {
+  min-width: 58px;
+}
+
+.midi-player__stat--measure { grid-area: measure; }
+.midi-player__stat--files { grid-area: files; }
+
+.midi-player__field {
+  display: grid;
+  grid-template-columns: auto minmax(90px, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.midi-player__field--tempo { grid-area: tempo; }
+.midi-player__field--instrument { grid-area: instrument; grid-template-columns: auto minmax(108px, 1fr); }
+.midi-player__field--volume { grid-area: volume; }
+.midi-player__field--compact { grid-template-columns: auto minmax(62px, 1fr) auto; }
+
+.midi-player__select {
+  width: 100%;
+  min-width: 108px;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+
+.midi-player__loop {
+  grid-area: loop;
+  display: grid;
+  grid-template-columns: auto minmax(112px, 1fr) minmax(112px, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.midi-player__toggle {
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.midi-player__toggle--active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+.midi-player__parts {
+  grid-area: parts;
+  display: flex;
+  align-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 78px;
+  min-width: 0;
+  overflow-y: auto;
+}
+
+.midi-player__part {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 170px;
+  padding: 5px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-grouped);
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.midi-player__part span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* ===== PANELS (inside inspector/analysis) ===== */
@@ -1973,13 +2170,25 @@ body {
 
 /* ===== RESPONSIVE ===== */
 @media (max-width: 960px) {
+  :root { --transport-h: 156px; }
   .app-root {
     grid-template-columns: var(--activity-w) var(--inspector-w) 1fr 0px var(--activity-w);
   }
   .analysis { display: none; }
+  .midi-player {
+    grid-template-columns: auto minmax(180px, 1fr) auto auto;
+    grid-template-areas:
+      "controls progress measure files"
+      "tempo instrument volume loop"
+      "parts parts parts parts";
+  }
+  .midi-player__parts {
+    max-height: 32px;
+  }
 }
 
 @media (max-width: 700px) {
+  :root { --transport-h: 214px; }
   .app-root {
     grid-template-columns: 0px 0px 1fr 0px 0px;
     grid-template-areas:
@@ -1989,4 +2198,32 @@ body {
   }
   .activity-bar, .right-activity-bar, .inspector, .analysis { display: none; }
   .main-score { padding: 8px; }
+  .transport-inner {
+    overflow-y: auto;
+    padding: 8px;
+  }
+  .midi-player {
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas:
+      "controls progress"
+      "measure files"
+      "tempo tempo"
+      "instrument volume"
+      "loop loop"
+      "parts parts";
+    gap: 8px;
+  }
+  .midi-player__controls {
+    justify-content: flex-start;
+  }
+  .midi-player__loop {
+    grid-template-columns: auto minmax(90px, 1fr) minmax(90px, 1fr);
+  }
+  .midi-player__parts {
+    max-height: 40px;
+  }
+  .score-measure-overlay {
+    top: 12px;
+    right: 12px;
+  }
 }

@@ -12,6 +12,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 </head>
 <body>
@@ -182,6 +183,125 @@ function getCurrentClef(xmlDoc){
   return 'treble';
 }
 function getTempoTerm(bpm){for(const p of TEMPO_PRESETS)if(bpm>=p.min&&bpm<=p.max)return p.name;return bpm<20?'Larghissimo':'Prestissimo'}
+function xmlChildren(el,name){return Array.from(el?.children||[]).filter(c=>c.localName===name)}
+function xmlChild(el,name){return xmlChildren(el,name)[0]||null}
+function xmlText(el,name,fallback=''){const n=xmlChild(el,name);return n?n.textContent:fallback}
+function xmlDesc(el,name){return Array.from(el?.getElementsByTagName('*')||[]).find(n=>n.localName===name)||null}
+function getPlayablePartElements(xmlDoc){
+  return Array.from(xmlDoc?.getElementsByTagName('*')||[]).filter(el=>
+    el.localName==='part'&&xmlChildren(el,'measure').length
+  );
+}
+function getPartInfo(xmlDoc){
+  const labels=new Map();
+  Array.from(xmlDoc?.getElementsByTagName('*')||[]).forEach(el=>{
+    if(el.localName!=='score-part')return;
+    const id=el.getAttribute('id')||'';
+    labels.set(id,xmlText(el,'part-name',id||'Part'));
+  });
+  return getPlayablePartElements(xmlDoc).map((part,index)=>{
+    const id=part.getAttribute('id')||`part-${index+1}`;
+    return{id,index,label:labels.get(id)||`Part ${index+1}`};
+  });
+}
+function getDocBpm(xmlDoc,fallback=120){
+  const sound=xmlDoc?.querySelector?.('sound[tempo]');
+  const fromSound=parseFloat(sound?.getAttribute('tempo')||'');
+  if(fromSound>0)return fromSound;
+  const pm=xmlDoc?.querySelector?.('metronome per-minute');
+  const fromText=parseFloat(pm?.textContent||'');
+  return fromText>0?fromText:fallback;
+}
+function durationToSeconds(duration,divisions,beatUnit,currentBpm){
+  const div=Math.max(1,parseFloat(divisions)||1);
+  const bpm=Math.max(1,parseFloat(currentBpm)||120);
+  const unit=Math.max(1,parseFloat(beatUnit)||4);
+  return(duration/div)*(60/bpm)*(unit/4);
+}
+function midiToToneNote(midi){
+  const names=['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
+  const pc=((midi%12)+12)%12;
+  return names[pc]+(Math.floor(midi/12)-1);
+}
+function extractMidiPlaybackData(xmlDoc,currentBpm){
+  const bpm=Math.max(1,parseFloat(currentBpm)||getDocBpm(xmlDoc,120));
+  const partEls=getPlayablePartElements(xmlDoc);
+  const parts=getPartInfo(xmlDoc);
+  const events=[];
+  const measureTimeline=[];
+  let totalDuration=0;
+
+  partEls.forEach((part,partIndex)=>{
+    let divisions=1;
+    let beatUnit=4;
+    let partTime=0;
+    xmlChildren(part,'measure').forEach((measure,measureIndex)=>{
+      const measureNumber=parseInt(measure.getAttribute('number'),10)||measureIndex+1;
+      const measureStart=partTime;
+      let cursor=measureStart;
+      let measureEnd=measureStart;
+      let lastNoteStart=measureStart;
+
+      Array.from(measure.children||[]).forEach(node=>{
+        if(node.localName==='attributes'){
+          const div=xmlDesc(node,'divisions');
+          const beatType=xmlDesc(node,'beat-type');
+          if(div&&parseFloat(div.textContent)>0)divisions=parseFloat(div.textContent);
+          if(beatType&&parseFloat(beatType.textContent)>0)beatUnit=parseFloat(beatType.textContent);
+          return;
+        }
+
+        if(node.localName==='backup'||node.localName==='forward'){
+          const sec=durationToSeconds(parseFloat(xmlText(node,'duration','0'))||0,divisions,beatUnit,bpm);
+          cursor=node.localName==='backup'?Math.max(measureStart,cursor-sec):cursor+sec;
+          measureEnd=Math.max(measureEnd,cursor);
+          return;
+        }
+
+        if(node.localName!=='note')return;
+        const duration=parseFloat(xmlText(node,'duration','0'))||0;
+        const durationSec=durationToSeconds(duration,divisions,beatUnit,bpm);
+        const hasChord=!!xmlChild(node,'chord');
+        const startSec=hasChord?lastNoteStart:cursor;
+        const pitch=xmlChild(node,'pitch');
+
+        if(!xmlChild(node,'rest')&&pitch){
+          const step=xmlText(pitch,'step','C');
+          const octave=parseInt(xmlText(pitch,'octave','4'),10);
+          const alter=parseFloat(xmlText(pitch,'alter','0'))||0;
+          events.push({
+            midiNote:noteToMidi(step,alter,octave),
+            startSec,
+            durationSec,
+            velocity:80,
+            partId:parts[partIndex]?.id||`part-${partIndex+1}`,
+            measure:measureNumber,
+            partIndex,
+          });
+        }
+
+        measureEnd=Math.max(measureEnd,startSec+durationSec);
+        if(!hasChord){
+          cursor+=durationSec;
+          lastNoteStart=startSec;
+        }
+      });
+
+      partTime=Math.max(measureEnd,cursor,measureStart);
+      if(partIndex===0)measureTimeline.push({measure:measureNumber,startSec:measureStart,endSec:partTime});
+    });
+    totalDuration=Math.max(totalDuration,partTime);
+  });
+
+  events.sort((a,b)=>a.startSec-b.startSec||a.partIndex-b.partIndex||a.midiNote-b.midiNote);
+  if(events.length)totalDuration=Math.max(totalDuration,...events.map(e=>e.startSec+e.durationSec));
+  return{events,parts,measureTimeline,totalMeasures:measureTimeline.length,totalDuration};
+}
+function formatSeconds(sec){
+  const s=Math.max(0,Math.floor(sec||0));
+  const m=Math.floor(s/60);
+  return `${m}:${String(s%60).padStart(2,'0')}`;
+}
 function getKeyRoot(doc){const f=parseInt(doc.querySelector('key fifths')?.textContent||'0');const i=KEY_FIFTHS.indexOf(f);return i>=0?i:0}
 function getWrittenKeySummary(doc){
   const f=parseInt(doc.querySelector('key fifths')?.textContent||'0');
@@ -3730,7 +3850,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
   </nav>;
 }
 
-function ScoreView({files,activeFile,onOsmdReady}){
+function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
   const containerRef=useRef(null);
   const ossiaRef=useRef(null);
   const osmdRef=useRef(null);
@@ -3799,6 +3919,10 @@ function ScoreView({files,activeFile,onOsmdReady}){
   </div>;
 
   return <div className="main-score">
+    <div className={`score-measure-overlay${isPlaying&&playbackMeasure?' score-measure-overlay--visible':''}`}>
+      <span className="score-measure-overlay__label">Measure</span>
+      <span className="score-measure-overlay__value">{playbackMeasure||1}</span>
+    </div>
     <div className="score-container" ref={containerRef}/>
     <div className="ossia-overlay" ref={ossiaRef}/>
   </div>;
@@ -3807,7 +3931,7 @@ function ScoreView({files,activeFile,onOsmdReady}){
 /* ==============================================================
    TRANSPORT BAR — bottom playback / tempo bar
    ============================================================== */
-function TransportBar({files,bpm,onBpmChange,osmdRef}){
+function CursorTransportBar({files,bpm,onBpmChange,osmdRef}){
   const [isPlaying,setIsPlaying]=useState(false);
   const timerRef=useRef(null);
   const playingRef=useRef(false);
@@ -3948,6 +4072,335 @@ function TransportBar({files,bpm,onBpmChange,osmdRef}){
   </div>;
 }
 
+function createMidiSynth(instrument){
+  if(!window.Tone)return null;
+  const baseEnvelope={attack:0.01,decay:0.1,sustain:0.7,release:0.3};
+  const configs={
+    piano:{oscillator:{type:'triangle'},envelope:baseEnvelope},
+    strings:{oscillator:{type:'sawtooth'},envelope:{...baseEnvelope,attack:0.08,release:0.55}},
+    flute:{oscillator:{type:'sine'},envelope:{...baseEnvelope,attack:0.03,release:0.35}},
+  };
+  const synth=new Tone.PolySynth(Tone.Synth,configs[instrument]||configs.piano);
+  synth.maxPolyphony=16;
+  let effect=null;
+  if(instrument==='strings'){
+    effect=new Tone.Filter(800,'lowpass').toDestination();
+    synth.connect(effect);
+  }else if(instrument==='flute'){
+    effect=new Tone.Vibrato(5,0.3).toDestination();
+    synth.connect(effect);
+  }else{
+    synth.toDestination();
+  }
+  return{synth,effect,dispose(){try{synth.dispose();effect?.dispose();}catch(_){}}};
+}
+
+function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
+  const [isPlaying,setIsPlaying]=useState(false);
+  const [positionSec,setPositionSec]=useState(0);
+  const [instrument,setInstrument]=useState('piano');
+  const [volumeDb,setVolumeDb]=useState(-8);
+  const [selectedParts,setSelectedParts]=useState({});
+  const [loopEnabled,setLoopEnabled]=useState(false);
+  const [loopStart,setLoopStart]=useState(1);
+  const [loopEnd,setLoopEnd]=useState(1);
+  const synthRef=useRef(null);
+  const isPlayingRef=useRef(false);
+
+  const playbackData=useMemo(()=>{
+    if(!file?.xmlDoc)return{events:[],parts:[],measureTimeline:[],totalMeasures:0,totalDuration:0};
+    return extractMidiPlaybackData(file.xmlDoc,currentBpm);
+  },[file,currentBpm]);
+
+  const partKey=playbackData.parts.map(p=>p.id).join('|');
+  const enabledPartIds=useMemo(()=>{
+    const ids=playbackData.parts.filter(p=>selectedParts[p.id]!==false).map(p=>p.id);
+    return new Set(ids);
+  },[playbackData.parts,selectedParts]);
+
+  const playableEvents=useMemo(()=>playbackData.events.filter(e=>enabledPartIds.has(e.partId)),[playbackData.events,enabledPartIds]);
+  const totalDuration=Math.max(0.1,playbackData.totalDuration||0);
+  const totalMeasures=Math.max(1,playbackData.totalMeasures||1);
+  const avgMeasureSec=playbackData.totalMeasures&&playbackData.totalDuration
+    ?playbackData.totalDuration/playbackData.totalMeasures
+    :0;
+  const currentMeasure=avgMeasureSec
+    ?Math.min(totalMeasures,Math.max(1,Math.floor(positionSec/avgMeasureSec)+1))
+    :0;
+  const progressPct=totalDuration?Math.min(100,Math.max(0,(positionSec/totalDuration)*100)):0;
+
+  const getMeasureStart=useCallback(measure=>{
+    const idx=Math.max(0,Math.min(totalMeasures-1,measure-1));
+    return playbackData.measureTimeline[idx]?.startSec||(avgMeasureSec*idx)||0;
+  },[playbackData.measureTimeline,avgMeasureSec,totalMeasures]);
+
+  const getMeasureEnd=useCallback(measure=>{
+    const idx=Math.max(0,Math.min(totalMeasures-1,measure-1));
+    return playbackData.measureTimeline[idx]?.endSec||(avgMeasureSec*(idx+1))||totalDuration;
+  },[playbackData.measureTimeline,avgMeasureSec,totalMeasures,totalDuration]);
+
+  const disposeSynth=useCallback(()=>{
+    synthRef.current?.dispose?.();
+    synthRef.current=null;
+  },[]);
+
+  const ensureSynth=useCallback(()=>{
+    if(!window.Tone)return null;
+    if(synthRef.current?.instrument===instrument)return synthRef.current;
+    disposeSynth();
+    const chain=createMidiSynth(instrument);
+    if(chain)chain.instrument=instrument;
+    synthRef.current=chain;
+    return chain;
+  },[instrument,disposeSynth]);
+
+  const cancelTransport=useCallback(()=>{
+    if(!window.Tone)return;
+    Tone.Transport.stop();
+    Tone.Transport.cancel();
+    Tone.Transport.loop=false;
+  },[]);
+
+  const handleStop=useCallback(()=>{
+    cancelTransport();
+    isPlayingRef.current=false;
+    setIsPlaying(false);
+    setPositionSec(0);
+    onPlaybackUpdate?.({isPlaying:false,currentMeasure:0});
+  },[cancelTransport,onPlaybackUpdate]);
+
+  const schedulePlayback=useCallback(()=>{
+    if(!window.Tone)return false;
+    const chain=ensureSynth();
+    if(!chain?.synth)return false;
+    Tone.Transport.cancel();
+    Tone.Transport.bpm.value=currentBpm;
+    playableEvents.forEach(ev=>{
+      Tone.Transport.schedule(time=>{
+        chain.synth.triggerAttackRelease(
+          midiToToneNote(ev.midiNote),
+          Math.max(0.05,ev.durationSec),
+          time,
+          Math.max(0.05,Math.min(1,ev.velocity/127))
+        );
+      },ev.startSec);
+    });
+    const startSec=getMeasureStart(loopStart);
+    const endSec=Math.max(startSec+0.1,getMeasureEnd(loopEnd));
+    Tone.Transport.loop=loopEnabled;
+    Tone.Transport.loopStart=startSec;
+    Tone.Transport.loopEnd=endSec;
+    if(!loopEnabled){
+      Tone.Transport.scheduleOnce(()=>{
+        Tone.Transport.stop();
+        isPlayingRef.current=false;
+        setIsPlaying(false);
+        setPositionSec(playbackData.totalDuration||0);
+        onPlaybackUpdate?.({isPlaying:false,currentMeasure:0});
+      },Math.max(0.1,playbackData.totalDuration||0));
+    }
+    return true;
+  },[
+    ensureSynth,playableEvents,currentBpm,loopEnabled,loopStart,loopEnd,
+    getMeasureStart,getMeasureEnd,playbackData.totalDuration,onPlaybackUpdate
+  ]);
+
+  const handlePlay=useCallback(async()=>{
+    if(isPlaying)return;
+    if(!file){alert('먼저 파일을 업로드해주세요.');return;}
+    if(!window.Tone){alert('Tone.js가 아직 로드되지 않았습니다.');return;}
+    if(!playableEvents.length){alert('재생할 음표가 없습니다.');return;}
+    await Tone.start();
+    if(!schedulePlayback())return;
+    const basePosition=positionSec>=(playbackData.totalDuration||0)-0.01?0:positionSec;
+    const loopA=getMeasureStart(loopStart);
+    const loopB=getMeasureEnd(loopEnd);
+    const startAt=loopEnabled&&(basePosition<loopA||basePosition>=loopB)
+      ?loopA
+      :Math.min(Math.max(0,basePosition),playbackData.totalDuration||0);
+    Tone.Transport.seconds=startAt;
+    Tone.Transport.start();
+    isPlayingRef.current=true;
+    setIsPlaying(true);
+  },[
+    isPlaying,file,playableEvents.length,schedulePlayback,positionSec,playbackData.totalDuration,
+    loopEnabled,loopStart,loopEnd,getMeasureStart,getMeasureEnd
+  ]);
+
+  const handlePause=useCallback(()=>{
+    if(!window.Tone)return;
+    Tone.Transport.pause();
+    isPlayingRef.current=false;
+    setIsPlaying(false);
+  },[]);
+
+  const handleSeek=useCallback(e=>{
+    const next=parseFloat(e.target.value)||0;
+    setPositionSec(next);
+    if(window.Tone)Tone.Transport.seconds=next;
+  },[]);
+
+  const updateLoopStart=useCallback(value=>{
+    const next=Math.min(totalMeasures,Math.max(1,parseInt(value,10)||1));
+    setLoopStart(next);
+    setLoopEnd(end=>Math.max(next,end));
+  },[totalMeasures]);
+
+  const updateLoopEnd=useCallback(value=>{
+    const next=Math.min(totalMeasures,Math.max(loopStart,parseInt(value,10)||loopStart));
+    setLoopEnd(next);
+  },[loopStart,totalMeasures]);
+
+  useEffect(()=>{isPlayingRef.current=isPlaying;},[isPlaying]);
+
+  useEffect(()=>{
+    if(!file){
+      setSelectedParts({});
+      setLoopStart(1);
+      setLoopEnd(1);
+      handleStop();
+      return;
+    }
+    const defaults={};
+    playbackData.parts.forEach(part=>{defaults[part.id]=true;});
+    setSelectedParts(defaults);
+    setLoopStart(1);
+    setLoopEnd(Math.max(1,playbackData.totalMeasures||1));
+    setPositionSec(0);
+  },[file,partKey]);
+
+  useEffect(()=>{
+    if(!window.Tone)return;
+    const master=Tone.Master||Tone.Destination;
+    if(master?.volume)master.volume.value=volumeDb;
+  },[volumeDb]);
+
+  useEffect(()=>{
+    if(!window.Tone||!isPlayingRef.current)return;
+    const startSec=getMeasureStart(loopStart);
+    const endSec=Math.max(startSec+0.1,getMeasureEnd(loopEnd));
+    Tone.Transport.loop=loopEnabled;
+    Tone.Transport.loopStart=startSec;
+    Tone.Transport.loopEnd=endSec;
+  },[loopEnabled,loopStart,loopEnd,getMeasureStart,getMeasureEnd]);
+
+  useEffect(()=>{
+    if(!isPlaying)return;
+    const id=setInterval(()=>{
+      if(!window.Tone)return;
+      const sec=Math.max(0,Tone.Transport.seconds||0);
+      setPositionSec(loopEnabled?sec:Math.min(sec,playbackData.totalDuration||sec));
+    },100);
+    return()=>clearInterval(id);
+  },[isPlaying,loopEnabled,playbackData.totalDuration]);
+
+  useEffect(()=>{
+    onPlaybackUpdate?.({isPlaying,currentMeasure:isPlaying?currentMeasure:0});
+  },[isPlaying,currentMeasure,onPlaybackUpdate]);
+
+  useEffect(()=>()=>{handleStop();disposeSynth();},[handleStop,disposeSynth]);
+
+  useEffect(()=>{
+    if(isPlayingRef.current)handleStop();
+    else if(window.Tone)Tone.Transport.cancel();
+    setPositionSec(0);
+  },[file,currentBpm,instrument,partKey,selectedParts,handleStop]);
+
+  return <div className="transport-inner">
+    <div className="midi-player" style={{'--midi-progress':`${progressPct}%`}}>
+      <div className="midi-player__controls">
+        <button className={`transport__btn transport__btn--play${isPlaying?' transport__btn--playing':''}`} onClick={handlePlay} title="재생">▶</button>
+        <button className="transport__btn" onClick={handlePause} title="일시정지">⏸</button>
+        <button className="transport__btn" onClick={handleStop} title="정지">⏹</button>
+      </div>
+
+      <div className="midi-player__progress-wrap">
+        <input className="midi-player__progress" type="range" min={0} max={totalDuration} step={0.01}
+          value={Math.min(positionSec,totalDuration)} onChange={handleSeek}/>
+        <div className="midi-player__time">
+          <span>{formatSeconds(positionSec)}</span>
+          <span>{formatSeconds(playbackData.totalDuration||0)}</span>
+        </div>
+      </div>
+
+      <div className="midi-player__stat midi-player__stat--measure">
+        <div className="transport__label">마디</div>
+        <div className="transport__value transport__value--accent">
+          {playbackData.totalMeasures?currentMeasure||1:0}/{playbackData.totalMeasures||0}
+        </div>
+      </div>
+
+      <div className="midi-player__stat midi-player__stat--files">
+        <div className="transport__label">파일</div>
+        <div className="transport__value">{fileCount}개</div>
+      </div>
+
+      <label className="midi-player__field midi-player__field--tempo">
+        <span className="transport__label">Tempo</span>
+        <input className="transport__tempo-slider" type="range" min={20} max={300} value={currentBpm}
+          onChange={e=>onBpmChange(parseInt(e.target.value,10)||120)}/>
+        <span className="transport__value">{currentBpm} BPM</span>
+      </label>
+
+      <label className="midi-player__field midi-player__field--instrument">
+        <span className="transport__label">악기</span>
+        <select className="midi-player__select" value={instrument} onChange={e=>setInstrument(e.target.value)}>
+          <option value="piano">Piano</option>
+          <option value="strings">Strings</option>
+          <option value="flute">Flute</option>
+        </select>
+      </label>
+
+      <label className="midi-player__field midi-player__field--volume">
+        <span className="transport__label">Volume</span>
+        <input className="midi-player__mini-range" type="range" min={-40} max={6} step={1}
+          value={volumeDb} onChange={e=>setVolumeDb(parseInt(e.target.value,10)||0)}/>
+        <span className="transport__value">{volumeDb} dB</span>
+      </label>
+
+      <div className="midi-player__loop">
+        <button className={`midi-player__toggle${loopEnabled?' midi-player__toggle--active':''}`}
+          onClick={()=>setLoopEnabled(v=>!v)}>A-B</button>
+        <label className="midi-player__field midi-player__field--compact">
+          <span className="transport__label">A</span>
+          <input className="midi-player__mini-range" type="range" min={1} max={totalMeasures} value={loopStart}
+            onChange={e=>updateLoopStart(e.target.value)}/>
+          <span className="transport__value">{loopStart}</span>
+        </label>
+        <label className="midi-player__field midi-player__field--compact">
+          <span className="transport__label">B</span>
+          <input className="midi-player__mini-range" type="range" min={1} max={totalMeasures} value={loopEnd}
+            onChange={e=>updateLoopEnd(e.target.value)}/>
+          <span className="transport__value">{loopEnd}</span>
+        </label>
+      </div>
+
+      <div className="midi-player__parts">
+        {playbackData.parts.map(part=>
+          <label className="midi-player__part" key={part.id}>
+            <input type="checkbox" checked={selectedParts[part.id]!==false}
+              onChange={e=>setSelectedParts(s=>({...s,[part.id]:e.target.checked}))}/>
+            <span>{part.label}</span>
+          </label>
+        )}
+      </div>
+    </div>
+  </div>;
+}
+
+function TransportBar({files,activeFile,bpm,onBpmChange,onPlaybackUpdate}){
+  const file=files[activeFile]||files[0]||null;
+  return <div className="transport">
+    <MidiPlayer
+      file={file}
+      fileCount={files.length}
+      currentBpm={bpm}
+      onBpmChange={onBpmChange}
+      onPlaybackUpdate={onPlaybackUpdate}
+    />
+  </div>;
+}
+
 /* ==============================================================
    APP — IDE 4-panel grid layout
    ============================================================== */
@@ -3990,8 +4443,14 @@ function App(){
   const [showRight,setShowRight]=useState(true);
   const [progress,setProgress]=useState({visible:false,msg:''});
   const [bpm,setBpm]=useState(120);
+  const [playback,setPlayback]=useState({isPlaying:false,currentMeasure:0});
   const osmdRef=useRef(null);
   const handleOsmdReady=useCallback(osmd=>{osmdRef.current=osmd;},[]);
+  const handlePlaybackUpdate=useCallback(next=>{
+    setPlayback(prev=>
+      prev.isPlaying===next.isPlaying&&prev.currentMeasure===next.currentMeasure?prev:next
+    );
+  },[]);
 
   const showProgress=useCallback(msg=>setProgress({visible:true,msg}),[]);
   const hideProgress=useCallback(()=>setProgress({visible:false,msg:''}),[]);
@@ -4215,7 +4674,13 @@ function App(){
     </aside>
 
     {/* ── MAIN SCORE VIEW (center) ── */}
-    <ScoreView files={files} activeFile={activeFile} onOsmdReady={handleOsmdReady}/>
+    <ScoreView
+      files={files}
+      activeFile={activeFile}
+      onOsmdReady={handleOsmdReady}
+      playbackMeasure={playback.currentMeasure}
+      isPlaying={playback.isPlaying}
+    />
 
     {/* ── RIGHT PANEL (mirrors inspector for right activity bar) ── */}
     <aside className="analysis">
@@ -4230,7 +4695,13 @@ function App(){
     </aside>
 
     {/* ── TRANSPORT BAR (bottom) ── */}
-    <TransportBar files={files} bpm={bpm} onBpmChange={setBpm} osmdRef={osmdRef}/>
+    <TransportBar
+      files={files}
+      activeFile={activeFile}
+      bpm={bpm}
+      onBpmChange={setBpm}
+      onPlaybackUpdate={handlePlaybackUpdate}
+    />
 
     {/* ── PROGRESS OVERLAY ── */}
     <div className={`progress-overlay${progress.visible?'':' progress-overlay--hidden'}`}>
