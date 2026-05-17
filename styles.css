@@ -1686,6 +1686,70 @@ body {
   background-color: rgba(239,68,68,0.16) !important;
 }
 
+/* ===== PATTERN SEARCH PANEL ===== */
+.pattern-summary {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.pattern-results {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+}
+
+.pattern-results tbody tr {
+  cursor: pointer;
+}
+
+.pattern-results tbody tr:hover {
+  background: var(--bg-hover);
+}
+
+.pattern-motif-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.pattern-motif-item {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pattern-motif-item:hover {
+  background: var(--bg-hover);
+}
+
+.pattern-motif-item span {
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pattern-motif-item b {
+  color: var(--accent);
+}
+
+.pattern-motif-item em {
+  color: var(--text-muted);
+  font-style: normal;
+  font-size: 11px;
+}
+
 .key-analysis-card .form-input {
   margin-bottom: 2px;
 }

@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Pattern Search Core Tests</title>
+<script src="pattern-search-core.js?v=1"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){
+  if(!condition)throw new Error(message);
+}
+
+function parseXml(text){
+  return new DOMParser().parseFromString(text,'text/xml');
+}
+
+try{
+  assert(window.PatternSearchCore, 'PatternSearchCore namespace is missing');
+  assert(window.PatternSearchCore.parsePitchPattern('도 레 미 파 솔').join(',')==='0,2,4,5,7', 'Korean pitch parsing');
+  assert(window.PatternSearchCore.parsePitchPattern('C D E F G').join(',')==='0,2,4,5,7', 'English pitch parsing');
+  assert(window.PatternSearchCore.parseRhythmPattern('4 8 8 4').join(',')==='1,0.5,0.5,1', 'rhythm number parsing');
+  assert(window.PatternSearchCore.parseRhythmPattern('♩ ♪ ♪ ♩').join(',')==='1,0.5,0.5,1', 'rhythm symbol parsing');
+
+  const doc=parseXml(`<score-partwise>
+    <part-list><score-part id="P1"><part-name>Melody</part-name></score-part></part-list>
+    <part id="P1"><measure number="1"><attributes><divisions>2</divisions></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>2</duration></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>2</duration></note>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><pitch><step>C</step><octave>5</octave></pitch><duration>2</duration></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration></note>
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><pitch><step>F</step><octave>4</octave></pitch><duration>2</duration></note>
+    </measure></part>
+  </score-partwise>`);
+
+  const pitchHits=window.PatternSearchCore.searchPitchPattern(doc,[0,2,4],{mode:'pc'});
+  assert(pitchHits.length===2, 'pitch pattern found twice');
+  assert(pitchHits[0].measureNum===1&&pitchHits[1].measureNum===3, 'pitch hit measures');
+
+  const rhythmHits=window.PatternSearchCore.searchRhythmPattern(doc,[1,0.5,0.5,1]);
+  assert(rhythmHits.length===3, 'rhythm pattern found in all measures');
+
+  const motifs=window.PatternSearchCore.detectMotifs(doc);
+  assert(motifs.some(m=>m.count>=2&&m.pattern==='0-2-4'), 'motif candidate detected');
+
+  const highlighted=window.PatternSearchCore.highlightMatches(doc,pitchHits,'#FF6B6B');
+  assert(highlighted.count===6, 'highlight note count');
+  assert(doc.querySelectorAll('notehead[color="#FF6B6B"]').length===6, 'notehead colors inserted');
+
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>

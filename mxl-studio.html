@@ -20,6 +20,7 @@
 <script src="voice-leading-core.js?v=1"></script>
 <script src="export-formats-core.js?v=1"></script>
 <script src="ear-training-core.js?v=1"></script>
+<script src="pattern-search-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -163,6 +164,7 @@ const NAV = [
     {id:'roman',icon:'Ⅰ',label:'로마 숫자 분석'},
     {id:'fingering',icon:'🖐',label:'운지법 표시'},
     {id:'voiceleading',icon:'🔍',label:'성부 진행 분석'},
+    {id:'patternsearch',icon:'🔎',label:'음형 패턴 검색'},
   ]},
 ];
 
@@ -3883,6 +3885,141 @@ function EarTrainingPanel({files,activeFile=0}){
 }
 
 /* ==============================================================
+   PANEL: PATTERN SEARCH
+   ============================================================== */
+function PatternSearchPanel({files,activeFile=0,onFilesUpdate}){
+  const [mode,setMode]=useState('pitch');
+  const [pitchInput,setPitchInput]=useState('C D E');
+  const [pitchMode,setPitchMode]=useState('pc');
+  const [rhythmInput,setRhythmInput]=useState('4 8 8 4');
+  const [results,setResults]=useState([]);
+  const [motifs,setMotifs]=useState([]);
+  const [log,setLog]=useState([]);
+  const file=files[activeFile]||files[0];
+  const distribution=useMemo(()=>window.PatternSearchCore?.distribution(results)||{byFile:{},byPart:{}},[results]);
+
+  const runSearch=useCallback(()=>{
+    if(!file?.xmlDoc){alert('먼저 파일을 업로드하세요.');return}
+    if(!window.PatternSearchCore){alert('패턴 검색 모듈을 불러오지 못했습니다.');return}
+    try{
+      let hits=[];
+      if(mode==='pitch'){
+        const pattern=window.PatternSearchCore.parsePitchPattern(pitchInput);
+        if(!pattern.length){alert('검색할 음고 패턴을 입력하세요.');return}
+        hits=window.PatternSearchCore.searchPitchPattern(file.xmlDoc,pattern,{mode:pitchMode});
+      }else if(mode==='rhythm'){
+        const pattern=window.PatternSearchCore.parseRhythmPattern(rhythmInput);
+        if(!pattern.length){alert('검색할 리듬 패턴을 입력하세요.');return}
+        hits=window.PatternSearchCore.searchRhythmPattern(file.xmlDoc,pattern);
+      }else{
+        const found=window.PatternSearchCore.detectMotifs(file.xmlDoc);
+        setMotifs(found);
+        hits=found.flatMap(m=>m.locations.map(loc=>({...loc,motif:m})));
+      }
+      hits=hits.map(h=>({...h,fileName:file.name}));
+      setResults(hits);
+      setLog([{m:`${hits.length}개 위치를 찾았습니다.`,t:hits.length?'ok':'warn'}]);
+    }catch(e){setLog([{m:e.message,t:'err'}]);}
+  },[file,mode,pitchInput,pitchMode,rhythmInput]);
+
+  const appendRhythm=useCallback(token=>{
+    setRhythmInput(v=>(v?`${v} `:'')+token);
+  },[]);
+
+  const scrollToMeasure=useCallback(measure=>{
+    window.dispatchEvent(new CustomEvent('mxl-scroll-measure',{detail:{measure}}));
+  },[]);
+
+  const highlight=useCallback(()=>{
+    if(!file?.xmlDoc||!results.length)return;
+    const doc=cloneDoc(file.xmlDoc);
+    let freshMatches=[];
+    if(mode==='pitch'){
+      const pattern=window.PatternSearchCore.parsePitchPattern(pitchInput);
+      freshMatches=window.PatternSearchCore.searchPitchPattern(doc,pattern,{mode:pitchMode});
+    }else if(mode==='rhythm'){
+      const pattern=window.PatternSearchCore.parseRhythmPattern(rhythmInput);
+      freshMatches=window.PatternSearchCore.searchRhythmPattern(doc,pattern);
+    }else{
+      freshMatches=window.PatternSearchCore.detectMotifs(doc).flatMap(m=>m.locations);
+    }
+    const result=window.PatternSearchCore.highlightMatches(doc,freshMatches,'#FF6B6B');
+    const xmlString=new XMLSerializer().serializeToString(doc);
+    const fileIndex=files[activeFile]?activeFile:0;
+    const updated=files.map((f,i)=>i===fileIndex?{...f,xmlDoc:doc,xmlString}:f);
+    onFilesUpdate(updated,'패턴 하이라이트');
+    setLog([{m:`${result.count}개 음표를 하이라이트했습니다.`,t:'ok'}]);
+  },[file,files,activeFile,results,mode,pitchInput,pitchMode,rhythmInput,onFilesUpdate]);
+
+  return <div>
+    <h2 className="panel__heading">음형 패턴 검색</h2>
+    <p className="panel__description">음고, 리듬, 반복 모티프를 찾아 위치를 표시하고 MusicXML notehead 색상으로 하이라이트합니다.</p>
+    <div className="card">
+      <div className="card__title">검색 모드</div>
+      <div className="chip-group">
+        <Chip on={mode==='pitch'} onClick={()=>setMode('pitch')}>음고 패턴</Chip>
+        <Chip on={mode==='rhythm'} onClick={()=>setMode('rhythm')}>리듬 패턴</Chip>
+        <Chip on={mode==='motif'} onClick={()=>setMode('motif')}>모티프 자동 감지</Chip>
+      </div>
+    </div>
+
+    {mode==='pitch'&&<div className="card">
+      <div className="card__title">음고 패턴</div>
+      <input className="form-input" value={pitchInput} onChange={e=>setPitchInput(e.target.value)} placeholder="C D E F G 또는 도 레 미 파 솔"/>
+      <div className="chip-group section-gap">
+        <Chip on={pitchMode==='absolute'} onClick={()=>setPitchMode('absolute')}>절대 음고</Chip>
+        <Chip on={pitchMode==='pc'} onClick={()=>setPitchMode('pc')}>음계 내 상대 음고</Chip>
+      </div>
+    </div>}
+
+    {mode==='rhythm'&&<div className="card">
+      <div className="card__title">리듬 패턴</div>
+      <input className="form-input form-input--mono" value={rhythmInput} onChange={e=>setRhythmInput(e.target.value)} placeholder="4 8 8 4 또는 ♩ ♪ ♪ ♩"/>
+      <div className="chip-group section-gap">
+        {['♩','♪','♫','2','4','8','16'].map(t=><Chip key={t} on={false} onClick={()=>appendRhythm(t)}>{t}</Chip>)}
+      </div>
+    </div>}
+
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={runSearch} disabled={!files.length}>🔎 검색 실행</button>
+      <button className="btn btn--secondary" onClick={highlight} disabled={!results.length}>하이라이트</button>
+    </div>
+
+    <div className="stats-row pattern-summary">
+      <div className="stat-tile"><div className="stat-tile__value">{results.length}</div><div className="stat-tile__label">발견 위치</div></div>
+      <div className="stat-tile"><div className="stat-tile__value">{Object.keys(distribution.byPart).length}</div><div className="stat-tile__label">파트 수</div></div>
+    </div>
+
+    {mode==='motif'&&motifs.length>0&&<div className="card">
+      <div className="card__title">모티프 후보</div>
+      <div className="pattern-motif-list">
+        {motifs.slice(0,12).map(m=><button className="pattern-motif-item" key={m.pattern} onClick={()=>setResults(m.locations.map(loc=>({...loc,fileName:file.name,motif:m})))}>
+          <span>{m.pattern}</span><b>{m.count}회</b><em>{m.variant}</em>
+        </button>)}
+      </div>
+    </div>}
+
+    <div className="card">
+      <div className="card__title">파트별 분포</div>
+      <BarChart data={distribution.byPart} labelWidth={72}/>
+    </div>
+
+    <div className="pattern-results">
+      <table className="roman-table">
+        <thead><tr><th>파일명</th><th>파트</th><th>마디</th><th>박자 위치</th></tr></thead>
+        <tbody>
+          {results.map((r,i)=><tr key={`${r.partIdx}-${r.measureNum}-${r.beatIdx}-${i}`} onClick={()=>scrollToMeasure(r.measureNum)}>
+            <td>{r.fileName}</td><td>{r.partName}</td><td>{r.measureNum}</td><td>{r.beatIdx}</td>
+          </tr>)}
+          {!results.length&&<tr><td colSpan="4">검색 결과가 없습니다.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
    PANEL: STATISTICS
    ============================================================== */
 function StatsPanel({files,showProgress,hideProgress}){
@@ -4426,6 +4563,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
       {icon:'Ⅰ',label:'로마 숫자 분석',      onClick:()=>sel('right','roman')},
       {icon:'🖐',label:'운지법 표시',          onClick:()=>sel('right','fingering')},
       {icon:'🔍',label:'성부 진행 분석',      onClick:()=>sel('right','voiceleading')},
+      {icon:'🔎',label:'음형 패턴 검색',      onClick:()=>sel('right','patternsearch')},
       {icon:'📊',label:'통계 분석',            onClick:()=>sel('right','stats')},
     ]},
   ];
@@ -5037,7 +5175,7 @@ const RIGHT_ACTIVITY_ITEMS=[
   {id:'notation',icon:'✏️'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
   {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
   {id:'numbering',icon:'🔢'},{id:'eartraining',icon:'👂'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
-  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'stats',icon:'📊'},
+  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'patternsearch',icon:'🔎'},{id:'stats',icon:'📊'},
 ];
 
 const RIGHT_PANEL_IDS=new Set(RIGHT_ACTIVITY_ITEMS.filter(i=>!i.sep).map(i=>i.id));
@@ -5050,7 +5188,7 @@ const PANEL_LABELS={
   parts:'파트 추출',notation:'악보 표기 변환',export:'이미지 / PDF',
   color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
   eartraining:'청음 훈련',lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',
-  voiceleading:'성부 진행 분석',stats:'통계 분석',
+  voiceleading:'성부 진행 분석',patternsearch:'음형 패턴 검색',stats:'통계 분석',
 };
 
 function App(){
@@ -5299,6 +5437,7 @@ function App(){
     roman:<RomanAnalysisPanel {...panelProps}/>,
     fingering:<FingeringPanel {...panelProps}/>,
     voiceleading:<VoiceLeadingPanel {...panelProps}/>,
+    patternsearch:<PatternSearchPanel {...panelProps}/>,
     stats:<StatsPanel {...panelProps}/>,
   };
 
