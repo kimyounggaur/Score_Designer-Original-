@@ -18,6 +18,7 @@
 <script src="history-core.js?v=1"></script>
 <script src="fingering-core.js?v=1"></script>
 <script src="voice-leading-core.js?v=1"></script>
+<script src="export-formats-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -2218,6 +2219,8 @@ function ExportPanel({files,showProgress,hideProgress}){
   const [bgWhite,setBgWhite]=useState(true);
   const [previewing,setPreviewing]=useState(false);
   const [previewReady,setPreviewReady]=useState(false);
+  const [textFormat,setTextFormat]=useState('abc');
+  const [exportText,setExportText]=useState('');
   const [log,setLog]=useState([]);
   const previewRef=useRef(null);
   const osmdRef=useRef(null);
@@ -2392,12 +2395,63 @@ function ExportPanel({files,showProgress,hideProgress}){
     if(!previewRef.current||!previewReady){alert('먼저 미리보기를 실행해주세요.');return}
     const svgEl=previewRef.current.querySelector('svg');
     if(!svgEl)return;
-    const svgData=new XMLSerializer().serializeToString(svgEl);
-    const blob=new Blob([svgData],{type:'image/svg+xml'});
+    const svgData=window.ExportFormatsCore?window.ExportFormatsCore.serializeSVG(svgEl):new XMLSerializer().serializeToString(svgEl);
+    const blob=new Blob([svgData],{type:'image/svg+xml;charset=utf-8'});
     const fn=files[selIdx]?.name?.replace(/\.(mxl|xml|musicxml)$/i,'')||'score';
     downloadBlob(blob,fn+'.svg');
     setLog([{m:`✓ ${fn}.svg 다운로드 완료`,t:'ok'}]);
   },[previewReady,files,selIdx]);
+
+  const exportAllSVG=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!window.ExportFormatsCore){alert('내보내기 변환 모듈을 불러오지 못했습니다.');return}
+    setLog([]);showProgress('전체 파일 SVG 변환 중...');
+    const container=document.createElement('div');
+    container.style.cssText='position:absolute;left:-10000px;top:0;width:1200px;background:#fff;';
+    document.body.appendChild(container);
+    try{
+      const zip=new JSZip();const lines=[];
+      for(let fi=0;fi<files.length;fi++){
+        showProgress(`SVG 변환 중... (${fi+1}/${files.length})`);
+        container.innerHTML='';
+        const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(container,{
+          autoResize:false,backend:'svg',drawTitle:true,drawComposer:true,drawPartNames:true,drawMeasureNumbers:true,
+        });
+        await osmd.load(new XMLSerializer().serializeToString(files[fi].xmlDoc));
+        osmd.render();
+        const svgEl=container.querySelector('svg');
+        if(!svgEl){lines.push({m:`⚠ ${files[fi].name}: SVG 렌더링 실패`,t:'warn'});continue}
+        const bn=window.ExportFormatsCore.safeName(files[fi].name);
+        zip.file(`${bn}.svg`,window.ExportFormatsCore.serializeSVG(svgEl));
+        lines.push({m:`✓ ${bn}.svg`,t:'ok'});
+      }
+      const zipBlob=await zip.generateAsync({type:'blob'});
+      downloadBlob(zipBlob,'scores_svg.zip');
+      lines.push({m:'✅ SVG ZIP 다운로드 완료!',t:'ok'});setLog(lines);
+    }catch(e){setLog([{m:'❌ '+e.message,t:'err'}])}
+    finally{document.body.removeChild(container);hideProgress();}
+  },[files,showProgress,hideProgress]);
+
+  const generateTextExport=useCallback(()=>{
+    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!window.ExportFormatsCore){alert('내보내기 변환 모듈을 불러오지 못했습니다.');return}
+    const file=files[selIdx]||files[0];
+    const text=textFormat==='abc'
+      ? window.ExportFormatsCore.toABC(file.xmlDoc)
+      : window.ExportFormatsCore.toLilypond(file.xmlDoc);
+    setExportText(text);
+    setLog([{m:`✓ ${textFormat==='abc'?'ABC':'LilyPond'} 텍스트 생성 완료`,t:'ok'}]);
+  },[files,selIdx,textFormat]);
+
+  const downloadTextExport=useCallback(()=>{
+    if(!exportText){generateTextExport();return}
+    const file=files[selIdx]||files[0];
+    const base=window.ExportFormatsCore?.safeName(file?.name)||'score';
+    const ext=textFormat==='abc'?'txt':'ly';
+    const mime=textFormat==='abc'?'text/plain;charset=utf-8':'text/x-lilypond;charset=utf-8';
+    downloadBlob(new Blob([exportText],{type:mime}),`${base}.${ext}`);
+    setLog([{m:`✓ ${base}.${ext} 다운로드 완료`,t:'ok'}]);
+  },[exportText,files,selIdx,textFormat,generateTextExport]);
 
   return <div>
     <h2 className="panel__heading">이미지 / PDF 내보내기</h2>
@@ -2453,8 +2507,26 @@ function ExportPanel({files,showProgress,hideProgress}){
         <button className="btn btn--secondary" onClick={exportSVG}>🖼️ SVG 저장</button>
         <button className="btn btn--secondary" onClick={exportPDF}>📄 PDF 저장 (인쇄)</button>
         <button className="btn btn--secondary" onClick={exportAllPNG}>📦 전체 파일 PNG (ZIP)</button>
+        <button className="btn btn--secondary" onClick={exportAllSVG}>📦 전체 파일 SVG (ZIP)</button>
       </div>
     </div>}
+
+    <div className="card">
+      <div className="card__title">🎼 텍스트 악보 내보내기</div>
+      <div className="chip-group">
+        <Chip on={textFormat==='abc'} onClick={()=>{setTextFormat('abc');setExportText('')}}>ABC Notation</Chip>
+        <Chip on={textFormat==='lilypond'} onClick={()=>{setTextFormat('lilypond');setExportText('')}}>LilyPond (.ly)</Chip>
+      </div>
+      <div className="btn-row" style={{marginTop:'10px'}}>
+        <button className="btn btn--primary" onClick={generateTextExport} disabled={!files.length}>텍스트 생성</button>
+        <button className="btn btn--secondary" onClick={downloadTextExport} disabled={!files.length}>{textFormat==='abc'?'.txt 다운로드':'.ly 다운로드'}</button>
+      </div>
+      <textarea
+        className="export-textarea"
+        value={exportText}
+        onChange={e=>setExportText(e.target.value)}
+        placeholder={textFormat==='abc'?'ABC Notation 결과가 여기에 표시됩니다.':'LilyPond 결과가 여기에 표시됩니다.'}/>
+    </div>
 
     <LogPanel lines={log}/>
   </div>;

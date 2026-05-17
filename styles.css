@@ -2234,6 +2234,21 @@ body {
 
 .export-actions-card { margin-top: 10px; }
 
+.export-textarea {
+  width: 100%;
+  min-height: 220px;
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
 /* ===== CHANGE LIST ===== */
 .change-list {
   display: flex;

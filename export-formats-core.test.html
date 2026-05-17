@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Export Formats Core Tests</title>
+<script src="export-formats-core.js?v=1"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){
+  if(!condition)throw new Error(message);
+}
+
+function parseXml(text){
+  return new DOMParser().parseFromString(text,'text/xml');
+}
+
+try{
+  assert(window.ExportFormatsCore, 'ExportFormatsCore namespace is missing');
+  const doc=parseXml(`<score-partwise>
+    <work><work-title>Tiny Tune</work-title></work>
+    <identification><creator type="composer">Composer A</creator></identification>
+    <part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list>
+    <part id="P1"><measure number="1">
+      <attributes><divisions>2</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>2</duration><type>quarter</type></note>
+      <note><pitch><step>D</step><alter>1</alter><octave>5</octave></pitch><duration>1</duration><type>eighth</type></note>
+      <note><rest/><duration>4</duration><type>half</type></note>
+    </measure><measure number="2">
+      <note><pitch><step>E</step><alter>-1</alter><octave>3</octave></pitch><duration>8</duration><type>whole</type></note>
+    </measure></part>
+  </score-partwise>`);
+
+  const abc=window.ExportFormatsCore.toABC(doc);
+  assert(abc.includes('T:Tiny Tune'), 'ABC title');
+  assert(abc.includes('C:Composer A'), 'ABC composer');
+  assert(abc.includes('M:4/4'), 'ABC meter');
+  assert(abc.includes('K:C'), 'ABC key');
+  assert(abc.includes('C2 ^d z4 |'), 'ABC notes and rest');
+  assert(abc.includes('_E,8 |'), 'ABC flat low octave');
+
+  const ly=window.ExportFormatsCore.toLilypond(doc);
+  assert(ly.includes('\\\\version "2.24.0"'), 'LilyPond version');
+  assert(ly.includes('title = "Tiny Tune"'), 'LilyPond title');
+  assert(ly.includes("Flute = \\\\relative c'"), 'LilyPond part name');
+  assert(ly.includes("c4 dis'8 r2"), 'LilyPond notes and rest');
+  assert(ly.includes('es,,1'), 'LilyPond flat low octave');
+
+  const svgDoc=parseXml('<svg xmlns="http://www.w3.org/2000/svg"><text>Hello</text></svg>');
+  const serialized=window.ExportFormatsCore.serializeSVG(svgDoc.documentElement);
+  assert(serialized.includes('@import url'), 'SVG style inserted');
+  assert(serialized.includes('<svg'), 'SVG serialized');
+
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>
