@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Layout Core Tests</title>
+<script src="layout-core.js?v=1"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){
+  if(!condition)throw new Error(message);
+}
+
+function parseXml(text){
+  return new DOMParser().parseFromString(text,'text/xml');
+}
+
+try{
+  assert(window.LayoutCore, 'LayoutCore namespace is missing');
+  assert(window.LayoutCore.mmToTenths(210)===8400, 'mm to tenths');
+
+  const doc=parseXml(`<score-partwise>
+    <work><work-title>Old Work</work-title></work>
+    <identification><creator type="composer">Old Composer</creator></identification>
+    <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+    <part id="P1">
+      <measure number="1"><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note></measure>
+      <measure number="2"><note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration></note></measure>
+    </part>
+  </score-partwise>`);
+
+  window.LayoutCore.applyLayout(doc,{
+    pageSize:'A4',
+    margins:{left:12,right:13,top:14,bottom:15},
+    staffDistance:90,
+    systemDistance:120,
+    scalePercent:125,
+    measureNumbering:'system',
+    startMeasure:5,
+    breaks:{system:[2],page:[1],removeAll:false},
+    meta:{title:'New Title',workTitle:'New Work',composer:'New Composer',lyricist:'Lyricist',rights:'Copyright'},
+  });
+
+  assert(doc.querySelector('page-layout page-height').textContent==='11880', 'A4 page height');
+  assert(doc.querySelector('page-layout page-width').textContent==='8400', 'A4 page width');
+  assert(doc.querySelector('page-margins[type="both"] left-margin').textContent==='480', 'left margin');
+  assert(doc.querySelector('staff-layout staff-distance').textContent==='90', 'staff distance');
+  assert(doc.querySelector('system-layout system-distance').textContent==='120', 'system distance');
+  assert(doc.querySelector('scaling millimeters').textContent==='8.75', 'scaled millimeters');
+  assert(doc.querySelector('measure-numbering').textContent==='system', 'measure numbering');
+  assert(doc.querySelector('part measure').getAttribute('number')==='5', 'start measure number');
+  assert(doc.querySelector('measure[number="5"] print').getAttribute('new-page')==='yes', 'page break inserted');
+  assert(doc.querySelector('measure[number="2"] print').getAttribute('new-system')==='yes', 'system break inserted by original measure lookup');
+  assert(doc.querySelector('movement-title').textContent==='New Title', 'movement title');
+  assert(doc.querySelector('work-title').textContent==='New Work', 'work title');
+  assert(doc.querySelector('creator[type="composer"]').textContent==='New Composer', 'composer');
+  assert(doc.querySelector('creator[type="lyricist"]').textContent==='Lyricist', 'lyricist');
+  assert(doc.querySelector('rights').textContent==='Copyright', 'rights');
+
+  window.LayoutCore.removeBreaks(doc);
+  assert(doc.querySelectorAll('print[new-system],print[new-page]').length===0, 'breaks removed');
+
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>

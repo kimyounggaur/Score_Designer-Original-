@@ -21,6 +21,7 @@
 <script src="export-formats-core.js?v=1"></script>
 <script src="ear-training-core.js?v=1"></script>
 <script src="pattern-search-core.js?v=1"></script>
+<script src="layout-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -146,6 +147,7 @@ const NAV = [
   {section:'변환 도구',items:[
     {id:'transpose',icon:'transpose_svg',label:'조옮김'},{id:'keychange',icon:'🔀',label:'마디별 조바꿈'},
     {id:'capo',icon:'capo_svg',label:'카포 (Capo)'},
+    {id:'layout',icon:'📄',label:'레이아웃 편집'},
     {id:'range',icon:'panflute_svg',label:'음역대 조정'},
     {id:'instrument',icon:'🎺',label:'이조 악기'},{id:'tempo',icon:'⏱️',label:'템포 조절'},
     {id:'tempochange',icon:'📐',label:'마디별 템포'},
@@ -4466,6 +4468,154 @@ function ClefPanel({files,showProgress,hideProgress,onFilesUpdate}){
 }
 
 /* ==============================================================
+   PANEL: LAYOUT
+   ============================================================== */
+function LayoutPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const defaultForm=useMemo(()=>({
+    pageSize:'A4',
+    margins:{left:10,right:10,top:12,bottom:12},
+    staffDistance:80,
+    systemDistance:100,
+    scalePercent:100,
+    measureNumbering:'system',
+    startMeasure:1,
+    systemBreakMeasure:'',
+    pageBreakMeasure:'',
+    removeAllBreaks:false,
+    applyScope:'current',
+    meta:{title:'',workTitle:'',composer:'',lyricist:'',rights:''},
+  }),[]);
+  const [form,setForm]=useState(defaultForm);
+  const [open,setOpen]=useState({page:true,margins:false,spacing:false,breaks:false,meta:false});
+  const [log,setLog]=useState([]);
+  const file=files[activeFile]||files[0];
+  const pageSizes=window.LayoutCore?.PAGE_SIZES||{};
+
+  useEffect(()=>{
+    if(!file?.xmlDoc||!window.LayoutCore?.readMetadata)return;
+    setForm(prev=>({...prev,meta:{...prev.meta,...window.LayoutCore.readMetadata(file.xmlDoc)}}));
+  },[file]);
+
+  const updateField=useCallback((key,value)=>setForm(prev=>({...prev,[key]:value})),[]);
+  const updateMargin=useCallback((key,value)=>setForm(prev=>({...prev,margins:{...prev.margins,[key]:value}})),[]);
+  const updateMeta=useCallback((key,value)=>setForm(prev=>({...prev,meta:{...prev.meta,[key]:value}})),[]);
+  const toggleSection=useCallback(id=>setOpen(prev=>({...prev,[id]:!prev[id]})),[]);
+
+  const resetDefaults=useCallback(()=>{
+    setForm({...defaultForm,meta:window.LayoutCore?.readMetadata?.(file?.xmlDoc)||defaultForm.meta});
+    setLog([{m:'레이아웃 입력값을 기본값으로 되돌렸습니다.',t:'info'}]);
+  },[defaultForm,file]);
+
+  const apply=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드하세요.');return}
+    if(!window.LayoutCore){alert('레이아웃 편집 모듈을 불러오지 못했습니다.');return}
+    setLog([]);
+    showProgress('레이아웃 편집 적용 중...');
+    await new Promise(r=>setTimeout(r,50));
+    try{
+      const systemBreaks=form.systemBreakMeasure?String(form.systemBreakMeasure).split(',').map(v=>parseInt(v.trim(),10)).filter(Boolean):[];
+      const pageBreaks=form.pageBreakMeasure?String(form.pageBreakMeasure).split(',').map(v=>parseInt(v.trim(),10)).filter(Boolean):[];
+      const targetAll=form.applyScope==='all';
+      const targetIndex=files[activeFile]?activeFile:0;
+      const updated=files.map((f,i)=>{
+        if(!targetAll&&i!==targetIndex)return f;
+        const doc=cloneDoc(f.xmlDoc);
+        window.LayoutCore.applyLayout(doc,{
+          pageSize:form.pageSize,
+          margins:form.margins,
+          staffDistance:form.staffDistance,
+          systemDistance:form.systemDistance,
+          scalePercent:form.scalePercent,
+          measureNumbering:form.measureNumbering,
+          startMeasure:form.startMeasure,
+          breaks:{system:systemBreaks,page:pageBreaks,removeAll:form.removeAllBreaks},
+          meta:form.meta,
+        });
+        return {...f,xmlDoc:doc,xmlString:new XMLSerializer().serializeToString(doc)};
+      });
+      onFilesUpdate(updated,'레이아웃 편집');
+      setLog([{m:`${targetAll?'모든 파일':'현재 파일'}에 레이아웃 설정을 적용했습니다.`,t:'ok'}]);
+    }catch(e){
+      setLog([{m:e.message,t:'err'}]);
+    }finally{
+      hideProgress();
+    }
+  },[files,activeFile,form,onFilesUpdate,showProgress,hideProgress]);
+
+  const Section=({id,title,children})=><div className="layout-section">
+    <button type="button" className="layout-section__head" onClick={()=>toggleSection(id)}>
+      <span>{title}</span><span>{open[id]?'−':'+'}</span>
+    </button>
+    {open[id]&&<div className="layout-section__body">{children}</div>}
+  </div>;
+
+  return <div>
+    <h2 className="panel__heading">레이아웃 편집</h2>
+    <p className="panel__description">페이지 크기, 여백, 보표 간격, 브레이크, 마디 번호와 메타데이터를 MusicXML 조판 정보로 편집합니다.</p>
+
+    <Section id="page" title="페이지">
+      <label className="form-label">페이지 크기</label>
+      <select className="form-select" value={form.pageSize} onChange={e=>updateField('pageSize',e.target.value)}>
+        {Object.entries(pageSizes).map(([id,size])=><option key={id} value={id}>{id} ({size.width}×{size.height} mm)</option>)}
+      </select>
+      <label className="form-label">음표 크기 {form.scalePercent}%</label>
+      <input className="layout-slider" type="range" min="50" max="200" step="5" value={form.scalePercent} onChange={e=>updateField('scalePercent',parseInt(e.target.value,10))}/>
+    </Section>
+
+    <Section id="margins" title="여백">
+      <div className="layout-grid">
+        {['left','right','top','bottom'].map(key=><label className="form-label" key={key}>{key}
+          <input className="form-input" type="number" min="0" step="0.5" value={form.margins[key]} onChange={e=>updateMargin(key,e.target.value)}/>
+        </label>)}
+      </div>
+    </Section>
+
+    <Section id="spacing" title="간격">
+      <label className="form-label">보표 간격 (tenths)</label>
+      <input className="form-input" type="number" min="20" value={form.staffDistance} onChange={e=>updateField('staffDistance',e.target.value)}/>
+      <label className="form-label">시스템 간격 (tenths)</label>
+      <input className="form-input" type="number" min="20" value={form.systemDistance} onChange={e=>updateField('systemDistance',e.target.value)}/>
+    </Section>
+
+    <Section id="breaks" title="브레이크와 마디 번호">
+      <label className="form-label">시스템 브레이크 추가 마디</label>
+      <input className="form-input" value={form.systemBreakMeasure} onChange={e=>updateField('systemBreakMeasure',e.target.value)} placeholder="예: 4 또는 4,8"/>
+      <label className="form-label">페이지 브레이크 추가 마디</label>
+      <input className="form-input" value={form.pageBreakMeasure} onChange={e=>updateField('pageBreakMeasure',e.target.value)} placeholder="예: 9"/>
+      <label className="layout-check"><input type="checkbox" checked={form.removeAllBreaks} onChange={e=>updateField('removeAllBreaks',e.target.checked)}/> 모든 브레이크 제거 후 적용</label>
+      <label className="form-label">마디 번호 스타일</label>
+      <select className="form-select" value={form.measureNumbering} onChange={e=>updateField('measureNumbering',e.target.value)}>
+        <option value="none">숨김</option><option value="measure">매 마디</option><option value="system">시스템 첫 마디</option>
+      </select>
+      <label className="form-label">시작 번호</label>
+      <input className="form-input" type="number" min="1" value={form.startMeasure} onChange={e=>updateField('startMeasure',e.target.value)}/>
+    </Section>
+
+    <Section id="meta" title="제목·작곡가 메타데이터">
+      {[
+        ['title','movement-title'],['workTitle','work-title'],['composer','composer'],['lyricist','lyricist'],['rights','rights'],
+      ].map(([key,label])=><label className="form-label" key={key}>{label}
+        <input className="form-input" value={form.meta[key]} onChange={e=>updateMeta(key,e.target.value)}/>
+      </label>)}
+    </Section>
+
+    <div className="card">
+      <div className="card__title">적용 범위</div>
+      <select className="form-select" value={form.applyScope} onChange={e=>updateField('applyScope',e.target.value)}>
+        <option value="current">현재 파일에만 적용</option>
+        <option value="all">모든 파일에 일괄 적용</option>
+      </select>
+    </div>
+
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={apply} disabled={!files.length}>적용</button>
+      <button className="btn btn--secondary" onClick={resetDefaults}>기본값 초기화</button>
+    </div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
    SCORE VIEW — center panel always-visible score renderer
    ============================================================== */
 function applyLyricStylesToSvg(container,xmlDoc){
@@ -4533,6 +4683,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
       {icon:'🔄',label:'조옮김 (Transpose)',   onClick:()=>sel('left','transpose')},
       {icon:'🔀',label:'마디별 조바꿈',        onClick:()=>sel('left','keychange')},
       {icon:'🎸',label:'카포 (Capo)',           onClick:()=>sel('left','capo')},
+      {icon:'📄',label:'레이아웃 편집',          onClick:()=>sel('left','layout')},
       {icon:'𝄞', label:'음자리표 변환',        onClick:()=>sel('left','clef')},
     ]},
     {id:'range',label:'음역 / 악기',items:[
@@ -5164,7 +5315,7 @@ function TransportBar({files,activeFile,bpm,onBpmChange,onPlaybackUpdate}){
 /* Activity bar icons — left strip */
 const LEFT_ACTIVITY_ITEMS=[
   {id:'upload',icon:'📂'},{id:'sep1',sep:true},
-  {id:'transpose',icon:'transpose_svg'},{id:'keychange',icon:'🔀'},{id:'capo',icon:'capo_svg'},
+  {id:'transpose',icon:'transpose_svg'},{id:'keychange',icon:'🔀'},{id:'capo',icon:'capo_svg'},{id:'layout',icon:'📄'},
   {id:'range',icon:'panflute_svg'},{id:'instrument',icon:'🎺'},{id:'tempo',icon:'⏱️'},
   {id:'tempochange',icon:'📐'},{id:'ossia',icon:'🎶'},{id:'clef',icon:'𝄞'},
 ];
@@ -5184,7 +5335,7 @@ const RIGHT_PANEL_IDS=new Set(RIGHT_ACTIVITY_ITEMS.filter(i=>!i.sep).map(i=>i.id
 const PANEL_LABELS={
   upload:'파일 업로드',transpose:'조옮김',keychange:'마디별 조바꿈',capo:'카포 (Capo)',
   range:'음역대 조정',instrument:'이조 악기',tempo:'템포 조절',tempochange:'마디별 템포',
-  ossia:'Ossia 마디',clef:'음자리표 변환',
+  ossia:'Ossia 마디',clef:'음자리표 변환',layout:'레이아웃 편집',
   parts:'파트 추출',notation:'악보 표기 변환',export:'이미지 / PDF',
   color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
   eartraining:'청음 훈련',lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',
@@ -5424,6 +5575,7 @@ function App(){
     tempochange:<TempoChangePanel {...panelProps}/>,
     ossia:<OssiaPanel {...panelProps}/>,
     clef:<ClefPanel {...panelProps}/>,
+    layout:<LayoutPanel {...panelProps}/>,
     parts:<PartsPanel {...panelProps}/>,
     notation:<NotationPanel {...panelProps}/>,
     export:<ExportPanel {...panelProps}/>,
