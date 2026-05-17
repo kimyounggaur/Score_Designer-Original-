@@ -165,12 +165,13 @@ const NAV = [
   {section:'교육 도구',items:[
     {id:'color',icon:'🎨',label:'색깔 악보'},{id:'harmony',icon:'🔗',label:'화성 쌓기'},
     {id:'chordtools',icon:'🔧',label:'코드 도구'},{id:'numbering',icon:'🔢',label:'숫자 악보'},
-    {id:'eartraining',icon:'👂',label:'청음 훈련'},
-    {id:'chords',icon:'🎸',label:'코드 분석'},{id:'stats',icon:'📊',label:'통계 분석'},
+    {id:'stats',icon:'📊',label:'통계 분석'},
   ]},
   {section:'분석',items:[
     {id:'roman',icon:'Ⅰ',label:'로마 숫자 분석'},
     {id:'fingering',icon:'🖐',label:'운지법 표시'},
+    {id:'eartraining',icon:'👂',label:'청음 훈련'},
+    {id:'chords',icon:'🎸',label:'코드 분석'},
     {id:'voiceleading',icon:'🔍',label:'성부 진행 분석'},
     {id:'patternsearch',icon:'🔎',label:'음형 패턴 검색'},
     {id:'annotations',icon:'📝',label:'주석 메모'},
@@ -5233,13 +5234,13 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
       {icon:'🔗',label:'화성 쌓기',            onClick:()=>sel('right','harmony')},
       {icon:'🔧',label:'코드 도구',            onClick:()=>sel('right','chordtools')},
       {icon:'🔢',label:'숫자 악보',            onClick:()=>sel('right','numbering')},
-      {icon:'👂',label:'청음 훈련',            onClick:()=>sel('right','eartraining')},
       {icon:'🔡',label:'가사 스타일',          onClick:()=>sel('right','lyricstyle')},
     ]},
     {id:'analysis',label:'분석',items:[
-      {icon:'🎸',label:'코드 분석',            onClick:()=>sel('right','chords')},
       {icon:'Ⅰ',label:'로마 숫자 분석',      onClick:()=>sel('right','roman')},
       {icon:'🖐',label:'운지법 표시',          onClick:()=>sel('right','fingering')},
+      {icon:'👂',label:'청음 훈련',            onClick:()=>sel('right','eartraining')},
+      {icon:'🎸',label:'코드 분석',            onClick:()=>sel('right','chords')},
       {icon:'🔍',label:'성부 진행 분석',      onClick:()=>sel('right','voiceleading')},
       {icon:'🔎',label:'음형 패턴 검색',      onClick:()=>sel('right','patternsearch')},
       {icon:'📝',label:'주석 메모',            onClick:()=>sel('right','annotations')},
@@ -5856,8 +5857,8 @@ const RIGHT_ACTIVITY_ITEMS=[
   {id:'parts',icon:'🎼'},{id:'sep2',sep:true},
   {id:'notation',icon:'✏️'},{id:'lyrics',icon:'💬'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
   {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
-  {id:'numbering',icon:'🔢'},{id:'eartraining',icon:'👂'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
-  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'patternsearch',icon:'🔎'},{id:'annotations',icon:'📝'},{id:'formanalysis',icon:'📊'},{id:'difficulty',icon:'⭐'},{id:'stats',icon:'📊'},
+  {id:'numbering',icon:'🔢'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
+  {id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'eartraining',icon:'👂'},{id:'chords',icon:'🎸'},{id:'voiceleading',icon:'🔍'},{id:'patternsearch',icon:'🔎'},{id:'annotations',icon:'📝'},{id:'formanalysis',icon:'📊'},{id:'difficulty',icon:'⭐'},{id:'stats',icon:'📊'},
 ];
 
 const RIGHT_PANEL_IDS=new Set(RIGHT_ACTIVITY_ITEMS.filter(i=>!i.sep).map(i=>i.id));
