@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Share Session Core Tests</title>
+<script src="share-session-core.js?v=1"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){
+  if(!condition)throw new Error(message);
+}
+
+function parseXml(text){
+  return new DOMParser().parseFromString(text,'text/xml');
+}
+
+try{
+  assert(window.ShareSessionCore, 'ShareSessionCore namespace is missing');
+
+  const doc=parseXml(`<score-partwise><movement-title>Shared Score</movement-title><part-list/><part id="P1"><measure number="1"/></part></score-partwise>`);
+  const files=[{name:'shared.xml',xmlDoc:doc,size:123}];
+  const url=window.ShareSessionCore.generateShareURL(files,0,'https://example.com/mxl-studio.html?old=1');
+  assert(url.startsWith('https://example.com/mxl-studio.html?share='), 'share url base');
+  const restored=window.ShareSessionCore.parseShareURL(url);
+  assert(restored.name==='Shared Score.xml', 'shared title name');
+  assert(restored.xmlDoc.querySelector('movement-title').textContent==='Shared Score', 'shared xml restored');
+
+  const session=window.ShareSessionCore.serializeSession({
+    files,
+    activePanel:'layout',
+    rightPanel:'roman',
+    selectedFileIdx:0,
+  });
+  assert(session.files[0].xmlStr.includes('score-partwise'), 'session xml serialized');
+  assert(session.activePanel==='layout', 'left panel stored');
+  assert(session.rightPanel==='roman', 'right panel stored');
+  assert(session.selectedFileIdx===0, 'selected file stored');
+  const hydrated=window.ShareSessionCore.hydrateSession(session);
+  assert(hydrated.files[0].xmlDoc.querySelector('movement-title').textContent==='Shared Score', 'session hydrated');
+
+  const slots=[
+    {id:'a',savedAt:'2026-01-01T00:00:00.000Z'},
+    {id:'b',savedAt:'2026-01-02T00:00:00.000Z'},
+    {id:'c',savedAt:'2026-01-03T00:00:00.000Z'},
+    {id:'d',savedAt:'2026-01-04T00:00:00.000Z'},
+    {id:'e',savedAt:'2026-01-05T00:00:00.000Z'},
+  ];
+  const next=window.ShareSessionCore.upsertSessionSlot(slots,{id:'f',name:'New',savedAt:'2026-01-06T00:00:00.000Z'});
+  assert(next.length===5, 'slot limit');
+  assert(next[0].id==='f' && next[4].id==='b', 'newest slots kept');
+
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>

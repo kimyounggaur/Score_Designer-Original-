@@ -13,6 +13,7 @@
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 <script src="chord-tools-core.js"></script>
 <script src="history-core.js?v=1"></script>
@@ -22,6 +23,7 @@
 <script src="ear-training-core.js?v=1"></script>
 <script src="pattern-search-core.js?v=1"></script>
 <script src="layout-core.js?v=1"></script>
+<script src="share-session-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -4615,6 +4617,101 @@ function LayoutPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate
   </div>;
 }
 
+function ShareModal({open,onClose,files,activeFile,onNotice}){
+  const [shareUrl,setShareUrl]=useState('');
+  const [copyState,setCopyState]=useState('');
+  const qrRef=useRef(null);
+  const file=files[activeFile]||files[0];
+  const xmlSize=useMemo(()=>{
+    if(!file?.xmlDoc)return 0;
+    return new XMLSerializer().serializeToString(file.xmlDoc).length;
+  },[file]);
+
+  useEffect(()=>{
+    if(!open||!file?.xmlDoc||!window.ShareSessionCore){setShareUrl('');return}
+    try{
+      setShareUrl(window.ShareSessionCore.generateShareURL(files,files[activeFile]?activeFile:0));
+      setCopyState('');
+    }catch(e){
+      setShareUrl('');
+      setCopyState(e.message);
+    }
+  },[open,file,files,activeFile]);
+
+  useEffect(()=>{
+    if(!open||!shareUrl||!qrRef.current)return;
+    qrRef.current.innerHTML='';
+    if(window.QRCode){
+      new QRCode(qrRef.current,{text:shareUrl,width:164,height:164,correctLevel:QRCode.CorrectLevel.M});
+    }else{
+      qrRef.current.textContent='QR 코드 라이브러리를 불러오지 못했습니다.';
+    }
+  },[open,shareUrl]);
+
+  const copy=useCallback(async()=>{
+    if(!shareUrl)return;
+    try{
+      await navigator.clipboard.writeText(shareUrl);
+      setCopyState('복사되었습니다.');
+      onNotice?.('공유 URL을 복사했습니다.');
+    }catch(e){
+      const ta=document.createElement('textarea');
+      ta.value=shareUrl;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();
+      setCopyState('복사되었습니다.');
+    }
+  },[shareUrl,onNotice]);
+
+  if(!open)return null;
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+    <div className="share-modal">
+      <div className="share-modal__header">
+        <div>
+          <div className="share-modal__title">악보 URL 공유</div>
+          <div className="share-modal__subtitle">선택된 단일 파일을 URL 안에 저장합니다.</div>
+        </div>
+        <button className="share-modal__close" onClick={onClose}>×</button>
+      </div>
+      {!files.length?<div className="card__text">공유할 파일이 없습니다.</div>:<>
+        <textarea className="share-modal__url" readOnly value={shareUrl} />
+        {xmlSize>window.ShareSessionCore?.SHARE_SIZE_WARN&&<div className="share-modal__warning">파일이 커서 URL이 길어질 수 있습니다. 현재 {Math.round(xmlSize/1024)}KB</div>}
+        <div className="btn-row">
+          <button className="btn btn--primary" onClick={copy} disabled={!shareUrl}>복사</button>
+          <button className="btn btn--secondary" onClick={onClose}>닫기</button>
+        </div>
+        {copyState&&<div className="share-modal__status">{copyState}</div>}
+        <div className="share-modal__qr-wrap">
+          <div className="share-modal__qr" ref={qrRef}/>
+        </div>
+      </>}
+    </div>
+  </div>;
+}
+
+function SessionMenu({open,onClose,slots,onSaveSlot,onLoadSlot,onExport,onImportClick,onRestoreAuto,onIgnoreAuto,pendingRestore,disabled}){
+  if(!open)return null;
+  return <div className="session-menu">
+    {pendingRestore&&<div className="session-menu__restore">
+      <div className="session-menu__title">이전 세션 복원</div>
+      <div className="session-menu__meta">{window.ShareSessionCore?.formatSavedAt(pendingRestore.savedAt)} · 파일 {pendingRestore.files?.length||0}개</div>
+      <div className="session-menu__actions">
+        <button className="history-panel__btn" onClick={onRestoreAuto}>복원하기</button>
+        <button className="history-panel__btn" onClick={onIgnoreAuto}>무시하기</button>
+      </div>
+    </div>}
+    <button className="session-menu__item" onClick={onSaveSlot} disabled={disabled}>현재 세션 저장</button>
+    <button className="session-menu__item" onClick={onExport} disabled={disabled}>세션 내보내기</button>
+    <button className="session-menu__item" onClick={onImportClick}>세션 가져오기</button>
+    <div className="session-menu__divider"/>
+    <div className="session-menu__title">저장된 세션</div>
+    <div className="session-menu__slots">
+      {slots.length?slots.map(slot=><button className="session-menu__slot" key={slot.id} onClick={()=>onLoadSlot(slot)}>
+        <span>{slot.name||'이름 없는 세션'}</span>
+        <small>{window.ShareSessionCore?.formatSavedAt(slot.savedAt)} · 파일 {slot.files?.length||0}개</small>
+      </button>):<div className="session-menu__empty">저장된 슬롯이 없습니다.</div>}
+    </div>
+  </div>;
+}
+
 /* ==============================================================
    SCORE VIEW — center panel always-visible score renderer
    ============================================================== */
@@ -5355,6 +5452,13 @@ function App(){
   const [history,setHistory]=useState([]);
   const [historyIndex,setHistoryIndex]=useState(-1);
   const [historyNotice,setHistoryNotice]=useState(null);
+  const [shareOpen,setShareOpen]=useState(false);
+  const [sessionMenuOpen,setSessionMenuOpen]=useState(false);
+  const [savedNotice,setSavedNotice]=useState(null);
+  const [pendingRestore,setPendingRestore]=useState(null);
+  const [sessionSlots,setSessionSlots]=useState([]);
+  const importSessionRef=useRef(null);
+  const sessionBootRef=useRef(false);
   const osmdRef=useRef(null);
   const handleOsmdReady=useCallback(osmd=>{osmdRef.current=osmd;},[]);
   const handlePlaybackUpdate=useCallback(next=>{
@@ -5503,6 +5607,89 @@ function App(){
   },[pushHistory]);
   const panelProps={files,activeFile,showProgress,hideProgress,onFilesUpdate:updateFiles};
 
+  const restoreSessionData=useCallback((session,label='세션 복원')=>{
+    if(!window.ShareSessionCore)return;
+    const hydrated=window.ShareSessionCore.hydrateSession(session);
+    setFiles(hydrated.files);
+    setActiveFile(Math.min(hydrated.selectedFileIdx||0,Math.max(0,hydrated.files.length-1)));
+    if(hydrated.activePanel)setLeftPanel(hydrated.activePanel);
+    if(hydrated.rightPanel)setRightPanel(hydrated.rightPanel);
+    pushHistory(hydrated.files,label);
+    setPendingRestore(null);
+    setHistoryNotice({m:label,t:'ok'});
+  },[pushHistory]);
+
+  useEffect(()=>{
+    if(!window.ShareSessionCore)return;
+    if(sessionBootRef.current)return;
+    sessionBootRef.current=true;
+    setSessionSlots(window.ShareSessionCore.readJson(window.ShareSessionCore.SLOT_KEY)||[]);
+    try{
+      const shared=window.ShareSessionCore.parseShareURL(window.location.href);
+      if(shared){
+        const loaded=[shared];
+        setFiles(loaded);
+        setActiveFile(0);
+        pushHistory(loaded,'공유 악보 불러오기');
+        setHistoryNotice({m:'공유 악보를 불러왔습니다.',t:'ok'});
+        return;
+      }
+    }catch(e){
+      setHistoryNotice({m:'공유 링크 파싱 실패',t:'err'});
+    }
+    const saved=window.ShareSessionCore.readJson(window.ShareSessionCore.SESSION_KEY);
+    if(saved?.files?.length)setPendingRestore(saved);
+  },[pushHistory]);
+
+  useEffect(()=>{
+    if(!window.ShareSessionCore||!files.length)return;
+    const timer=setTimeout(()=>{
+      try{
+        const session=window.ShareSessionCore.serializeSession({
+          files,
+          activePanel:leftPanel,
+          rightPanel,
+          selectedFileIdx:activeFile,
+        });
+        window.ShareSessionCore.writeJson(window.ShareSessionCore.SESSION_KEY,session);
+        setSavedNotice(`저장됨 ${window.ShareSessionCore.shortTime(session.savedAt)}`);
+        setTimeout(()=>setSavedNotice(null),2000);
+      }catch(e){}
+    },5000);
+    return()=>clearTimeout(timer);
+  },[files,leftPanel,rightPanel,activeFile]);
+
+  const saveSessionSlot=useCallback(()=>{
+    if(!files.length)return;
+    const name=prompt('저장할 세션 이름을 입력하세요.','MXL Studio Session');
+    if(!name)return;
+    try{
+      const session=window.ShareSessionCore.serializeSession({files,activePanel:leftPanel,rightPanel,selectedFileIdx:activeFile});
+      const slot={...session,id:`slot-${Date.now()}`,name};
+      const next=window.ShareSessionCore.upsertSessionSlot(sessionSlots,slot);
+      window.ShareSessionCore.writeJson(window.ShareSessionCore.SLOT_KEY,next);
+      setSessionSlots(next);
+      setHistoryNotice({m:'현재 세션을 저장했습니다.',t:'ok'});
+    }catch(e){setHistoryNotice({m:e.message,t:'err'})}
+  },[files,leftPanel,rightPanel,activeFile,sessionSlots]);
+
+  const exportSessionJson=useCallback(()=>{
+    if(!files.length)return;
+    const session=window.ShareSessionCore.serializeSession({files,activePanel:leftPanel,rightPanel,selectedFileIdx:activeFile});
+    downloadBlob(new Blob([JSON.stringify(session,null,2)],{type:'application/json'}),`mxlstudio-session-${Date.now()}.json`);
+    setHistoryNotice({m:'세션 JSON을 내보냈습니다.',t:'ok'});
+  },[files,leftPanel,rightPanel,activeFile]);
+
+  const importSessionJson=useCallback(async(e)=>{
+    const file=e.target.files?.[0];
+    e.target.value='';
+    if(!file)return;
+    try{
+      const data=JSON.parse(await file.text());
+      restoreSessionData(data,'세션 가져오기');
+    }catch(err){setHistoryNotice({m:'세션 가져오기 실패',t:'err'})}
+  },[restoreSessionData]);
+
   const exportMXL=useCallback(()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
     const file=files[activeFile]||files[0];
@@ -5616,6 +5803,25 @@ function App(){
         <button className={`header__toggle${showLeft?' header__toggle--active':''}`}
           onClick={()=>setShowLeft(!showLeft)} title="인스펙터 토글">☰</button>
         <div className="header__badge">파일 {files.length}개</div>
+        {savedNotice&&<div className="header__saved">{savedNotice}</div>}
+        <button className="header__export-btn" onClick={()=>setShareOpen(true)} disabled={!files.length} title="URL 공유">공유</button>
+        <div className="session-menu-wrap">
+          <button className="header__export-btn" onClick={()=>setSessionMenuOpen(v=>!v)} title="세션 저장/불러오기">세션</button>
+          <SessionMenu
+            open={sessionMenuOpen}
+            onClose={()=>setSessionMenuOpen(false)}
+            slots={sessionSlots}
+            onSaveSlot={()=>{saveSessionSlot();setSessionMenuOpen(false)}}
+            onLoadSlot={slot=>{restoreSessionData(slot,'세션 불러오기');setSessionMenuOpen(false)}}
+            onExport={()=>{exportSessionJson();setSessionMenuOpen(false)}}
+            onImportClick={()=>{importSessionRef.current?.click();setSessionMenuOpen(false)}}
+            onRestoreAuto={()=>restoreSessionData(pendingRestore,'이전 세션 복원')}
+            onIgnoreAuto={()=>setPendingRestore(null)}
+            pendingRestore={pendingRestore}
+            disabled={!files.length}
+          />
+        </div>
+        <input ref={importSessionRef} className="hidden-file-input" type="file" accept="application/json,.json" onChange={importSessionJson}/>
         <div className="header__export-group">
           <button className="header__export-btn" onClick={exportMXL} disabled={!files.length} title="MXL 내보내기">MXL</button>
           <button className="header__export-btn" onClick={exportPNG} disabled={!files.length} title="PNG 내보내기">PNG</button>
@@ -5623,6 +5829,12 @@ function App(){
         </div>
       </div>
     </header>
+    {pendingRestore&&<div className="restore-banner">
+      <span>이전 세션 복원 ({window.ShareSessionCore?.formatSavedAt(pendingRestore.savedAt)}, 파일 {pendingRestore.files?.length||0}개)</span>
+      <button onClick={()=>restoreSessionData(pendingRestore,'이전 세션 복원')}>복원하기</button>
+      <button onClick={()=>setPendingRestore(null)}>무시하기</button>
+    </div>}
+    <ShareModal open={shareOpen} onClose={()=>setShareOpen(false)} files={files} activeFile={activeFile} onNotice={m=>setHistoryNotice({m,t:'ok'})}/>
 
     {/* ── LEFT ACTIVITY BAR (icon strip) ── */}
     <nav className="activity-bar">
