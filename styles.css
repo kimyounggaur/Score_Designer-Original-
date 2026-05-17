@@ -435,6 +435,134 @@ body {
   padding: 12px 14px;
 }
 
+/* ===== GLOBAL HISTORY ===== */
+.history-panel {
+  flex-shrink: 0;
+  border-top: 0.5px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  padding: 10px 10px 12px;
+  max-height: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.history-panel__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.history-panel__meta {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.history-panel__actions {
+  display: flex;
+  gap: 4px;
+}
+
+.history-panel__btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 14px;
+  transition: all var(--transition-fast);
+}
+
+.history-panel__btn:hover:not(:disabled) {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+.history-panel__btn:disabled,
+.history-panel__clear:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.history-panel__list {
+  overflow-y: auto;
+  min-height: 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.history-panel__item {
+  display: grid;
+  grid-template-columns: 12px 24px 1fr auto;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 5px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.history-panel__item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.history-panel__item--current {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.history-panel__marker {
+  font-size: 9px;
+  color: var(--accent);
+}
+
+.history-panel__number,
+.history-panel__time {
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.history-panel__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-panel__empty,
+.history-panel__notice {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.history-panel__clear {
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: var(--bg-grouped);
+  color: var(--text-secondary);
+  padding: 6px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
 /* ===== MAIN SCORE VIEW (center) ===== */
 .main-score {
   grid-area: score;

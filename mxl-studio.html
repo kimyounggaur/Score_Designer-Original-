@@ -15,6 +15,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <script crossorigin src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 <script src="chord-tools-core.js"></script>
+<script src="history-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -405,6 +406,45 @@ function LogPanel({lines}){
   </div>;
 }
 
+function HistoryPanel({history,historyIndex,onUndo,onRedo,onJump,onClear,notice}){
+  const visible=history.slice(-50);
+  const canUndo=historyIndex>0;
+  const canRedo=historyIndex<history.length-1;
+  const fmt=t=>{
+    const d=new Date(t||Date.now());
+    return [d.getHours(),d.getMinutes(),d.getSeconds()].map(n=>String(n).padStart(2,'0')).join(':');
+  };
+  return <div className="history-panel">
+    <div className="history-panel__header">
+      <div>
+        <div className="history-panel__title">히스토리</div>
+        <div className="history-panel__meta">{history.length} / 50</div>
+      </div>
+      <div className="history-panel__actions">
+        <button className="history-panel__btn" onClick={onUndo} disabled={!canUndo} title="Undo">↩</button>
+        <button className="history-panel__btn" onClick={onRedo} disabled={!canRedo} title="Redo">↪</button>
+      </div>
+    </div>
+    <div className="history-panel__list">
+      {!visible.length?<div className="history-panel__empty">변환 기록 없음</div>:
+        visible.map((item,i)=>{
+          const absoluteIndex=history.length-visible.length+i;
+          return <button
+            className={`history-panel__item${absoluteIndex===historyIndex?' history-panel__item--current':''}`}
+            key={`${item.timestamp}-${absoluteIndex}`}
+            onClick={()=>onJump(absoluteIndex)}>
+            <span className="history-panel__marker">{absoluteIndex===historyIndex?'●':''}</span>
+            <span className="history-panel__number">{absoluteIndex+1}</span>
+            <span className="history-panel__label">{item.label}</span>
+            <span className="history-panel__time">{fmt(item.timestamp)}</span>
+          </button>;
+        })}
+    </div>
+    {notice&&<div className={`history-panel__notice log-line--${notice.t||'info'}`}>{notice.m}</div>}
+    <button className="history-panel__clear" onClick={onClear} disabled={!history.length}>모두 지우기</button>
+  </div>;
+}
+
 function BarChart({data,barColor,labelWidth}){
   const max=Math.max(...Object.values(data),1);
   return <div className="bar-chart">
@@ -427,6 +467,32 @@ function Chip({on,onClick,children}){
 function Toggle({on,onClick}){
   return <div className={`toggle${on?' toggle--on':''}`} onClick={onClick}/>;
 }
+
+const GlobalHistoryCore = window.HistoryCore || {
+  MAX_HISTORY:50,
+  cloneFiles(files){
+    return Array.from(files||[]).map(file=>({
+      ...file,
+      xmlDoc:file?.xmlDoc?.cloneNode ? file.xmlDoc.cloneNode(true) : file?.xmlDoc,
+    }));
+  },
+  pushHistoryEntry(history,index,files,label,timestamp){
+    const nextEntry={
+      files:this.cloneFiles(files),
+      label:label||'변환',
+      timestamp:timestamp||Date.now(),
+    };
+    const truncated=Array.from(history||[]).slice(0,index+1);
+    const nextHistory=[...truncated,nextEntry].slice(-this.MAX_HISTORY);
+    return {history:nextHistory,index:nextHistory.length-1};
+  },
+  restoreHistoryFiles(entry){
+    return this.cloneFiles(entry?.files||[]);
+  },
+  serializeHistoryMeta(history){
+    return Array.from(history||[]).map(({label,timestamp})=>({label,timestamp}));
+  },
+};
 
 /* ==============================================================
    PANEL: UPLOAD
@@ -550,7 +616,7 @@ function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
           lines.push({m:`✓ ${base(file)} → ${KEY_NAMES[selKey]} (${s}반음)`,t:'ok'});
         }
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'조옮김');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -616,7 +682,7 @@ function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
           lines.push({m:`❌ ${files[idx]?.name||result.name}: ${result.error||'변환 실패'}`,t:'err'});
         }
       });
-      onFilesUpdate(updated);
+      onFilesUpdate(updated,'music21 스마트 조옮김');
       lines.push({m:'✅ music21 스마트 조옮김 완료',t:'ok'});
       setLog(lines);
     }catch(e){
@@ -728,7 +794,7 @@ function RangePanel({files,showProgress,hideProgress,onFilesUpdate}){
         updatedFiles.push({...file,xmlDoc:doc});
         lines.push({m:`✓ ${file.name}: ${adj}개 음표 조정`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'음역대 자동 조정');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -804,7 +870,7 @@ function InstrumentPanel({files,showProgress,hideProgress,onFilesUpdate}){
         updatedFiles.push({...file,xmlDoc:doc});
         lines.push({m:`✓ ${file.name}: ${cnt}개 음표 변환`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'이조 악기 변환');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -915,7 +981,7 @@ function TempoPanel({files,showProgress,hideProgress,onFilesUpdate}){
         lines.push({m:`✓ ${file.name} → ${bpm} BPM`,t:'ok'});
         ch.forEach(c=>lines.push({m:`    ${c}`}));
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'템포 변경');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -1065,7 +1131,7 @@ function KeyChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
         lines.push({m:`✓ ${file.name}: ${changeCount}개 조바꿈 적용`,t:'ok'});
         sorted.forEach(ch=>lines.push({m:`    마디 ${ch.measure}부터 → ${KEY_NAMES[ch.key]} Major`}));
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'마디별 조바꿈');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -1279,7 +1345,7 @@ function CapoPanel({files,showProgress,hideProgress,onFilesUpdate}){
         lines.push({m:`✓ ${file.name}`,t:'ok'});
         sorted.forEach(cp=>lines.push({m:`    마디 ${cp.measure}부터 Capo ${cp.fret} Fret 적용`}));
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'카포 적용');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -1480,7 +1546,7 @@ function TempoChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
         lines.push({m:`✓ ${file.name}: ${insertCount}개 템포 변경 삽입`,t:'ok'});
         sorted.forEach(ch=>lines.push({m:`    마디 ${ch.measure} → ${ch.bpm} BPM (${getTempoTerm(ch.bpm)})`}));
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'마디별 템포 변경');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -1717,7 +1783,7 @@ function OssiaPanel({files,showProgress,hideProgress,onFilesUpdate}){
           updatedFiles.push(file);
         }
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'Ossia 마디 생성');
       lines.push({m:'✅ 적용 완료! 악보 좌측 상단에 Ossia가 표시됩니다.',t:'ok'});
       setLog(lines);
     }catch(e){
@@ -1732,7 +1798,7 @@ function OssiaPanel({files,showProgress,hideProgress,onFilesUpdate}){
   const clearOssia=useCallback(()=>{
     if(!files.length)return;
     const updated=files.map(f=>{const{ossiaMxml,ossiaMeta,...rest}=f;return rest});
-    onFilesUpdate(updated);
+    onFilesUpdate(updated,'Ossia 제거');
     setLog([{m:'✅ Ossia 오버레이 제거됨',t:'ok'}]);
   },[files,onFilesUpdate]);
 
@@ -1795,7 +1861,6 @@ function OssiaPanel({files,showProgress,hideProgress,onFilesUpdate}){
 function PartsPanel({files,showProgress,hideProgress,onFilesUpdate}){
   const [partStates,setPartStates]=useState({});
   const [log,setLog]=useState([]);
-  const [history,setHistory]=useState([]); /* 되돌리기 스택 */
 
   const parts=useMemo(()=>{
     if(!files.length)return[];
@@ -1823,25 +1888,15 @@ function PartsPanel({files,showProgress,hideProgress,onFilesUpdate}){
         updatedFiles.push({...file,xmlDoc:doc});
         lines.push({m:`✓ ${file.name}: ${keep.length}파트 유지`,t:'ok'});
       }
-      /* 실행 전 스냅샷을 스택에 저장 */
-      setHistory(h=>[...h,files]);
-      onFilesUpdate(updatedFiles);
-      lines.push({m:'✅ 적용 완료! (되돌리기 가능)',t:'ok'});setLog(lines);
+      onFilesUpdate(updatedFiles,'파트 추출');
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
   },[files,partStates,showProgress,hideProgress,onFilesUpdate]);
 
-  const undo=useCallback(()=>{
-    if(!history.length)return;
-    const prev=history[history.length-1];
-    setHistory(h=>h.slice(0,-1));
-    onFilesUpdate(prev);
-    setLog([{m:`↩ 되돌리기 완료 (남은 단계: ${history.length-1})`,t:'ok'}]);
-  },[history,onFilesUpdate]);
-
   return <div>
     <h2 className="panel__heading">파트 추출 / 삭제</h2>
-    <p className="panel__description">원하는 파트만 남기고 나머지를 삭제합니다. 실행 후 되돌리기가 가능합니다.</p>
+    <p className="panel__description">원하는 파트만 남기고 나머지를 삭제합니다. 전역 히스토리에서 실행 취소할 수 있습니다.</p>
     <div className="card"><div className="card__title">🎼 파트 목록</div>
       {!parts.length?<div className="card__text">파일을 업로드하면 파트 목록이 표시됩니다.</div>:
       <div className="parts-list">{parts.map(p=>
@@ -1851,13 +1906,6 @@ function PartsPanel({files,showProgress,hideProgress,onFilesUpdate}){
         </div>
       )}</div>}
     </div>
-    {history.length>0&&<div className="card">
-      <div className="card__title">↩ 되돌리기</div>
-      <div className="card__text">저장된 단계: {history.length}단계 — 가장 최근 실행을 취소합니다.</div>
-      <div className="btn-row" style={{marginTop:'8px'}}>
-        <button className="btn btn--secondary" onClick={undo}>↩ 되돌리기 ({history.length})</button>
-      </div>
-    </div>}
     <div className="btn-row">
       <button className="btn btn--primary" onClick={run}>▶ 추출 실행</button>
     </div>
@@ -2061,7 +2109,7 @@ function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
         lines.push({m:`✓ ${file.name}${label}`,t:'ok'});ch.forEach(c=>lines.push({m:`    ${c}`}));
       }
       lastOutRef.current=updatedFiles;
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'악보 표기 변환');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -2432,7 +2480,7 @@ function ColorPanel({files,showProgress,hideProgress,onFilesUpdate}){
         updatedFiles.push({...file,xmlDoc:doc});
         lines.push({m:`✓ ${file.name}: ${cnt}개 색상 적용`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'색상 악보 생성');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -2609,7 +2657,7 @@ function HarmonyPanel({files,showProgress,hideProgress,onFilesUpdate}){
         lines.push({m:`✓ ${file.name}: ${added}개 화음 추가 · 대상 마디 ${measureHits}개 · ${intervalName}${voiceMode==='separate'?` · ${voiceNumber}성부`:''}`,t:'ok'});
         if(skipped)lines.push({m:`  필터로 제외된 음표 ${skipped}개`,t:'info'});
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'화성 쌓기');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -2735,7 +2783,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
         updatedFiles.push({...file,xmlDoc:doc});
         lines.push({m:`✓ ${file.name}: ${cnt}개 변경`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'코드 일괄 변경');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -2770,7 +2818,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
         updatedFiles.push({...file,xmlDoc:doc});
         lines.push({m:`✓ ${file.name}: ${ins}마디 코드 삽입`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'코드 분석 및 삽입');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -2807,7 +2855,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
         updatedFiles.push({...file,xmlDoc:doc});
         lines.push({m:`✓ ${file.name}: ${ok}개 적용${skip?`, ${skip}개 생략`:''}`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'코드 자리바꿈');
       lines.push({m:'✅ 자리바꿈 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -2826,7 +2874,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
       updatedFiles.push({...file,xmlDoc:doc});
       lines.push({m:`✓ ${file.name}: ${n}개 요소 제거`,t:'ok'});
     }
-    onFilesUpdate(updatedFiles);
+    onFilesUpdate(updatedFiles,'코드 자리바꿈 원위치');
     lines.push({m:'✅ 원위치 복원 완료',t:'ok'});setLog(lines);hideProgress();
   },[files,showProgress,hideProgress,onFilesUpdate]);
 
@@ -2936,7 +2984,7 @@ function NumberingPanel({files,showProgress,hideProgress,onFilesUpdate}){
         lines.push({m:`✓ ${file.name}: ${cnt}개 숫자 삽입`,t:'ok'});
       }
       lastOutRef.current=updatedFiles;
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'숫자 악보 생성');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -3022,7 +3070,7 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
         updatedFiles.push({...file,xmlDoc:doc});
         lines.push({m:`✓ ${file.name}: ${cnt}개 가사 텍스트 수정`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'가사 스타일 적용');
       lines.push({m:'✅ 가사 스타일 적용 완료',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -3040,7 +3088,7 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
       updatedFiles.push({...file,xmlDoc:doc});
       lines.push({m:`✓ ${file.name}: ${cnt}개 초기화`,t:'ok'});
     }
-    onFilesUpdate(updatedFiles);
+    onFilesUpdate(updatedFiles,'가사 스타일 초기화');
     lines.push({m:'✅ 초기화 완료',t:'ok'});setLog(lines);hideProgress();
   },[files,showProgress,hideProgress,onFilesUpdate]);
 
@@ -3063,7 +3111,7 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
         updatedFiles.push({...file,xmlDoc:doc});
         lines.push({m:`✓ ${file.name}: ${cnt}개 가사에 계이름 색상 적용`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'가사 색상 적용');
       lines.push({m:'✅ 가사 색상 적용 완료',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -3334,7 +3382,7 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
       const count=window.RomanAnalysis.insertRomanNumerals(doc,source.rows);
       const xmlString=new XMLSerializer().serializeToString(doc);
       const updatedFiles=files.map((f,i)=>i===fileIndex?{...f,xmlDoc:doc,xmlString}:f);
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'로마 숫자 삽입');
       setAnalysis(window.RomanAnalysis.detectRomanNumeral(doc));
       setLog([{m:`${count}개 마디에 로마 숫자를 삽입했습니다.`,t:'ok'}]);
     }catch(e){
@@ -3786,7 +3834,7 @@ function ClefPanel({files,showProgress,hideProgress,onFilesUpdate}){
         lines.push({m:`✓ ${file.name} → ${cfg.label}${shiftStr}`,t:'ok'});
         return{...file,xmlDoc:doc};
       });
-      onFilesUpdate(updatedFiles);
+      onFilesUpdate(updatedFiles,'음자리표 변환');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
@@ -4558,6 +4606,9 @@ function App(){
   const [progress,setProgress]=useState({visible:false,msg:''});
   const [bpm,setBpm]=useState(120);
   const [playback,setPlayback]=useState({isPlaying:false,currentMeasure:0});
+  const [history,setHistory]=useState([]);
+  const [historyIndex,setHistoryIndex]=useState(-1);
+  const [historyNotice,setHistoryNotice]=useState(null);
   const osmdRef=useRef(null);
   const handleOsmdReady=useCallback(osmd=>{osmdRef.current=osmd;},[]);
   const handlePlaybackUpdate=useCallback(next=>{
@@ -4569,6 +4620,43 @@ function App(){
   const showProgress=useCallback(msg=>setProgress({visible:true,msg}),[]);
   const hideProgress=useCallback(()=>setProgress({visible:false,msg:''}),[]);
 
+  const pushHistory=useCallback((nextFiles,label='변환')=>{
+    const next=GlobalHistoryCore.pushHistoryEntry(history,historyIndex,nextFiles,label);
+    setHistory(next.history);
+    setHistoryIndex(next.index);
+    setHistoryNotice({m:`기록: ${label}`,t:'info'});
+  },[history,historyIndex]);
+
+  const restoreHistoryAt=useCallback((newIdx,notice)=>{
+    if(newIdx<0||newIdx>=history.length)return;
+    const restored=GlobalHistoryCore.restoreHistoryFiles(history[newIdx]);
+    setHistoryIndex(newIdx);
+    setFiles(restored);
+    setActiveFile(prev=>Math.max(0,Math.min(prev,Math.max(0,restored.length-1))));
+    if(notice)setHistoryNotice({m:notice,t:'info'});
+  },[history]);
+
+  const undo=useCallback(()=>{
+    if(historyIndex<=0)return;
+    restoreHistoryAt(historyIndex-1,`↩ 실행 취소: ${history[historyIndex].label}`);
+  },[history,historyIndex,restoreHistoryAt]);
+
+  const redo=useCallback(()=>{
+    if(historyIndex>=history.length-1)return;
+    restoreHistoryAt(historyIndex+1,`↪ 다시 실행: ${history[historyIndex+1].label}`);
+  },[history,historyIndex,restoreHistoryAt]);
+
+  const jumpHistory=useCallback(idx=>{
+    restoreHistoryAt(idx,`● 히스토리 이동: ${history[idx]?.label||''}`);
+  },[history,restoreHistoryAt]);
+
+  const clearHistory=useCallback(()=>{
+    setHistory([]);
+    setHistoryIndex(-1);
+    setHistoryNotice({m:'히스토리를 모두 지웠습니다.',t:'warn'});
+    try{localStorage.removeItem('mxlStudioHistoryMeta')}catch(e){}
+  },[]);
+
   /* Detect tempo from first file */
   useEffect(()=>{
     if(!files.length)return;
@@ -4579,6 +4667,25 @@ function App(){
     if(pm){const t=parseFloat(pm.textContent);if(t>0){setBpm(t);return}}
     setBpm(120);
   },[files]);
+
+  useEffect(()=>{
+    try{
+      const meta=GlobalHistoryCore.serializeHistoryMeta(history);
+      localStorage.setItem('mxlStudioHistoryMeta',JSON.stringify(meta));
+    }catch(e){}
+  },[history]);
+
+  useEffect(()=>{
+    const handler=e=>{
+      const tag=(e.target?.tagName||'').toLowerCase();
+      if(tag==='input'||tag==='textarea'||e.target?.isContentEditable)return;
+      const key=(e.key||'').toLowerCase();
+      if((e.ctrlKey||e.metaKey)&&key==='z'&&!e.shiftKey){e.preventDefault();undo();}
+      if((e.ctrlKey||e.metaKey)&&(key==='y'||(key==='z'&&e.shiftKey))){e.preventDefault();redo();}
+    };
+    window.addEventListener('keydown',handler);
+    return()=>window.removeEventListener('keydown',handler);
+  },[undo,redo]);
 
   const convertMsczFile=useCallback(async(file)=>{
     const endpoint=(()=>{try{return localStorage.getItem('msczConvertEndpoint')||DEFAULT_MSCZ_CONVERT_ENDPOINT}catch(e){return DEFAULT_MSCZ_CONVERT_ENDPOINT}})();
@@ -4623,13 +4730,31 @@ function App(){
         newFiles.push({name:importedName,xmlDoc,xmlString,sourceName:file.name});
       }catch(e){alert(`${file.name}: ${e.message}`)}
     }
-    setFiles(f=>[...f,...newFiles]);hideProgress();
-  },[showProgress,hideProgress,convertMsczFile]);
+    if(newFiles.length){
+      const merged=[...files,...newFiles];
+      setFiles(merged);
+      pushHistory(merged,'파일 업로드');
+    }
+    hideProgress();
+  },[files,showProgress,hideProgress,convertMsczFile,pushHistory]);
 
-  const removeFile=useCallback(i=>{setFiles(f=>f.filter((_,j)=>j!==i));if(activeFile>=files.length-1)setActiveFile(Math.max(0,files.length-2))},[activeFile,files.length]);
-  const clearFiles=useCallback(()=>{setFiles([]);setActiveFile(0)},[]);
+  const removeFile=useCallback(i=>{
+    const updated=files.filter((_,j)=>j!==i);
+    setFiles(updated);
+    pushHistory(updated,'파일 제거');
+    if(activeFile>=files.length-1)setActiveFile(Math.max(0,files.length-2));
+  },[activeFile,files,pushHistory]);
 
-  const updateFiles=useCallback(newFiles=>setFiles(newFiles),[]);
+  const clearFiles=useCallback(()=>{
+    setFiles([]);
+    setActiveFile(0);
+    pushHistory([],'파일 모두 지우기');
+  },[pushHistory]);
+
+  const updateFiles=useCallback((newFiles,label='변환')=>{
+    setFiles(newFiles);
+    pushHistory(newFiles,label);
+  },[pushHistory]);
   const panelProps={files,activeFile,showProgress,hideProgress,onFilesUpdate:updateFiles};
 
   const exportMXL=useCallback(()=>{
@@ -4786,6 +4911,15 @@ function App(){
           <div key={id} className={`panel${leftPanel===id?' panel--visible':''}`}>{comp}</div>
         )}
       </div>
+      <HistoryPanel
+        history={history}
+        historyIndex={historyIndex}
+        onUndo={undo}
+        onRedo={redo}
+        onJump={jumpHistory}
+        onClear={clearHistory}
+        notice={historyNotice}
+      />
     </aside>
 
     {/* ── MAIN SCORE VIEW (center) ── */}

@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>History Core Tests</title>
+<script src="history-core.js?v=2"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){
+  if(!condition)throw new Error(message);
+}
+
+function parseXml(text){
+  return new DOMParser().parseFromString(text,'text/xml');
+}
+
+try{
+  assert(window.HistoryCore, 'HistoryCore namespace is missing');
+  const first={name:'score.xml',xmlDoc:parseXml('<score><measure number="1"/></score>')};
+  const pushedA=window.HistoryCore.pushHistoryEntry([], -1, [first], '업로드');
+  assert(pushedA.history.length===1, 'first push should create one entry');
+  assert(pushedA.index===0, 'first push index');
+  first.xmlDoc.querySelector('measure').setAttribute('number','99');
+  assert(pushedA.history[0].files[0].xmlDoc.querySelector('measure').getAttribute('number')==='1', 'snapshot must deep clone xmlDoc');
+
+  const second={name:'score.xml',xmlDoc:parseXml('<score><measure number="2"/></score>')};
+  const pushedB=window.HistoryCore.pushHistoryEntry(pushedA.history, pushedA.index, [second], '조옮김');
+  const restoredA=window.HistoryCore.restoreHistoryFiles(pushedB.history[0]);
+  assert(restoredA[0].xmlDoc.querySelector('measure').getAttribute('number')==='1', 'restore should clone selected entry');
+
+  const branched=window.HistoryCore.pushHistoryEntry(pushedB.history, 0, [second], '분기 작업');
+  assert(branched.history.length===2, 'push after undo should truncate redo branch');
+  assert(branched.history[1].label==='분기 작업', 'branch label');
+
+  let rolling={history:[],index:-1};
+  for(let i=0;i<55;i++){
+    rolling=window.HistoryCore.pushHistoryEntry(rolling.history, rolling.index, [{name:`${i}.xml`,xmlDoc:parseXml(`<score><m>${i}</m></score>`)}], `작업 ${i}`);
+  }
+  assert(rolling.history.length===50, 'history should keep max 50 entries');
+  assert(rolling.index===49, 'capped history index should point to latest entry');
+  assert(rolling.history[0].label==='작업 5', 'oldest entries should be dropped');
+
+  const meta=window.HistoryCore.serializeHistoryMeta(rolling.history);
+  assert(meta.length===50, 'meta length');
+  assert(!('files' in meta[0]), 'localStorage meta must not include files/xmlDoc');
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>
