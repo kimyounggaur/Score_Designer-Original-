@@ -1,15 +1,25 @@
 (function(global){
   'use strict';
 
+  function normalizeNoChordText(text){
+    return (text||'').trim().toLowerCase().replace(/\s+/g,'');
+  }
+
+  function isNoChordText(text){
+    return /^n[.,]?c[.,]?$/.test(normalizeNoChordText(text));
+  }
+
   function isNoChordHarmony(harmony){
     if(!harmony)return false;
-    const kind=(harmony.querySelector('kind')?.textContent||'').trim().toLowerCase();
-    const text=(harmony.textContent||'').trim().toLowerCase().replace(/\s+/g,'');
-    return kind==='none'||kind==='no-chord'||text==='n.c.'||text==='n.c'||text==='nc'||text==='n,c';
+    const kindEl=harmony.querySelector('kind');
+    const kind=(kindEl?.textContent||'').trim().toLowerCase();
+    const kindText=kindEl?.getAttribute('text')||'';
+    return kind==='none'||kind==='no-chord'||isNoChordText(kindText)||isNoChordText(harmony.textContent);
   }
 
   function measureHasNoChordHarmony(measure){
-    return Array.from(measure?.querySelectorAll?.('harmony')||[]).some(isNoChordHarmony);
+    if(Array.from(measure?.querySelectorAll?.('harmony')||[]).some(isNoChordHarmony))return true;
+    return Array.from(measure?.querySelectorAll?.('direction words')||[]).some(words=>isNoChordText(words.textContent));
   }
 
   function preserveNoChordHarmonies(xmlDoc){
@@ -22,6 +32,7 @@
 
   global.ChordToolsCore = {
     isNoChordHarmony,
+    isNoChordText,
     measureHasNoChordHarmony,
     preserveNoChordHarmonies,
   };
