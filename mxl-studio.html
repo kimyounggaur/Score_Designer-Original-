@@ -26,6 +26,7 @@
 <script src="share-session-core.js?v=1"></script>
 <script src="annotations-core.js?v=1"></script>
 <script src="form-analysis-core.js?v=1"></script>
+<script src="lyrics-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -158,7 +159,7 @@ const NAV = [
     {id:'ossia',icon:'🎶',label:'Ossia 마디'},
     {id:'parts',icon:'🎼',label:'파트 추출'},
   ]},
-  {section:'표기 편집',items:[{id:'notation',icon:'✏️',label:'악보 표기 변환'}]},
+  {section:'표기 편집',items:[{id:'notation',icon:'✏️',label:'악보 표기 변환'},{id:'lyrics',icon:'💬',label:'가사 편집'}]},
   {section:'내보내기',items:[{id:'export',icon:'📤',label:'이미지 / PDF'}]},
   {section:'교육 도구',items:[
     {id:'color',icon:'🎨',label:'색깔 악보'},{id:'harmony',icon:'🔗',label:'화성 쌓기'},
@@ -4878,6 +4879,106 @@ function AnnotationsPanel({files,activeFile=0,annotations,setAnnotations,onFiles
   </div>;
 }
 
+function LyricsPanel({files,activeFile=0,onFilesUpdate,showProgress,hideProgress,bpm=120}){
+  const [sourceText,setSourceText]=useState('');
+  const [translationText,setTranslationText]=useState('');
+  const [mapping,setMapping]=useState([]);
+  const [verse,setVerse]=useState('1');
+  const [style1,setStyle1]=useState({fontSize:'11',color:'#111111',fontStyle:'normal'});
+  const [style2,setStyle2]=useState({fontSize:'10',color:'#888888',fontStyle:'italic'});
+  const [log,setLog]=useState([]);
+  const importRef=useRef(null);
+  const translationRef=useRef(null);
+  const file=files[activeFile]||files[0];
+  const extracted=useMemo(()=>file?.xmlDoc&&window.LyricsCore?window.LyricsCore.extractLyrics(file.xmlDoc):[],[file]);
+  const grouped=useMemo(()=>window.LyricsCore?.groupLyricsByVerse(extracted)||{},[extracted]);
+
+  useEffect(()=>{if(grouped['1']?.text&&!sourceText)setSourceText(grouped['1'].text)},[grouped,sourceText]);
+
+  const splitSource=useCallback(()=>{
+    const syllables=window.LyricsCore.splitSyllables(sourceText);
+    setSourceText(syllables.join(' '));
+    setLog([{m:`${syllables.length}개 음절로 분리했습니다.`,t:'info'}]);
+  },[sourceText]);
+
+  const assign=useCallback(()=>{
+    if(!file?.xmlDoc){alert('먼저 파일을 업로드하세요.');return}
+    const syllables=sourceText.trim().split(/\s+/).filter(Boolean);
+    const next=window.LyricsCore.mapSyllablesToNotes(file.xmlDoc,syllables);
+    setMapping(next);
+    setLog([{m:`${next.length}개 음표에 음절을 배정했습니다.${syllables.length>next.length?' 남은 음절이 있습니다.':''}`,t:syllables.length>next.length?'warn':'ok'}]);
+  },[file,sourceText]);
+
+  const applyMain=useCallback(()=>{
+    if(!file?.xmlDoc||!mapping.length)return;
+    showProgress('가사 적용 중...');
+    const doc=cloneDoc(file.xmlDoc);
+    const fresh=window.LyricsCore.mapSyllablesToNotes(doc,mapping.map(m=>m.syllable));
+    const result=window.LyricsCore.applyLyrics(doc,fresh,verse,{'font-size':style1.fontSize,color:style1.color,'font-style':style1.fontStyle});
+    const idx=files[activeFile]?activeFile:0;
+    onFilesUpdate(files.map((f,i)=>i===idx?{...f,xmlDoc:doc,xmlString:new XMLSerializer().serializeToString(doc)}:f),'가사 편집');
+    setLog([{m:`가사 ${result.applied}개를 적용했습니다.`,t:'ok'}]);
+    hideProgress();
+  },[file,mapping,verse,style1,files,activeFile,onFilesUpdate,showProgress,hideProgress]);
+
+  const insertTranslation=useCallback(()=>{
+    if(!file?.xmlDoc){alert('먼저 파일을 업로드하세요.');return}
+    const syllables=window.LyricsCore.splitSyllables(translationText);
+    const doc=cloneDoc(file.xmlDoc);
+    const result=window.LyricsCore.addTranslationLyrics(doc,syllables,'2');
+    window.LyricsCore.applyVerseStyle(doc,'2',{'font-size':style2.fontSize,color:style2.color,'font-style':style2.fontStyle});
+    const idx=files[activeFile]?activeFile:0;
+    onFilesUpdate(files.map((f,i)=>i===idx?{...f,xmlDoc:doc,xmlString:new XMLSerializer().serializeToString(doc)}:f),'번역 가사 삽입');
+    setLog([{m:`번역 가사 ${result.applied}개를 삽입했습니다.`,t:'ok'}]);
+  },[file,translationText,style2,files,activeFile,onFilesUpdate]);
+
+  const applyStyles=useCallback(()=>{
+    if(!file?.xmlDoc)return;
+    const doc=cloneDoc(file.xmlDoc);
+    const c1=window.LyricsCore.applyVerseStyle(doc,'1',{'font-size':style1.fontSize,color:style1.color,'font-style':style1.fontStyle});
+    const c2=window.LyricsCore.applyVerseStyle(doc,'2',{'font-size':style2.fontSize,color:style2.color,'font-style':style2.fontStyle});
+    const idx=files[activeFile]?activeFile:0;
+    onFilesUpdate(files.map((f,i)=>i===idx?{...f,xmlDoc:doc,xmlString:new XMLSerializer().serializeToString(doc)}:f),'가사 스타일 편집');
+    setLog([{m:`verse 1 ${c1}개, verse 2 ${c2}개 스타일을 적용했습니다.`,t:'ok'}]);
+  },[file,style1,style2,files,activeFile,onFilesUpdate]);
+
+  const importText=useCallback(async(e,setter)=>{const txt=e.target.files?.[0];e.target.value='';if(txt)setter(await txt.text())},[]);
+  const exportTxt=useCallback(()=>{if(file?.xmlDoc)downloadBlob(new Blob([window.LyricsCore.exportLyricsText(file.xmlDoc)],{type:'text/plain;charset=utf-8'}),`${(file.name||'lyrics').replace(/\.[^.]+$/,'')}-lyrics.txt`)},[file]);
+  const exportSrt=useCallback(()=>{if(file?.xmlDoc)downloadBlob(new Blob([window.LyricsCore.exportLyricsSrt(file.xmlDoc,bpm)],{type:'text/plain;charset=utf-8'}),`${(file.name||'lyrics').replace(/\.[^.]+$/,'')}.srt`)},[file,bpm]);
+
+  return <div>
+    <h2 className="panel__heading">가사 편집</h2>
+    <p className="panel__description">MusicXML 가사를 verse별로 추출하고 새 가사와 번역 가사를 음표에 배정합니다.</p>
+    <div className="card"><div className="card__title">기존 가사</div><div className="lyrics-verse-list">
+      {Object.values(grouped).map(g=><div className="lyrics-verse" key={g.verse}><b>Verse {g.verse}</b><span>{g.text||'-'}</span></div>)}
+      {!extracted.length&&<div className="card__text">현재 악보에 가사가 없습니다.</div>}
+    </div></div>
+    <div className="card"><div className="card__title">외부 가사 가져오기 & 음절 배정</div>
+      <textarea className="annotation-textarea lyrics-textarea" value={sourceText} onChange={e=>setSourceText(e.target.value)} placeholder="가사를 입력하거나 txt 파일을 가져오세요."/>
+      <input ref={importRef} className="hidden-file-input" type="file" accept=".txt,text/plain" onChange={e=>importText(e,setSourceText)}/>
+      <div className="btn-row"><button className="btn btn--secondary" onClick={()=>importRef.current?.click()}>TXT 가져오기</button><button className="btn btn--secondary" onClick={splitSource}>한국어 음절 분리</button><button className="btn btn--secondary" onClick={assign}>음절 배정</button><button className="btn btn--primary" onClick={applyMain} disabled={!mapping.length}>적용</button></div>
+      <label className="form-label">적용할 verse</label><select className="form-select" value={verse} onChange={e=>setVerse(e.target.value)}><option value="1">Verse 1</option><option value="2">Verse 2</option></select>
+    </div>
+    <div className="lyrics-map-table"><table className="roman-table"><thead><tr><th>마디</th><th>노트</th><th>음절</th></tr></thead><tbody>
+      {mapping.slice(0,80).map((m,i)=><tr key={i}><td>{m.measureNum}</td><td>{m.noteIdx+1}</td><td>{m.syllable}</td></tr>)}
+      {!mapping.length&&<tr><td colSpan="3">음절 배정 미리보기가 없습니다.</td></tr>}
+    </tbody></table></div>
+    <div className="card"><div className="card__title">번역 레이어 (Verse 2)</div>
+      <textarea className="annotation-textarea lyrics-textarea" value={translationText} onChange={e=>setTranslationText(e.target.value)} placeholder="번역 가사를 입력하세요."/>
+      <input ref={translationRef} className="hidden-file-input" type="file" accept=".txt,text/plain" onChange={e=>importText(e,setTranslationText)}/>
+      <div className="btn-row"><button className="btn btn--secondary" onClick={()=>translationRef.current?.click()}>번역 TXT 가져오기</button><button className="btn btn--primary" onClick={insertTranslation} disabled={!translationText.trim()}>번역 삽입</button></div>
+    </div>
+    <div className="card"><div className="card__title">가사 스타일</div><div className="lyrics-style-grid">
+      <label className="form-label">Verse 1 크기<input className="form-input" value={style1.fontSize} onChange={e=>setStyle1({...style1,fontSize:e.target.value})}/></label>
+      <label className="form-label">Verse 1 색상<input className="form-input" type="color" value={style1.color} onChange={e=>setStyle1({...style1,color:e.target.value})}/></label>
+      <label className="form-label">Verse 2 크기<input className="form-input" value={style2.fontSize} onChange={e=>setStyle2({...style2,fontSize:e.target.value})}/></label>
+      <label className="form-label">Verse 2 색상<input className="form-input" type="color" value={style2.color} onChange={e=>setStyle2({...style2,color:e.target.value})}/></label>
+    </div><div className="btn-row"><button className="btn btn--secondary" onClick={applyStyles}>스타일 적용</button></div></div>
+    <div className="btn-row"><button className="btn btn--secondary" onClick={exportTxt} disabled={!extracted.length}>TXT 내보내기</button><button className="btn btn--secondary" onClick={exportSrt} disabled={!extracted.length}>SRT 내보내기</button></div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
 function FormAnalysisPanel({files,activeFile=0,onFilesUpdate,showProgress,hideProgress}){
   const [analysis,setAnalysis]=useState(null);
   const [phraseLength,setPhraseLength]=useState('');
@@ -5043,6 +5144,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
       {sep:true},
       {icon:'🎼',label:'파트 추출 / 삭제',    onClick:()=>sel('right','parts')},
       {icon:'✏️',label:'악보 표기 변환',       onClick:()=>sel('right','notation')},
+      {icon:'💬',label:'가사 편집',            onClick:()=>sel('right','lyrics')},
       {icon:'📤',label:'이미지 / PDF 내보내기',onClick:()=>sel('right','export')},
     ]},
     {id:'tools',label:'도구',items:[
@@ -5670,7 +5772,7 @@ const LEFT_ACTIVITY_ITEMS=[
 /* Activity bar icons — right strip */
 const RIGHT_ACTIVITY_ITEMS=[
   {id:'parts',icon:'🎼'},{id:'sep2',sep:true},
-  {id:'notation',icon:'✏️'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
+  {id:'notation',icon:'✏️'},{id:'lyrics',icon:'💬'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
   {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
   {id:'numbering',icon:'🔢'},{id:'eartraining',icon:'👂'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
   {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'patternsearch',icon:'🔎'},{id:'annotations',icon:'📝'},{id:'formanalysis',icon:'📊'},{id:'stats',icon:'📊'},
@@ -5683,7 +5785,7 @@ const PANEL_LABELS={
   upload:'파일 업로드',transpose:'조옮김',keychange:'마디별 조바꿈',capo:'카포 (Capo)',
   range:'음역대 조정',instrument:'이조 악기',tempo:'템포 조절',tempochange:'마디별 템포',
   ossia:'Ossia 마디',clef:'음자리표 변환',layout:'레이아웃 편집',
-  parts:'파트 추출',notation:'악보 표기 변환',export:'이미지 / PDF',
+  parts:'파트 추출',notation:'악보 표기 변환',lyrics:'가사 편집',export:'이미지 / PDF',
   color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
   eartraining:'청음 훈련',lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',
   voiceleading:'성부 진행 분석',patternsearch:'음형 패턴 검색',annotations:'주석 메모',formanalysis:'형식 분석',stats:'통계 분석',
@@ -6025,6 +6127,7 @@ function App(){
     layout:<LayoutPanel {...panelProps}/>,
     parts:<PartsPanel {...panelProps}/>,
     notation:<NotationPanel {...panelProps}/>,
+    lyrics:<LyricsPanel {...panelProps} bpm={bpm}/>,
     export:<ExportPanel {...panelProps}/>,
     color:<ColorPanel {...panelProps}/>,
     harmony:<HarmonyPanel {...panelProps}/>,

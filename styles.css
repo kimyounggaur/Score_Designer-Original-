@@ -572,6 +572,41 @@ body {
   overflow: auto;
 }
 
+.lyrics-verse-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lyrics-verse {
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.lyrics-verse span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.lyrics-textarea {
+  min-height: 96px;
+}
+
+.lyrics-map-table {
+  max-height: 220px;
+  overflow: auto;
+  margin: 12px 0;
+}
+
+.lyrics-style-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
 .menubar {
   display: flex;
   align-items: stretch;

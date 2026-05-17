@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Lyrics Core Tests</title>
+<script src="lyrics-core.js?v=1"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){if(!condition)throw new Error(message)}
+function parseXml(text){return new DOMParser().parseFromString(text,'text/xml')}
+
+function note(step,text=''){
+  const lyric=text?`<lyric number="1"><syllabic>single</syllabic><text>${text}</text></lyric>`:'';
+  return `<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>1</duration>${lyric}</note>`;
+}
+
+try{
+  assert(window.LyricsCore, 'LyricsCore namespace is missing');
+  const doc=parseXml(`<score-partwise><part id="P1"><measure number="1">${note('C','봄')}${note('D','이')}${note('E')}</measure><measure number="2">${note('F')}</measure></part></score-partwise>`);
+  const extracted=window.LyricsCore.extractLyrics(doc);
+  assert(extracted.length===2, 'extract lyrics count');
+  assert(extracted[0].measureIdx===0 && extracted[0].noteIdx===0 && extracted[0].text==='봄', 'extract positions');
+  const grouped=window.LyricsCore.groupLyricsByVerse(extracted);
+  assert(grouped['1'].text==='봄 이', 'group verse text');
+
+  const ko=window.LyricsCore.splitSyllables('봄이 온다');
+  assert(ko.join('|')==='봄|이|온|다', 'korean syllables');
+  const en=window.LyricsCore.splitSyllables('happy day');
+  assert(en.length>=3, 'english syllables');
+
+  const mapping=window.LyricsCore.mapSyllablesToNotes(doc,['봄','이','온','다']);
+  assert(mapping.length===4 && mapping[3].measureIdx===1, 'map syllables to notes');
+  const applied=window.LyricsCore.applyLyrics(doc,mapping,'1');
+  assert(applied.applied===4, 'apply lyrics');
+  assert(doc.querySelectorAll('lyric[number="1"]').length===4, 'lyrics replaced');
+  assert(doc.querySelector('lyric[number="1"] text').textContent==='봄', 'first lyric text');
+
+  const translated=window.LyricsCore.addTranslationLyrics(doc,['spring','comes'],'2');
+  assert(translated.applied===2, 'translation applied');
+  const verse2=doc.querySelector('lyric[number="2"] text');
+  assert(verse2.textContent==='spring' && verse2.getAttribute('font-style')==='italic' && verse2.getAttribute('color')==='#888888', 'translation style');
+
+  const exported=window.LyricsCore.exportLyricsText(doc);
+  assert(exported.includes('[Verse 1]') && exported.includes('[Verse 2]'), 'txt export');
+  const srt=window.LyricsCore.exportLyricsSrt(doc,120);
+  assert(srt.includes('00:00:00,000') && srt.includes('봄'), 'srt export');
+
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>
