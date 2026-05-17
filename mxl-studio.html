@@ -24,6 +24,7 @@
 <script src="pattern-search-core.js?v=1"></script>
 <script src="layout-core.js?v=1"></script>
 <script src="share-session-core.js?v=1"></script>
+<script src="annotations-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -169,6 +170,7 @@ const NAV = [
     {id:'fingering',icon:'🖐',label:'운지법 표시'},
     {id:'voiceleading',icon:'🔍',label:'성부 진행 분석'},
     {id:'patternsearch',icon:'🔎',label:'음형 패턴 검색'},
+    {id:'annotations',icon:'📝',label:'주석 메모'},
   ]},
 ];
 
@@ -4712,6 +4714,168 @@ function SessionMenu({open,onClose,slots,onSaveSlot,onLoadSlot,onExport,onImport
   </div>;
 }
 
+function AnnotationEditModal({annotation,onSave,onDelete,onClose}){
+  const [draft,setDraft]=useState(annotation||window.AnnotationsCore?.createAnnotation({}));
+  useEffect(()=>setDraft(annotation||window.AnnotationsCore?.createAnnotation({})),[annotation]);
+  if(!annotation)return null;
+  const setField=(key,value)=>setDraft(prev=>({...prev,[key]:value}));
+  return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
+    <div className="annotation-modal">
+      <div className="share-modal__header">
+        <div>
+          <div className="share-modal__title">주석 메모</div>
+          <div className="share-modal__subtitle">마디 위에 교사용 메모를 배치합니다.</div>
+        </div>
+        <button className="share-modal__close" onClick={onClose}>×</button>
+      </div>
+      <label className="form-label">마디 번호</label>
+      <input className="form-input" type="number" min="1" value={draft.measureNum} onChange={e=>setField('measureNum',parseInt(e.target.value||'1',10))}/>
+      <label className="form-label">메모 유형</label>
+      <select className="form-select" value={draft.type} onChange={e=>setField('type',e.target.value)}>
+        <option value="note">일반메모</option><option value="practice">연습지시</option><option value="theory">이론설명</option><option value="warning">주의</option>
+      </select>
+      <label className="form-label">메모 내용 ({draft.text.length}/200)</label>
+      <textarea className="annotation-textarea" maxLength="200" value={draft.text} onChange={e=>setField('text',e.target.value)}/>
+      <div className="annotation-color-row">
+        {(window.AnnotationsCore?.COLORS||[]).map(c=><button key={c} className={`annotation-swatch${draft.color===c?' annotation-swatch--active':''}`} style={{background:c}} onClick={()=>setField('color',c)} title={c}/>)}
+      </div>
+      <div className="btn-row">
+        <button className="btn btn--primary" onClick={()=>onSave(window.AnnotationsCore.createAnnotation(draft))} disabled={!draft.text.trim()}>저장</button>
+        <button className="btn btn--secondary" onClick={()=>onDelete(draft.id)}>삭제</button>
+      </div>
+    </div>
+  </div>;
+}
+
+function AnnotationOverlay({annotations,onEdit,onCreate}) {
+  const [positions,setPositions]=useState([]);
+  const locate=useCallback(()=>{
+    const score=document.querySelector('.main-score');
+    const container=document.querySelector('.score-container');
+    const svg=container?.querySelector('svg');
+    if(!score||!container||!svg){setPositions([]);return}
+    const scoreRect=score.getBoundingClientRect();
+    const measures=Array.from((files=>files)(svg.querySelectorAll('[data-measure],[data-measure-number],g[id*="measure"],g[class*="measure"]')));
+    const textNodes=Array.from(svg.querySelectorAll('text'));
+    const next=(annotations||[]).map(ann=>{
+      let target=measures.find(el=>{
+        const v=el.getAttribute('data-measure')||el.getAttribute('data-measure-number')||el.id||'';
+        return v===String(ann.measureNum)||v.includes(`-${ann.measureNum}`)||v.includes(`measure-${ann.measureNum}`);
+      });
+      if(!target){
+        target=textNodes.find(t=>(t.textContent||'').trim()===String(ann.measureNum));
+      }
+      const rect=target?.getBoundingClientRect?.();
+      if(rect)return {...ann,left:rect.left-scoreRect.left+4,top:rect.top-scoreRect.top+4};
+      const idx=Math.max(0,ann.measureNum-1);
+      return {...ann,left:28+(idx%4)*120,top:72+Math.floor(idx/4)*96};
+    });
+    setPositions(next);
+  },[annotations]);
+  useEffect(()=>{locate();const t=setTimeout(locate,600);window.addEventListener('resize',locate);return()=>{clearTimeout(t);window.removeEventListener('resize',locate)}},[locate]);
+  return <div className="annotation-overlay">
+    {positions.map(ann=><button key={ann.id} className={`annotation-pin annotation-pin--${ann.type}`} style={{left:ann.left,top:ann.top,background:ann.color}} onClick={()=>onEdit(ann)} title={`${ann.measureNum}마디: ${ann.text}`}>📝</button>)}
+    {onCreate&&<button className="annotation-add-floating" onClick={onCreate} title="현재 마디에 주석 추가">+</button>}
+  </div>;
+}
+
+function AnnotationsPanel({files,activeFile=0,annotations,setAnnotations,onFilesUpdate,showProgress,hideProgress}){
+  const [editing,setEditing]=useState(null);
+  const [log,setLog]=useState([]);
+  const importRef=useRef(null);
+  const file=files[activeFile]||files[0];
+  const fileAnnotations=useMemo(()=>annotations.filter(a=>!a.fileName||a.fileName===file?.name),[annotations,file]);
+
+  const create=useCallback(()=>{
+    setEditing(window.AnnotationsCore.createAnnotation({measureNum:1,text:'',type:'note',color:'#FFD166',fileName:file?.name||''}));
+  },[file]);
+  const save=useCallback(ann=>{
+    const next={...ann,fileName:file?.name||ann.fileName||''};
+    setAnnotations(prev=>[next,...prev.filter(a=>a.id!==next.id)]);
+    setEditing(null);
+    setLog([{m:'주석을 저장했습니다.',t:'ok'}]);
+  },[file,setAnnotations]);
+  const del=useCallback(id=>{
+    setAnnotations(prev=>prev.filter(a=>a.id!==id));
+    setEditing(null);
+    setLog([{m:'주석을 삭제했습니다.',t:'warn'}]);
+  },[setAnnotations]);
+  const persist=useCallback(()=>{
+    if(!file?.xmlDoc){alert('먼저 파일을 업로드하세요.');return}
+    showProgress('주석을 악보에 삽입 중...');
+    try{
+      const doc=cloneDoc(file.xmlDoc);
+      const result=window.AnnotationsCore.insertAnnotations(doc,fileAnnotations);
+      const updated=files.map((f,i)=>i===(files[activeFile]?activeFile:0)?{...f,xmlDoc:doc,xmlString:new XMLSerializer().serializeToString(doc)}:f);
+      onFilesUpdate(updated,'주석 삽입');
+      setLog([{m:`주석 ${result.inserted}개를 악보에 삽입했습니다.`,t:'ok'},...(result.missing?[{m:`마디를 찾지 못한 주석 ${result.missing}개`,t:'warn'}]:[])]);
+    }catch(e){setLog([{m:e.message,t:'err'}])}
+    hideProgress();
+  },[file,fileAnnotations,files,activeFile,onFilesUpdate,showProgress,hideProgress]);
+  const exportJson=useCallback(()=>{
+    downloadBlob(new Blob([JSON.stringify(fileAnnotations,null,2)],{type:'application/json'}),`${(file?.name||'annotations').replace(/\.[^.]+$/,'')}-annotations.json`);
+  },[file,fileAnnotations]);
+  const importJson=useCallback(async e=>{
+    const json=e.target.files?.[0];e.target.value='';if(!json)return;
+    try{
+      const data=JSON.parse(await json.text());
+      const incoming=(Array.isArray(data)?data:[]).map(a=>window.AnnotationsCore.createAnnotation({...a,fileName:a.fileName||file?.name||''}));
+      setAnnotations(prev=>[...incoming,...prev.filter(p=>!incoming.some(i=>i.id===p.id))]);
+      setLog([{m:`주석 ${incoming.length}개를 가져왔습니다.`,t:'ok'}]);
+    }catch(err){setLog([{m:'주석 JSON 가져오기에 실패했습니다.',t:'err'}])}
+  },[file,setAnnotations]);
+  const printMode=useCallback(mode=>{
+    const printable=window.AnnotationsCore.filterForPrint(fileAnnotations,mode);
+    const win=window.open('','_blank');
+    if(!win){alert('팝업이 차단되었습니다.');return}
+    const svg=document.querySelector('.score-container svg')?.cloneNode(true);
+    if(svg){
+      const ns='http://www.w3.org/2000/svg';
+      printable.forEach((a,i)=>{
+        const g=document.createElementNS(ns,'g');
+        const x=28+(Math.max(0,a.measureNum-1)%4)*150;
+        const y=34+Math.floor(Math.max(0,a.measureNum-1)/4)*90+(i%3)*18;
+        const text=document.createElementNS(ns,'text');
+        text.setAttribute('x',x);text.setAttribute('y',y);
+        text.setAttribute('font-size','12');text.setAttribute('font-family','Noto Sans KR, sans-serif');
+        text.setAttribute('fill',a.color||'#FF6B6B');
+        text.textContent=`📝 ${a.measureNum}: ${a.text}`;
+        g.appendChild(text);svg.appendChild(g);
+      });
+    }
+    const scoreSvg=svg?new XMLSerializer().serializeToString(svg):'';
+    const items=printable.map(a=>`<li style="border-left:5px solid ${a.color};padding:8px;margin:8px 0"><b>${a.measureNum}마디</b> [${window.AnnotationsCore.TYPES[a.type]?.label||a.type}] ${a.text}</li>`).join('');
+    win.document.write(`<!doctype html><html><head><title>annotations</title><style>body{font-family:sans-serif;padding:24px}svg{max-width:100%;height:auto}li{list-style:none}</style></head><body><h1>${mode==='student'?'학생용':'교사용'} 주석 인쇄</h1>${scoreSvg}<ul>${items}</ul></body></html>`);
+    win.document.close();setTimeout(()=>win.print(),500);
+  },[fileAnnotations]);
+
+  return <div>
+    <h2 className="panel__heading">주석 메모</h2>
+    <p className="panel__description">마디별 교사 메모를 악보 위 오버레이로 배치하고, 필요하면 MusicXML에 영구 삽입합니다.</p>
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={create}>주석 추가</button>
+      <button className="btn btn--secondary" onClick={persist} disabled={!fileAnnotations.length}>악보에 영구 삽입</button>
+    </div>
+    <div className="btn-row">
+      <button className="btn btn--secondary" onClick={()=>printMode('teacher')}>교사용 인쇄</button>
+      <button className="btn btn--secondary" onClick={()=>printMode('student')}>학생용 인쇄</button>
+    </div>
+    <div className="btn-row">
+      <button className="btn btn--secondary" onClick={exportJson} disabled={!fileAnnotations.length}>주석 내보내기</button>
+      <button className="btn btn--secondary" onClick={()=>importRef.current?.click()}>주석 가져오기</button>
+      <input ref={importRef} className="hidden-file-input" type="file" accept="application/json,.json" onChange={importJson}/>
+    </div>
+    <div className="annotation-list">
+      {fileAnnotations.map(a=><button key={a.id} className="annotation-list__item" onClick={()=>setEditing(a)}>
+        <span className="annotation-list__dot" style={{background:a.color}}/><b>{a.measureNum}마디</b><span>{window.AnnotationsCore.TYPES[a.type]?.label}</span><small>{a.text}</small>
+      </button>)}
+      {!fileAnnotations.length&&<div className="card__text">현재 파일에 연결된 주석이 없습니다.</div>}
+    </div>
+    <AnnotationEditModal annotation={editing} onSave={save} onDelete={del} onClose={()=>setEditing(null)}/>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
 /* ==============================================================
    SCORE VIEW — center panel always-visible score renderer
    ============================================================== */
@@ -4812,6 +4976,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
       {icon:'🖐',label:'운지법 표시',          onClick:()=>sel('right','fingering')},
       {icon:'🔍',label:'성부 진행 분석',      onClick:()=>sel('right','voiceleading')},
       {icon:'🔎',label:'음형 패턴 검색',      onClick:()=>sel('right','patternsearch')},
+      {icon:'📝',label:'주석 메모',            onClick:()=>sel('right','annotations')},
       {icon:'📊',label:'통계 분석',            onClick:()=>sel('right','stats')},
     ]},
   ];
@@ -4840,7 +5005,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
   </nav>;
 }
 
-function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
+function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying,annotations,onAnnotationEdit,onAnnotationCreate}){
   const containerRef=useRef(null);
   const ossiaRef=useRef(null);
   const osmdRef=useRef(null);
@@ -4928,6 +5093,7 @@ function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
       <span className="score-measure-overlay__value">{playbackMeasure||1}</span>
     </div>
     <div className="score-container" ref={containerRef}/>
+    <AnnotationOverlay annotations={annotations||[]} onEdit={onAnnotationEdit} onCreate={onAnnotationCreate}/>
     <div className="ossia-overlay" ref={ossiaRef}/>
   </div>;
 }
@@ -5423,7 +5589,7 @@ const RIGHT_ACTIVITY_ITEMS=[
   {id:'notation',icon:'✏️'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
   {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
   {id:'numbering',icon:'🔢'},{id:'eartraining',icon:'👂'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
-  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'patternsearch',icon:'🔎'},{id:'stats',icon:'📊'},
+  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'patternsearch',icon:'🔎'},{id:'annotations',icon:'📝'},{id:'stats',icon:'📊'},
 ];
 
 const RIGHT_PANEL_IDS=new Set(RIGHT_ACTIVITY_ITEMS.filter(i=>!i.sep).map(i=>i.id));
@@ -5436,7 +5602,7 @@ const PANEL_LABELS={
   parts:'파트 추출',notation:'악보 표기 변환',export:'이미지 / PDF',
   color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
   eartraining:'청음 훈련',lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',
-  voiceleading:'성부 진행 분석',patternsearch:'음형 패턴 검색',stats:'통계 분석',
+  voiceleading:'성부 진행 분석',patternsearch:'음형 패턴 검색',annotations:'주석 메모',stats:'통계 분석',
 };
 
 function App(){
@@ -5457,6 +5623,8 @@ function App(){
   const [savedNotice,setSavedNotice]=useState(null);
   const [pendingRestore,setPendingRestore]=useState(null);
   const [sessionSlots,setSessionSlots]=useState([]);
+  const [annotations,setAnnotations]=useState([]);
+  const [overlayEditing,setOverlayEditing]=useState(null);
   const importSessionRef=useRef(null);
   const sessionBootRef=useRef(false);
   const osmdRef=useRef(null);
@@ -5605,7 +5773,7 @@ function App(){
     setFiles(newFiles);
     pushHistory(newFiles,label);
   },[pushHistory]);
-  const panelProps={files,activeFile,showProgress,hideProgress,onFilesUpdate:updateFiles};
+  const panelProps={files,activeFile,showProgress,hideProgress,onFilesUpdate:updateFiles,annotations,setAnnotations};
 
   const restoreSessionData=useCallback((session,label='세션 복원')=>{
     if(!window.ShareSessionCore)return;
@@ -5639,7 +5807,15 @@ function App(){
     }
     const saved=window.ShareSessionCore.readJson(window.ShareSessionCore.SESSION_KEY);
     if(saved?.files?.length)setPendingRestore(saved);
+    try{
+      const savedAnnotations=JSON.parse(localStorage.getItem('mxlstudio_annotations_v1')||'[]');
+      if(Array.isArray(savedAnnotations))setAnnotations(savedAnnotations);
+    }catch(e){}
   },[pushHistory]);
+
+  useEffect(()=>{
+    try{localStorage.setItem('mxlstudio_annotations_v1',JSON.stringify(annotations))}catch(e){}
+  },[annotations]);
 
   useEffect(()=>{
     if(!window.ShareSessionCore||!files.length)return;
@@ -5777,6 +5953,7 @@ function App(){
     fingering:<FingeringPanel {...panelProps}/>,
     voiceleading:<VoiceLeadingPanel {...panelProps}/>,
     patternsearch:<PatternSearchPanel {...panelProps}/>,
+    annotations:<AnnotationsPanel {...panelProps}/>,
     stats:<StatsPanel {...panelProps}/>,
   };
 
@@ -5892,6 +6069,22 @@ function App(){
       onOsmdReady={handleOsmdReady}
       playbackMeasure={playback.currentMeasure}
       isPlaying={playback.isPlaying}
+      annotations={annotations.filter(a=>!a.fileName||a.fileName===(files[activeFile]||files[0])?.name)}
+      onAnnotationEdit={setOverlayEditing}
+      onAnnotationCreate={()=>{setRightPanel('annotations');setShowRight(true)}}
+    />
+    <AnnotationEditModal
+      annotation={overlayEditing}
+      onClose={()=>setOverlayEditing(null)}
+      onSave={ann=>{
+        const fileName=(files[activeFile]||files[0])?.name||'';
+        setAnnotations(prev=>[{...ann,fileName},...prev.filter(a=>a.id!==ann.id)]);
+        setOverlayEditing(null);
+      }}
+      onDelete={id=>{
+        setAnnotations(prev=>prev.filter(a=>a.id!==id));
+        setOverlayEditing(null);
+      }}
     />
 
     {/* ── RIGHT PANEL (mirrors inspector for right activity bar) ── */}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Annotations Core Tests</title>
+<script src="annotations-core.js?v=1"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){if(!condition)throw new Error(message)}
+function parseXml(text){return new DOMParser().parseFromString(text,'text/xml')}
+
+try{
+  assert(window.AnnotationsCore, 'AnnotationsCore namespace is missing');
+  const a=window.AnnotationsCore.createAnnotation({measureNum:2,text:'연습하기',type:'practice',color:'#FFCC00'});
+  assert(a.id && a.measureNum===2 && a.text==='연습하기', 'annotation created');
+  assert(a.type==='practice' && a.color==='#FFCC00', 'annotation fields');
+
+  const doc=parseXml(`<score-partwise><part id="P1">
+    <measure number="1"><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note></measure>
+    <measure number="2"><note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration></note></measure>
+  </part></score-partwise>`);
+  const result=window.AnnotationsCore.insertAnnotations(doc,[a,{measureNum:9,text:'missing',color:'#FF0000',type:'warning'}]);
+  assert(result.inserted===1 && result.missing===1, 'insert count');
+  const words=doc.querySelector('measure[number="2"] direction words');
+  assert(words && words.textContent==='연습하기', 'words inserted');
+  assert(words.getAttribute('font-size')==='8' && words.getAttribute('color')==='#FFCC00', 'words style');
+  assert(doc.querySelector('measure[number="2"]').firstElementChild.tagName==='direction', 'insert before first note');
+
+  const teacher=window.AnnotationsCore.filterForPrint([a,{measureNum:1,type:'theory',text:'hide'},{measureNum:1,type:'warning',text:'hide'}],'teacher');
+  const student=window.AnnotationsCore.filterForPrint(teacher,'student');
+  assert(teacher.length===3, 'teacher all annotations');
+  assert(student.length===1 && student[0].type==='practice', 'student filters theory warning');
+
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>

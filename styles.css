@@ -420,6 +420,112 @@ body {
   font-size: 12px;
 }
 
+.annotation-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.annotation-pin,
+.annotation-add-floating {
+  position: absolute;
+  pointer-events: auto;
+  border: 1px solid rgba(0,0,0,0.18);
+  border-radius: 999px;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+}
+
+.annotation-pin {
+  transform: translate(-8px,-8px);
+  font-size: 14px;
+}
+
+.annotation-add-floating {
+  right: 18px;
+  top: 18px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 20px;
+  font-weight: 800;
+}
+
+.annotation-modal {
+  width: min(420px, 100%);
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  padding: 18px;
+  box-shadow: var(--shadow-lg);
+}
+
+.annotation-textarea {
+  width: 100%;
+  min-height: 110px;
+  resize: vertical;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  padding: 10px;
+  font-family: var(--font-body);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+}
+
+.annotation-color-row {
+  display: flex;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.annotation-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.annotation-swatch--active {
+  border-color: var(--text-primary);
+}
+
+.annotation-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.annotation-list__item {
+  display: grid;
+  grid-template-columns: 14px auto auto 1fr;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  padding: 9px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.annotation-list__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.annotation-list__item small {
+  color: var(--text-secondary);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .menubar {
   display: flex;
   align-items: stretch;
