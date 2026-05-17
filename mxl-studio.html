@@ -27,6 +27,7 @@
 <script src="annotations-core.js?v=1"></script>
 <script src="form-analysis-core.js?v=1"></script>
 <script src="lyrics-core.js?v=1"></script>
+<script src="difficulty-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -174,6 +175,7 @@ const NAV = [
     {id:'patternsearch',icon:'🔎',label:'음형 패턴 검색'},
     {id:'annotations',icon:'📝',label:'주석 메모'},
     {id:'formanalysis',icon:'📊',label:'형식 분석'},
+    {id:'difficulty',icon:'⭐',label:'난이도 평가'},
   ]},
 ];
 
@@ -4979,6 +4981,84 @@ function LyricsPanel({files,activeFile=0,onFilesUpdate,showProgress,hideProgress
   </div>;
 }
 
+function DifficultyRadar({result}){
+  if(!result)return null;
+  const items=[
+    ['음역',result.breakdown.rangeScore],['도약',result.breakdown.leapScore],['리듬',result.breakdown.rhythmScore],
+    ['조성',result.breakdown.keyScore],['화성',result.breakdown.harmonyScore],['빠르기',result.breakdown.tempoScore],['다성부',result.breakdown.polyScore],
+  ];
+  const cx=120,cy=120,r=78;
+  const point=(i,value=100)=>{
+    const a=-Math.PI/2+i*(Math.PI*2/items.length);
+    const rr=r*(value/100);
+    return [cx+Math.cos(a)*rr,cy+Math.sin(a)*rr];
+  };
+  const outer=items.map((_,i)=>point(i,100).join(',')).join(' ');
+  const filled=items.map((it,i)=>point(i,it[1]).join(',')).join(' ');
+  return <svg className="difficulty-radar" viewBox="0 0 240 240">
+    <polygon points={outer} fill="none" stroke="var(--border-default)" strokeWidth="1.5"/>
+    {[0.25,0.5,0.75].map(s=><polygon key={s} points={items.map((_,i)=>point(i,100*s).join(',')).join(' ')} fill="none" stroke="var(--border-subtle)" strokeWidth="1"/>)}
+    {items.map((_,i)=>{const [x,y]=point(i,100);return <line key={i} x1={cx} y1={cy} x2={x} y2={y} stroke="var(--border-subtle)"/>})}
+    <polygon points={filled} fill={result.color} fillOpacity="0.32" stroke={result.color} strokeWidth="2"/>
+    {items.map((it,i)=>{const [x,y]=point(i,115);return <text key={it[0]} x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize="10" fill="currentColor">{it[0]} {it[1]}</text>})}
+  </svg>;
+}
+
+function DifficultyPanel({files,activeFile=0}){
+  const [result,setResult]=useState(null);
+  const [compare,setCompare]=useState([]);
+  const [sortDir,setSortDir]=useState('asc');
+  const [showOrder,setShowOrder]=useState(false);
+  const file=files[activeFile]||files[0];
+
+  const run=useCallback(()=>{
+    if(!file?.xmlDoc){alert('먼저 파일을 업로드하세요.');return}
+    const next=window.DifficultyCore.scoreDifficulty(file.xmlDoc);
+    setResult(next);
+    setCompare(window.DifficultyCore.compareFiles(files));
+  },[file,files]);
+
+  useEffect(()=>{if(file?.xmlDoc&&window.DifficultyCore)run()},[file]);
+
+  const sorted=useMemo(()=>{
+    const rows=[...compare];
+    rows.sort((a,b)=>sortDir==='asc'?a.total-b.total:b.total-a.total);
+    return rows;
+  },[compare,sortDir]);
+
+  const bars=result?[['음역 폭',result.breakdown.rangeScore,result.details.rangeLabel],['도약 빈도',result.breakdown.leapScore,`전체 음의 ${result.details.leapPct}%가 도약`],['리듬 복잡도',result.breakdown.rhythmScore,`${result.details.uniqueRatios}종 리듬${result.details.hasTriplets?' + 셋잇단음표':''}`],['조성 난이도',result.breakdown.keyScore,`# / ♭ ${result.details.fifths}개`],['화성 복잡도',result.breakdown.harmonyScore,`${result.details.chordKinds}종 코드`],['빠르기',result.breakdown.tempoScore,`${Math.round(result.details.bpm)} BPM`],['다성부',result.breakdown.polyScore,`${result.details.partCount}파트`]]:[];
+
+  return <div>
+    <h2 className="panel__heading">난이도 평가</h2>
+    <p className="panel__description">음역, 도약, 리듬, 조성, 화성, 빠르기, 다성부를 종합해 학습자 레벨을 진단합니다.</p>
+    <div className="btn-row"><button className="btn btn--primary" onClick={run} disabled={!files.length}>난이도 평가 시작</button></div>
+    {result&&<div className="difficulty-hero">
+      <div className="difficulty-badge-large" style={{background:result.color}}>⭐ {result.level} ({result.total}점)</div>
+      <div className="card__text">{result.desc}</div>
+      <DifficultyRadar result={result}/>
+    </div>}
+    {result&&<div className="card"><div className="card__title">추천 대상</div><div className="card__text">{window.DifficultyCore.recommendation(result)}</div></div>}
+    {result&&<div className="difficulty-bars">
+      {bars.map(([name,score,detail])=><div className="difficulty-bar-row" key={name}>
+        <div className="difficulty-bar-row__label"><b>{name}</b><span>{score}점 · {detail}</span></div>
+        <div className="difficulty-bar-track"><div style={{width:`${score}%`,background:result.color}}/></div>
+      </div>)}
+    </div>}
+    <div className="card">
+      <div className="card__title">여러 파일 비교</div>
+      <div className="btn-row">
+        <button className="btn btn--secondary" onClick={()=>setSortDir(d=>d==='asc'?'desc':'asc')}>정렬: {sortDir==='asc'?'오름차순':'내림차순'}</button>
+        <button className="btn btn--secondary" onClick={()=>setShowOrder(v=>!v)} disabled={!sorted.length}>학습 순서 제안</button>
+      </div>
+      {showOrder&&<div className="card__text">추천 순서: {sorted.map((r,i)=>`${i+1}. ${r.name} (${r.total}점)`).join(' → ')}</div>}
+      <div className="form-table-wrap"><table className="roman-table"><thead><tr><th>파일</th><th>점수</th><th>레벨</th><th>추천</th></tr></thead><tbody>
+        {sorted.map(r=><tr key={r.name}><td>{r.name}</td><td>{r.total}</td><td><span style={{color:r.color,fontWeight:800}}>{r.level}</span></td><td>{window.DifficultyCore.recommendation(r)}</td></tr>)}
+        {!sorted.length&&<tr><td colSpan="4">평가를 실행하면 파일별 점수가 표시됩니다.</td></tr>}
+      </tbody></table></div>
+    </div>
+  </div>;
+}
+
 function FormAnalysisPanel({files,activeFile=0,onFilesUpdate,showProgress,hideProgress}){
   const [analysis,setAnalysis]=useState(null);
   const [phraseLength,setPhraseLength]=useState('');
@@ -5163,6 +5243,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
       {icon:'🔎',label:'음형 패턴 검색',      onClick:()=>sel('right','patternsearch')},
       {icon:'📝',label:'주석 메모',            onClick:()=>sel('right','annotations')},
       {icon:'📊',label:'형식 분석',            onClick:()=>sel('right','formanalysis')},
+      {icon:'⭐',label:'난이도 평가',          onClick:()=>sel('right','difficulty')},
       {icon:'📊',label:'통계 분석',            onClick:()=>sel('right','stats')},
     ]},
   ];
@@ -5775,7 +5856,7 @@ const RIGHT_ACTIVITY_ITEMS=[
   {id:'notation',icon:'✏️'},{id:'lyrics',icon:'💬'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
   {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
   {id:'numbering',icon:'🔢'},{id:'eartraining',icon:'👂'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
-  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'patternsearch',icon:'🔎'},{id:'annotations',icon:'📝'},{id:'formanalysis',icon:'📊'},{id:'stats',icon:'📊'},
+  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'patternsearch',icon:'🔎'},{id:'annotations',icon:'📝'},{id:'formanalysis',icon:'📊'},{id:'difficulty',icon:'⭐'},{id:'stats',icon:'📊'},
 ];
 
 const RIGHT_PANEL_IDS=new Set(RIGHT_ACTIVITY_ITEMS.filter(i=>!i.sep).map(i=>i.id));
@@ -5788,7 +5869,7 @@ const PANEL_LABELS={
   parts:'파트 추출',notation:'악보 표기 변환',lyrics:'가사 편집',export:'이미지 / PDF',
   color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
   eartraining:'청음 훈련',lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',
-  voiceleading:'성부 진행 분석',patternsearch:'음형 패턴 검색',annotations:'주석 메모',formanalysis:'형식 분석',stats:'통계 분석',
+  voiceleading:'성부 진행 분석',patternsearch:'음형 패턴 검색',annotations:'주석 메모',formanalysis:'형식 분석',difficulty:'난이도 평가',stats:'통계 분석',
 };
 
 function App(){
@@ -6142,6 +6223,7 @@ function App(){
     patternsearch:<PatternSearchPanel {...panelProps}/>,
     annotations:<AnnotationsPanel {...panelProps}/>,
     formanalysis:<FormAnalysisPanel {...panelProps}/>,
+    difficulty:<DifficultyPanel {...panelProps}/>,
     stats:<StatsPanel {...panelProps}/>,
   };
 

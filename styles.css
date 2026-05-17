@@ -607,6 +607,67 @@ body {
   gap: 10px;
 }
 
+.difficulty-hero {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-secondary);
+  margin-bottom: 12px;
+}
+
+.difficulty-badge-large {
+  color: #fff;
+  font-size: 20px;
+  font-weight: 900;
+  padding: 10px 16px;
+  border-radius: 999px;
+  box-shadow: var(--shadow-sm);
+}
+
+.difficulty-radar {
+  width: 100%;
+  max-width: 260px;
+  color: var(--text-secondary);
+}
+
+.difficulty-bars {
+  display: grid;
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.difficulty-bar-row {
+  display: grid;
+  gap: 6px;
+}
+
+.difficulty-bar-row__label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.difficulty-bar-row__label span {
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.difficulty-bar-track {
+  height: 9px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-tertiary);
+}
+
+.difficulty-bar-track > div {
+  height: 100%;
+  border-radius: inherit;
+}
+
 .menubar {
   display: flex;
   align-items: stretch;
