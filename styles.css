@@ -1456,6 +1456,69 @@ body {
   color: var(--accent);
 }
 
+/* ===== FINGERING PANEL ===== */
+.fingering-summary {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.fingering-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(86px, 1fr));
+  gap: 8px;
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.fingering-preview-item {
+  min-height: 150px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 8px 6px;
+}
+
+.fingering-preview-note {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.fingering-preview-text {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.fingering-table-wrap {
+  max-height: 360px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+}
+
+.fingering-table th,
+.fingering-table td {
+  vertical-align: middle;
+}
+
+.fingering-table svg {
+  display: block;
+}
+
+.fingering-missing {
+  color: var(--text-muted);
+}
+
 .key-analysis-card .form-input {
   margin-bottom: 2px;
 }

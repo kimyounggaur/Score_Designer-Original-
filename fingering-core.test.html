@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Fingering Core Tests</title>
+<script src="fingering-core.js?v=1"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){
+  if(!condition)throw new Error(message);
+}
+
+function parseXml(text){
+  return new DOMParser().parseFromString(text,'text/xml');
+}
+
+try{
+  assert(window.FingeringCore, 'FingeringCore namespace is missing');
+  assert(window.FingeringCore.getFingering('recorder','C5').pattern==='●●●●●●●●', 'recorder C5 pattern');
+  assert(window.FingeringCore.getFingering('kalimba','C5').value===1, 'kalimba C5 tine');
+
+  const doc=parseXml('<score-partwise><part id="P1"><measure number="1"><note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration></note><note><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration></note><note><rest/><duration>1</duration></note></measure></part></score-partwise>');
+  const preview=window.FingeringCore.collectNoteFingerings(doc,'recorder','P1');
+  assert(preview.length===2, 'preview skips rests');
+  assert(preview[0].noteName==='C5'&&preview[0].display==='●●●●●●●●', 'preview maps recorder notes');
+
+  const insertedRecorder=window.FingeringCore.insertFingerings(doc,'recorder','P1');
+  assert(insertedRecorder.count===2, 'recorder insert count');
+  assert(doc.querySelectorAll('notations technical fingering').length===2, 'recorder inserts technical fingering');
+
+  const kalimbaDoc=parseXml('<score-partwise><part id="P1"><measure number="1"><note><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration></note></measure></part></score-partwise>');
+  const insertedKalimba=window.FingeringCore.insertFingerings(kalimbaDoc,'kalimba','P1');
+  assert(insertedKalimba.count===1, 'kalimba insert count');
+  assert(kalimbaDoc.querySelector('lyric text').textContent==='1', 'kalimba inserts lyric number');
+
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>

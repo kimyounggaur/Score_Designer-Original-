@@ -16,6 +16,7 @@
 <script crossorigin src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 <script src="chord-tools-core.js"></script>
 <script src="history-core.js?v=1"></script>
+<script src="fingering-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -154,7 +155,10 @@ const NAV = [
     {id:'chordtools',icon:'🔧',label:'코드 도구'},{id:'numbering',icon:'🔢',label:'숫자 악보'},
     {id:'chords',icon:'🎸',label:'코드 분석'},{id:'stats',icon:'📊',label:'통계 분석'},
   ]},
-  {section:'분석',items:[{id:'roman',icon:'Ⅰ',label:'로마 숫자 분석'}]},
+  {section:'분석',items:[
+    {id:'roman',icon:'Ⅰ',label:'로마 숫자 분석'},
+    {id:'fingering',icon:'🖐',label:'운지법 표시'},
+  ]},
 ];
 
 /* ==============================================================
@@ -3444,6 +3448,151 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
 }
 
 /* ==============================================================
+   PANEL: FINGERING
+   ============================================================== */
+function RecorderFingeringSvg({pattern,small=false}){
+  const values=Array.isArray(pattern)?pattern:[];
+  const width=small?30:40;
+  const height=small?120:160;
+  const r=small?6:8;
+  const gap=small?14:18;
+  const startY=small?12:14;
+  const clipId=useMemo(()=>`half-${Math.random().toString(36).slice(2)}`,[]);
+  return <svg className="fingering-recorder" width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-label="리코더 운지">
+    <defs><clipPath id={clipId}><rect x="0" y="0" width={width/2} height={height}/></clipPath></defs>
+    {values.map((v,i)=>{
+      const cy=startY+i*gap;
+      return <g key={i}>
+        <circle cx={width/2} cy={cy} r={r} fill="#fff" stroke="#222" strokeWidth="1.6"/>
+        {v===1&&<circle cx={width/2} cy={cy} r={r} fill="#222"/>}
+        {v===0.5&&<circle cx={width/2} cy={cy} r={r} fill="#222" clipPath={`url(#${clipId})`}/>}
+      </g>;
+    })}
+  </svg>;
+}
+
+function KalimbaFingeringSvg({tine,small=false}){
+  const width=small?132:180;
+  const height=small?84:116;
+  const count=17;
+  const tineW=small?6:8;
+  const gap=small?1.5:2;
+  const baseY=small?76:104;
+  return <svg className="fingering-kalimba" width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-label="칼림바 운지">
+    <rect x="6" y={baseY-9} width={width-12} height="8" rx="3" fill="#3d4550"/>
+    {Array.from({length:count}).map((_,i)=>{
+      const n=i+1;
+      const center=Math.abs(i-8);
+      const h=(small?70:96)-center*(small?3.2:4.4);
+      const x=(width-(count*tineW+(count-1)*gap))/2+i*(tineW+gap);
+      const active=n===Number(tine);
+      return <rect key={n} x={x} y={baseY-h} width={tineW} height={h} rx="3"
+        fill={active?'#f59e0b':'#e5e7eb'} stroke={active?'#b45309':'#9ca3af'} strokeWidth="1"/>;
+    })}
+    {tine&&<text x={width/2} y={height-2} textAnchor="middle" fontSize={small?10:12} fill="#92400e" fontWeight="700">{tine}</text>}
+  </svg>;
+}
+
+function FingeringDiagram({item,small=false}){
+  if(!item||!item.found)return <span className="fingering-missing">-</span>;
+  if(item.type==='kalimba')return <KalimbaFingeringSvg tine={item.value} small={small}/>;
+  return <RecorderFingeringSvg pattern={item.value} small={small}/>;
+}
+
+function FingeringPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const [instrument,setInstrument]=useState('recorder');
+  const [partId,setPartId]=useState('all');
+  const [log,setLog]=useState([]);
+  const file=files[activeFile]||files[0];
+  const parts=useMemo(()=>file?.xmlDoc&&window.FingeringCore?window.FingeringCore.getParts(file.xmlDoc):[],[file]);
+  const rows=useMemo(()=>file?.xmlDoc&&window.FingeringCore?window.FingeringCore.collectNoteFingerings(file.xmlDoc,instrument,partId):[],[file,instrument,partId]);
+  const foundCount=rows.filter(r=>r.found).length;
+  const missingCount=rows.length-foundCount;
+  const previewRows=rows.filter(r=>r.found).slice(0,18);
+
+  useEffect(()=>{
+    if(partId!=='all'&&!parts.some(p=>p.id===partId))setPartId('all');
+  },[parts,partId]);
+
+  const insertIntoScore=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드하세요.');return}
+    if(!window.FingeringCore){alert('운지법 모듈을 불러오지 못했습니다.');return}
+    setLog([]);
+    showProgress('운지법을 악보에 삽입 중...');
+    await new Promise(r=>setTimeout(r,50));
+    try{
+      const fileIndex=files[activeFile]?activeFile:0;
+      const doc=cloneDoc(files[fileIndex].xmlDoc);
+      const result=window.FingeringCore.insertFingerings(doc,instrument,partId);
+      const xmlString=new XMLSerializer().serializeToString(doc);
+      const updatedFiles=files.map((f,i)=>i===fileIndex?{...f,xmlDoc:doc,xmlString}:f);
+      onFilesUpdate(updatedFiles,'운지법 삽입');
+      setLog([
+        {m:`${result.count}개 음표에 운지법을 삽입했습니다.`,t:'ok'},
+        ...(result.missing?[{m:`운지 데이터가 없는 음표 ${result.missing}개는 건너뛰었습니다.`,t:'warn'}]:[]),
+      ]);
+    }catch(e){
+      setLog([{m:e.message,t:'err'}]);
+    }finally{
+      hideProgress();
+    }
+  },[files,activeFile,instrument,partId,onFilesUpdate,showProgress,hideProgress]);
+
+  return <div>
+    <h2 className="panel__heading">운지법 표시</h2>
+    <p className="panel__description">악기별 운지표를 기준으로 음표 옆 운지 다이어그램을 미리보고 MusicXML에 운지 번호를 삽입합니다.</p>
+    <div className="card">
+      <div className="card__title">🖐 악기 선택</div>
+      <select className="form-select" value={instrument} onChange={e=>setInstrument(e.target.value)}>
+        {Object.entries(window.FingeringCore?.INSTRUMENTS||{}).map(([id,cfg])=><option key={id} value={id}>{cfg.label}</option>)}
+      </select>
+      <label className="form-label">파트 선택</label>
+      <select className="form-select" value={partId} onChange={e=>setPartId(e.target.value)} disabled={!parts.length}>
+        <option value="all">전체 파트</option>
+        {parts.map(p=><option key={p.id} value={p.id}>{p.name} ({p.id})</option>)}
+      </select>
+    </div>
+
+    <div className="stats-row fingering-summary">
+      <div className="stat-tile"><div className="stat-tile__value">{rows.length}</div><div className="stat-tile__label">대상 음표</div></div>
+      <div className="stat-tile"><div className="stat-tile__value">{foundCount}</div><div className="stat-tile__label">매핑됨</div></div>
+      <div className="stat-tile"><div className="stat-tile__value">{missingCount}</div><div className="stat-tile__label">미지원</div></div>
+    </div>
+
+    <div className="card">
+      <div className="card__title">미리보기</div>
+      {!previewRows.length?<div className="card__text">표시할 운지 데이터가 없습니다.</div>:
+        <div className="fingering-preview-grid">
+          {previewRows.map((row,i)=><div className="fingering-preview-item" key={`${row.partId}-${row.measure}-${row.noteName}-${i}`}>
+            <FingeringDiagram item={row} small/>
+            <div className="fingering-preview-note">{row.noteName}</div>
+            <div className="fingering-preview-text">{row.display}</div>
+          </div>)}
+        </div>}
+    </div>
+
+    <div className="fingering-table-wrap">
+      <table className="roman-table fingering-table">
+        <thead><tr><th>파트</th><th>마디</th><th>음표</th><th>운지</th><th>다이어그램</th></tr></thead>
+        <tbody>
+          {rows.slice(0,160).map((row,i)=><tr key={`${row.partId}-${row.measure}-${row.noteName}-${i}`}>
+            <td>{row.partId}</td><td>{row.measure}</td><td>{row.noteName}</td>
+            <td className={row.found?'':'fingering-missing'}>{row.display}</td>
+            <td><FingeringDiagram item={row} small/></td>
+          </tr>)}
+          {!rows.length&&<tr><td colSpan="5">파일을 업로드하면 음표-운지 매핑이 표시됩니다.</td></tr>}
+        </tbody>
+      </table>
+    </div>
+
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={insertIntoScore} disabled={!files.length||!foundCount}>악보에 운지 번호 삽입</button>
+    </div>
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
    PANEL: STATISTICS
    ============================================================== */
 function StatsPanel({files,showProgress,hideProgress}){
@@ -3984,6 +4133,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
     {id:'analysis',label:'분석',items:[
       {icon:'🎸',label:'코드 분석',            onClick:()=>sel('right','chords')},
       {icon:'Ⅰ',label:'로마 숫자 분석',      onClick:()=>sel('right','roman')},
+      {icon:'🖐',label:'운지법 표시',          onClick:()=>sel('right','fingering')},
       {icon:'📊',label:'통계 분석',            onClick:()=>sel('right','stats')},
     ]},
   ];
@@ -4581,7 +4731,7 @@ const RIGHT_ACTIVITY_ITEMS=[
   {id:'notation',icon:'✏️'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
   {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
   {id:'numbering',icon:'🔢'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
-  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'stats',icon:'📊'},
+  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'stats',icon:'📊'},
 ];
 
 const RIGHT_PANEL_IDS=new Set(RIGHT_ACTIVITY_ITEMS.filter(i=>!i.sep).map(i=>i.id));
@@ -4593,7 +4743,7 @@ const PANEL_LABELS={
   ossia:'Ossia 마디',clef:'음자리표 변환',
   parts:'파트 추출',notation:'악보 표기 변환',export:'이미지 / PDF',
   color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
-  lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',stats:'통계 분석',
+  lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',stats:'통계 분석',
 };
 
 function App(){
@@ -4839,6 +4989,7 @@ function App(){
     lyricstyle:<LyricStylePanel {...panelProps}/>,
     chords:<ChordsPanel {...panelProps}/>,
     roman:<RomanAnalysisPanel {...panelProps}/>,
+    fingering:<FingeringPanel {...panelProps}/>,
     stats:<StatsPanel {...panelProps}/>,
   };
 
