@@ -2890,6 +2890,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
       for(const file of files){
         const doc=cloneDoc(file.xmlDoc);let ins=0;
         if(replaceExisting)window.ChordToolsCore.preserveNoChordHarmonies(doc);
+        else window.ChordToolsCore.dedupeNoChordHarmonies(doc);
         const parts=doc.querySelectorAll('part');
         const mc=parts[0]?.querySelectorAll('measure')?.length||0;
         for(let m=0;m<mc;m++){

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Chord Tools Core Tests</title>
+<script src="chord-tools-core.js"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){if(!condition)throw new Error(message)}
+function parseXml(text){return new DOMParser().parseFromString(text,'text/xml')}
+
+try{
+  assert(window.ChordToolsCore, 'ChordToolsCore namespace is missing');
+  assert(window.ChordToolsCore.isNoChordText('N.C.'), 'N.C. text recognized');
+  assert(window.ChordToolsCore.isNoChordText('N,C'), 'N,C text recognized');
+
+  const doc=parseXml(`<score-partwise><part id="P1"><measure number="1">
+    <harmony><kind text="N.C.">none</kind></harmony>
+    <harmony><kind text="N,C">none</kind></harmony>
+    <harmony><root><root-step>C</root-step></root><kind>major</kind></harmony>
+    <note><rest/><duration>1</duration></note>
+  </measure><measure number="2">
+    <harmony><root><root-step>D</root-step></root><kind>minor</kind></harmony>
+    <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration></note>
+  </measure></part></score-partwise>`);
+
+  const result=window.ChordToolsCore.preserveNoChordHarmonies(doc);
+  assert(result.kept===1, 'only one N.C. kept');
+  assert(result.removedNoChord===1, 'duplicate N.C. removed');
+  assert(doc.querySelectorAll('measure[number="1"] harmony').length===1, 'measure 1 has one harmony');
+  assert(doc.querySelector('measure[number="1"] harmony kind').textContent==='none', 'remaining no chord kept');
+  assert(doc.querySelectorAll('measure[number="2"] harmony').length===0, 'non N.C. removed in replace mode');
+
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>

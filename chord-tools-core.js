@@ -23,14 +23,47 @@
   }
 
   function preserveNoChordHarmonies(xmlDoc){
+    const stats={kept:0,removedNoChord:0,removedOther:0};
     Array.from(xmlDoc?.querySelectorAll?.('measure')||[]).forEach(measure=>{
+      let keptNoChord=false;
       measure.querySelectorAll('harmony').forEach(harmony=>{
-        if(!isNoChordHarmony(harmony))harmony.remove();
+        if(isNoChordHarmony(harmony)){
+          if(keptNoChord){
+            harmony.remove();
+            stats.removedNoChord++;
+          }else{
+            keptNoChord=true;
+            stats.kept++;
+          }
+        }else{
+          harmony.remove();
+          stats.removedOther++;
+        }
       });
     });
+    return stats;
+  }
+
+  function dedupeNoChordHarmonies(xmlDoc){
+    const stats={kept:0,removedNoChord:0};
+    Array.from(xmlDoc?.querySelectorAll?.('measure')||[]).forEach(measure=>{
+      let keptNoChord=false;
+      measure.querySelectorAll('harmony').forEach(harmony=>{
+        if(!isNoChordHarmony(harmony))return;
+        if(keptNoChord){
+          harmony.remove();
+          stats.removedNoChord++;
+        }else{
+          keptNoChord=true;
+          stats.kept++;
+        }
+      });
+    });
+    return stats;
   }
 
   global.ChordToolsCore = {
+    dedupeNoChordHarmonies,
     isNoChordHarmony,
     isNoChordText,
     measureHasNoChordHarmony,
