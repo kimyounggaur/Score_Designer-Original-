@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Ear Training Core Tests</title>
+<script src="ear-training-core.js?v=1"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){
+  if(!condition)throw new Error(message);
+}
+
+function parseXml(text){
+  return new DOMParser().parseFromString(text,'text/xml');
+}
+
+try{
+  assert(window.EarTrainingCore, 'EarTrainingCore namespace is missing');
+
+  const intervalQ=window.EarTrainingCore.generateIntervalQ(()=>0);
+  assert(intervalQ.baseNote===60, 'interval base note lower bound');
+  assert(intervalQ.intervalSemi===1, 'interval semitone lower bound');
+  assert(intervalQ.targetNote===61, 'interval ascending target');
+  assert(intervalQ.intervalName==='단2도', 'interval name');
+
+  const downQ=window.EarTrainingCore.generateIntervalQ(()=>0.99);
+  assert(downQ.direction==='하행', 'interval can descend');
+  assert(downQ.targetNote===60, 'descending target from upper base');
+
+  const chordQ=window.EarTrainingCore.generateChordQ(()=>0);
+  assert(chordQ.type.name==='장3화음', 'first chord type');
+  assert(chordQ.notes.join(',')==='48,52,55', 'major triad notes');
+
+  const state={score:0,total:0,streak:0,history:[],mistakes:{}};
+  const right=window.EarTrainingCore.gradeAnswer(state,'단2도','단2도');
+  assert(right.score===1&&right.total===1&&right.streak===1, 'correct answer updates score');
+  const wrong=window.EarTrainingCore.gradeAnswer(right,'장2도','단2도');
+  assert(wrong.score===1&&wrong.total===2&&wrong.streak===0, 'wrong answer resets streak');
+  assert(wrong.mistakes['단2도']===1, 'mistake tracked by answer');
+
+  const doc=parseXml(`<score-partwise><part id="P1">
+    <measure number="1"><attributes><divisions>1</divisions></attributes>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>
+    </measure>
+    <measure number="2"><note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration></note></measure>
+    <measure number="3"><note><pitch><step>E</step><octave>4</octave></pitch><duration>2</duration></note></measure>
+    <measure number="4"><note><rest/><duration>1</duration></note></measure>
+  </part></score-partwise>`);
+  const dict=window.EarTrainingCore.generateDictationQ(doc,()=>0);
+  assert(dict.notes.length===3, 'dictation skips rests and extracts notes');
+  assert(dict.answerNames.join(',')==='C4,D4,E4', 'dictation note names');
+  const graded=window.EarTrainingCore.gradeDictation(dict,['C4','E4','E4']);
+  assert(graded.pitchPercent===67, 'dictation pitch percent rounded');
+  assert(graded.rhythmPercent===100, 'dictation rhythm percent');
+
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>

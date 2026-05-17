@@ -19,6 +19,7 @@
 <script src="fingering-core.js?v=1"></script>
 <script src="voice-leading-core.js?v=1"></script>
 <script src="export-formats-core.js?v=1"></script>
+<script src="ear-training-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -155,6 +156,7 @@ const NAV = [
   {section:'교육 도구',items:[
     {id:'color',icon:'🎨',label:'색깔 악보'},{id:'harmony',icon:'🔗',label:'화성 쌓기'},
     {id:'chordtools',icon:'🔧',label:'코드 도구'},{id:'numbering',icon:'🔢',label:'숫자 악보'},
+    {id:'eartraining',icon:'👂',label:'청음 훈련'},
     {id:'chords',icon:'🎸',label:'코드 분석'},{id:'stats',icon:'📊',label:'통계 분석'},
   ]},
   {section:'분석',items:[
@@ -3747,6 +3749,140 @@ function VoiceLeadingPanel({files,activeFile=0,showProgress,hideProgress}){
 }
 
 /* ==============================================================
+   PANEL: EAR TRAINING
+   ============================================================== */
+function EarTrainingPanel({files,activeFile=0}){
+  const [mode,setMode]=useState('interval');
+  const [difficulty,setDifficulty]=useState('normal');
+  const [harmonic,setHarmonic]=useState(false);
+  const [arpeggio,setArpeggio]=useState(false);
+  const [currentQ,setCurrentQ]=useState(null);
+  const [dictInput,setDictInput]=useState([]);
+  const [dictResult,setDictResult]=useState(null);
+  const [state,setState]=useState({score:0,total:0,streak:0,history:[],mistakes:{},lastResult:null});
+  const synthRef=useRef(null);
+  const file=files[activeFile]||files[0];
+  const noteButtons=['C4','D4','E4','F4','G4','A4','B4','C5','D5','E5','F5','G5','A5','B5','C6'];
+
+  const ensureSynth=useCallback(async()=>{
+    if(!window.Tone){alert('Tone.js를 불러오지 못했습니다.');return null}
+    await Tone.start();
+    if(!synthRef.current)synthRef.current=new Tone.PolySynth(Tone.Synth).toDestination();
+    return synthRef.current;
+  },[]);
+
+  useEffect(()=>()=>{try{synthRef.current?.dispose?.()}catch(e){}},[]);
+
+  const makeQuestion=useCallback(nextMode=>{
+    if(!window.EarTrainingCore)return;
+    const m=nextMode||mode;
+    setDictResult(null);
+    if(m==='interval')setCurrentQ(window.EarTrainingCore.generateIntervalQ(Math.random,difficulty));
+    else if(m==='chord')setCurrentQ(window.EarTrainingCore.generateChordQ(Math.random,difficulty));
+    else if(file?.xmlDoc){setCurrentQ(window.EarTrainingCore.generateDictationQ(file.xmlDoc,Math.random));setDictInput([]);}
+    else setCurrentQ(null);
+  },[mode,difficulty,file]);
+
+  useEffect(()=>{makeQuestion(mode)},[mode,difficulty,makeQuestion]);
+
+  const playMidis=useCallback(async(midis,opts={})=>{
+    const synth=await ensureSynth();if(!synth)return;
+    const notes=midis.map(m=>Tone.Frequency(m,'midi').toNote());
+    if(opts.simultaneous)synth.triggerAttackRelease(notes,opts.duration||'1n');
+    else notes.forEach((note,i)=>synth.triggerAttackRelease(note,opts.duration||'4n',`+${i*(opts.gap||0.8)}`));
+  },[ensureSynth]);
+
+  const playCurrent=useCallback(()=>{
+    if(!currentQ)return;
+    if(currentQ.mode==='interval')playMidis([currentQ.baseNote,currentQ.targetNote],{simultaneous:harmonic,duration:harmonic?'1n':'4n',gap:0.8});
+    if(currentQ.mode==='chord')playMidis(currentQ.notes,{simultaneous:!arpeggio,duration:'1n',gap:0.28});
+    if(currentQ.mode==='dictation')playMidis(currentQ.notes.map(n=>n.midi),{simultaneous:false,duration:'4n',gap:0.45});
+  },[currentQ,harmonic,arpeggio,playMidis]);
+
+  const answerQuiz=useCallback(answer=>{
+    if(!currentQ)return;
+    const correct=currentQ.mode==='interval'?currentQ.intervalName:currentQ.type.name;
+    setState(prev=>window.EarTrainingCore.gradeAnswer(prev,answer,correct));
+    setTimeout(()=>makeQuestion(mode),450);
+  },[currentQ,mode,makeQuestion]);
+
+  const gradeDictation=useCallback(()=>{
+    if(!currentQ)return;
+    const result=window.EarTrainingCore.gradeDictation(currentQ,dictInput);
+    setDictResult(result);
+    setState(prev=>window.EarTrainingCore.gradeAnswer(prev,result.pitchPercent>=80?'받아쓰기 성공':'받아쓰기 실패','받아쓰기 성공'));
+  },[currentQ,dictInput]);
+
+  const resetSession=useCallback(()=>{
+    setState({score:0,total:0,streak:0,history:[],mistakes:{},lastResult:null});
+    setDictResult(null);
+    makeQuestion(mode);
+  },[mode,makeQuestion]);
+
+  const accuracy=state.total?Math.round((state.score/state.total)*100):0;
+  const weak=window.EarTrainingCore?.topWeak(state.mistakes,3)||[];
+
+  return <div>
+    <h2 className="panel__heading">청음 훈련</h2>
+    <p className="panel__description">Tone.js로 음정, 코드, 악보 받아쓰기 훈련을 진행하고 세션별 취약 패턴을 추적합니다.</p>
+    <div className="card">
+      <div className="card__title">모드 선택</div>
+      <div className="chip-group">
+        <Chip on={mode==='interval'} onClick={()=>setMode('interval')}>음정</Chip>
+        <Chip on={mode==='chord'} onClick={()=>setMode('chord')}>코드</Chip>
+        <Chip on={mode==='dictation'} onClick={()=>setMode('dictation')}>받아쓰기</Chip>
+      </div>
+      <label className="form-label">난이도</label>
+      <select className="form-select" value={difficulty} onChange={e=>setDifficulty(e.target.value)}>
+        <option value="easy">쉬움</option><option value="normal">보통</option><option value="hard">어려움</option>
+      </select>
+    </div>
+
+    <div className="stats-row eartraining-scoreboard">
+      <div className="stat-tile"><div className="stat-tile__value">{state.score}/{state.total}</div><div className="stat-tile__label">정답/전체</div></div>
+      <div className="stat-tile"><div className="stat-tile__value">{accuracy}%</div><div className="stat-tile__label">정답률</div></div>
+      <div className="stat-tile"><div className="stat-tile__value">{state.streak}</div><div className="stat-tile__label">연속정답</div></div>
+    </div>
+
+    <div className={`eartraining-question eartraining-question--${state.lastResult||'idle'}`}>
+      <div className="eartraining-question__title">{mode==='interval'?'음정을 듣고 맞혀보세요':mode==='chord'?'코드 유형을 맞혀보세요':'4마디 구간을 듣고 음 이름을 입력하세요'}</div>
+      <div className="btn-row">
+        <button className="btn btn--primary" onClick={playCurrent} disabled={!currentQ}>▶ 재생</button>
+        <button className="btn btn--secondary" onClick={()=>makeQuestion(mode)}>다음 문제</button>
+        <button className="btn btn--secondary" onClick={resetSession}>세션 초기화</button>
+      </div>
+      {mode==='interval'&&<div className="chip-group section-gap"><Chip on={harmonic} onClick={()=>setHarmonic(!harmonic)}>화성적 재생</Chip></div>}
+      {mode==='chord'&&<div className="chip-group section-gap"><Chip on={arpeggio} onClick={()=>setArpeggio(!arpeggio)}>아르페지오 재생</Chip></div>}
+    </div>
+
+    {mode==='interval'&&<div className="eartraining-answer-grid">
+      {window.EarTrainingCore?.INTERVAL_NAMES.map(name=><button className="eartraining-answer" key={name} onClick={()=>answerQuiz(name)}>{name}</button>)}
+    </div>}
+    {mode==='chord'&&<div className="eartraining-answer-grid">
+      {window.EarTrainingCore?.CHORD_TYPES.map(type=><button className="eartraining-answer" key={type.name} onClick={()=>answerQuiz(type.name)}>{type.name}</button>)}
+    </div>}
+    {mode==='dictation'&&<div className="card">
+      <div className="card__title">입력</div>
+      {!file?<div className="card__text">받아쓰기에는 업로드된 악보가 필요합니다.</div>:<>
+        <div className="eartraining-dict-input">{dictInput.length?dictInput.join(' '):'음표 버튼으로 입력하세요'}</div>
+        <div className="eartraining-note-buttons">{noteButtons.map(n=><button className="eartraining-answer" key={n} onClick={()=>setDictInput(v=>[...v,n])}>{n}</button>)}</div>
+        <div className="btn-row"><button className="btn btn--secondary" onClick={()=>setDictInput(v=>v.slice(0,-1))}>지우기</button><button className="btn btn--primary" onClick={gradeDictation} disabled={!currentQ}>채점</button></div>
+        {dictResult&&<div className="eartraining-dict-result">
+          <div>음높이 일치: <b>{dictResult.pitchPercent}%</b></div><div>리듬 일치: <b>{dictResult.rhythmPercent}%</b></div>
+          <div className="eartraining-dict-detail">{dictResult.details.map(d=><span className={d.correct?'is-correct':'is-wrong'} key={d.index}>{d.actual||'-'} / {d.expected}</span>)}</div>
+        </div>}
+      </>}
+    </div>}
+
+    <div className="card">
+      <div className="card__title">세션 통계</div>
+      <div className="eartraining-history">{state.history.map((h,i)=><span key={i} className={h.correct?'is-correct':'is-wrong'}/>)}</div>
+      <div className="card__text">취약 패턴: {weak.length?weak.map(w=>`${w.label} ${w.count}회`).join(', '):'아직 누적된 오답이 없습니다.'}</div>
+    </div>
+  </div>;
+}
+
+/* ==============================================================
    PANEL: STATISTICS
    ============================================================== */
 function StatsPanel({files,showProgress,hideProgress}){
@@ -4282,6 +4418,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
       {icon:'🔗',label:'화성 쌓기',            onClick:()=>sel('right','harmony')},
       {icon:'🔧',label:'코드 도구',            onClick:()=>sel('right','chordtools')},
       {icon:'🔢',label:'숫자 악보',            onClick:()=>sel('right','numbering')},
+      {icon:'👂',label:'청음 훈련',            onClick:()=>sel('right','eartraining')},
       {icon:'🔡',label:'가사 스타일',          onClick:()=>sel('right','lyricstyle')},
     ]},
     {id:'analysis',label:'분석',items:[
@@ -4899,7 +5036,7 @@ const RIGHT_ACTIVITY_ITEMS=[
   {id:'parts',icon:'🎼'},{id:'sep2',sep:true},
   {id:'notation',icon:'✏️'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
   {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
-  {id:'numbering',icon:'🔢'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
+  {id:'numbering',icon:'🔢'},{id:'eartraining',icon:'👂'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
   {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'stats',icon:'📊'},
 ];
 
@@ -4912,7 +5049,7 @@ const PANEL_LABELS={
   ossia:'Ossia 마디',clef:'음자리표 변환',
   parts:'파트 추출',notation:'악보 표기 변환',export:'이미지 / PDF',
   color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
-  lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',
+  eartraining:'청음 훈련',lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',
   voiceleading:'성부 진행 분석',stats:'통계 분석',
 };
 
@@ -5156,6 +5293,7 @@ function App(){
     harmony:<HarmonyPanel {...panelProps}/>,
     chordtools:<ChordToolsPanel {...panelProps}/>,
     numbering:<NumberingPanel {...panelProps}/>,
+    eartraining:<EarTrainingPanel {...panelProps}/>,
     lyricstyle:<LyricStylePanel {...panelProps}/>,
     chords:<ChordsPanel {...panelProps}/>,
     roman:<RomanAnalysisPanel {...panelProps}/>,
