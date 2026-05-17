@@ -25,6 +25,7 @@
 <script src="layout-core.js?v=1"></script>
 <script src="share-session-core.js?v=1"></script>
 <script src="annotations-core.js?v=1"></script>
+<script src="form-analysis-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -171,6 +172,7 @@ const NAV = [
     {id:'voiceleading',icon:'🔍',label:'성부 진행 분석'},
     {id:'patternsearch',icon:'🔎',label:'음형 패턴 검색'},
     {id:'annotations',icon:'📝',label:'주석 메모'},
+    {id:'formanalysis',icon:'📊',label:'형식 분석'},
   ]},
 ];
 
@@ -4876,6 +4878,87 @@ function AnnotationsPanel({files,activeFile=0,annotations,setAnnotations,onFiles
   </div>;
 }
 
+function FormAnalysisPanel({files,activeFile=0,onFilesUpdate,showProgress,hideProgress}){
+  const [analysis,setAnalysis]=useState(null);
+  const [phraseLength,setPhraseLength]=useState('');
+  const [log,setLog]=useState([]);
+  const file=files[activeFile]||files[0];
+
+  const run=useCallback(async()=>{
+    if(!file?.xmlDoc){alert('먼저 파일을 업로드하세요.');return}
+    if(!window.FormAnalysisCore){alert('형식 분석 모듈을 불러오지 못했습니다.');return}
+    showProgress('형식 분석 중...');
+    await new Promise(r=>setTimeout(r,50));
+    try{
+      const result=window.FormAnalysisCore.analyzeForm(file.xmlDoc,{phraseLength:phraseLength||undefined});
+      setAnalysis(result);
+      setLog([{m:`${result.phrases.length}개 구절을 감지했습니다.`,t:'ok'}]);
+    }catch(e){setLog([{m:e.message,t:'err'}])}
+    hideProgress();
+  },[file,phraseLength,showProgress,hideProgress]);
+
+  const insertLabels=useCallback(()=>{
+    if(!analysis||!file?.xmlDoc)return;
+    const doc=cloneDoc(file.xmlDoc);
+    const result=window.FormAnalysisCore.insertFormLabels(doc,analysis.phrases);
+    const idx=files[activeFile]?activeFile:0;
+    const updated=files.map((f,i)=>i===idx?{...f,xmlDoc:doc,xmlString:new XMLSerializer().serializeToString(doc)}:f);
+    onFilesUpdate(updated,'형식 라벨 삽입');
+    setLog([{m:`형식 라벨 ${result.inserted}개를 삽입했습니다.`,t:'ok'}]);
+  },[analysis,file,files,activeFile,onFilesUpdate]);
+
+  const scrollTo=useCallback(measure=>{
+    window.dispatchEvent(new CustomEvent('mxl-scroll-measure',{detail:{measure}}));
+  },[]);
+
+  const totalMeasures=analysis?.phrases?.length?analysis.phrases[analysis.phrases.length-1].endMeasure:1;
+
+  return <div>
+    <h2 className="panel__heading">형식 분석</h2>
+    <p className="panel__description">종지, 쉼표, 음고/리듬 유사도를 바탕으로 구절을 나누고 A/B/A' 형식 라벨을 추정합니다.</p>
+    <div className="card">
+      <div className="card__title">분석 옵션</div>
+      <label className="form-label">고정 구절 길이 (선택)</label>
+      <input className="form-input" type="number" min="1" placeholder="비우면 자동 감지" value={phraseLength} onChange={e=>setPhraseLength(e.target.value)}/>
+    </div>
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={run} disabled={!files.length}>형식 분석 시작</button>
+      <button className="btn btn--secondary" onClick={insertLabels} disabled={!analysis?.phrases?.length}>악보에 삽입</button>
+    </div>
+
+    {analysis&&<div className="card form-summary-card">
+      <div className="card__title">{analysis.summary.formName}</div>
+      <div className="card__text">총 {analysis.summary.phraseCount}개 구절, 평균 {analysis.summary.averageLength}마디</div>
+      <div className="card__text">주요 조성: {analysis.summary.keyPath}</div>
+    </div>}
+
+    {analysis&&<div className="form-timeline">
+      {analysis.phrases.map(p=>{
+        const width=Math.max(12,(p.length/totalMeasures)*100);
+        return <button key={`${p.label}-${p.startMeasure}`} className="form-block" style={{width:`${width}%`,background:p.color}} onClick={()=>scrollTo(p.startMeasure)} title={`${p.startMeasure}-${p.endMeasure}마디`}>
+          <b>{p.label}</b><span>{p.startMeasure}-{p.endMeasure}</span>
+        </button>;
+      })}
+    </div>}
+
+    {analysis&&<div className="form-table-wrap">
+      <table className="roman-table">
+        <thead><tr><th>구절명</th><th>마디 범위</th><th>길이</th><th>유사 구절</th><th>특징</th></tr></thead>
+        <tbody>
+          {analysis.phrases.map(p=><tr key={`${p.index}-${p.label}`} onClick={()=>scrollTo(p.startMeasure)}>
+            <td><b style={{color:p.color}}>{p.label}</b></td>
+            <td>{p.startMeasure}-{p.endMeasure}</td>
+            <td>{p.length}마디</td>
+            <td>{p.similarTo||'-'}</td>
+            <td>{p.pitchSeq.length}음 · 리듬 {p.rhythmSeq.length}개</td>
+          </tr>)}
+        </tbody>
+      </table>
+    </div>}
+    <LogPanel lines={log}/>
+  </div>;
+}
+
 /* ==============================================================
    SCORE VIEW — center panel always-visible score renderer
    ============================================================== */
@@ -4977,6 +5060,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
       {icon:'🔍',label:'성부 진행 분석',      onClick:()=>sel('right','voiceleading')},
       {icon:'🔎',label:'음형 패턴 검색',      onClick:()=>sel('right','patternsearch')},
       {icon:'📝',label:'주석 메모',            onClick:()=>sel('right','annotations')},
+      {icon:'📊',label:'형식 분석',            onClick:()=>sel('right','formanalysis')},
       {icon:'📊',label:'통계 분석',            onClick:()=>sel('right','stats')},
     ]},
   ];
@@ -5589,7 +5673,7 @@ const RIGHT_ACTIVITY_ITEMS=[
   {id:'notation',icon:'✏️'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
   {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
   {id:'numbering',icon:'🔢'},{id:'eartraining',icon:'👂'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
-  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'patternsearch',icon:'🔎'},{id:'annotations',icon:'📝'},{id:'stats',icon:'📊'},
+  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'patternsearch',icon:'🔎'},{id:'annotations',icon:'📝'},{id:'formanalysis',icon:'📊'},{id:'stats',icon:'📊'},
 ];
 
 const RIGHT_PANEL_IDS=new Set(RIGHT_ACTIVITY_ITEMS.filter(i=>!i.sep).map(i=>i.id));
@@ -5602,7 +5686,7 @@ const PANEL_LABELS={
   parts:'파트 추출',notation:'악보 표기 변환',export:'이미지 / PDF',
   color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
   eartraining:'청음 훈련',lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',
-  voiceleading:'성부 진행 분석',patternsearch:'음형 패턴 검색',annotations:'주석 메모',stats:'통계 분석',
+  voiceleading:'성부 진행 분석',patternsearch:'음형 패턴 검색',annotations:'주석 메모',formanalysis:'형식 분석',stats:'통계 분석',
 };
 
 function App(){
@@ -5954,6 +6038,7 @@ function App(){
     voiceleading:<VoiceLeadingPanel {...panelProps}/>,
     patternsearch:<PatternSearchPanel {...panelProps}/>,
     annotations:<AnnotationsPanel {...panelProps}/>,
+    formanalysis:<FormAnalysisPanel {...panelProps}/>,
     stats:<StatsPanel {...panelProps}/>,
   };
 

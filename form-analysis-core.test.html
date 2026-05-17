@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Form Analysis Core Tests</title>
+<script src="roman-analysis-core.js"></script>
+<script src="form-analysis-core.js?v=1"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){if(!condition)throw new Error(message)}
+function parseXml(text){return new DOMParser().parseFromString(text,'text/xml')}
+
+function measure(num,steps){
+  const notes=steps.map(step=>`<note><pitch><step>${step}</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>`).join('');
+  return `<measure number="${num}"><attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time></attributes>${notes}</measure>`;
+}
+
+try{
+  assert(window.FormAnalysisCore, 'FormAnalysisCore namespace is missing');
+  assert(window.FormAnalysisCore.levenshtein([1,2,3],[1,3])===1, 'levenshtein sequence');
+  assert(window.FormAnalysisCore.pitchSimilarity([0,2,4],[2,4,6])===1, 'transposition similarity');
+
+  const doc=parseXml(`<score-partwise><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1">
+    ${measure(1,['C','D','E','G'])}
+    ${measure(2,['C','D','E','G'])}
+    ${measure(3,['C','E','F','B'])}
+    ${measure(4,['C','E','F','B'])}
+    ${measure(5,['C','F','G','B'])}
+    ${measure(6,['C','F','G','B'])}
+    ${measure(7,['C','D','E','G'])}
+    ${measure(8,['C','D','E','G'])}
+  </part></score-partwise>`);
+
+  const result=window.FormAnalysisCore.analyzeForm(doc,{phraseLength:2});
+  assert(result.phrases.length===4, 'four phrases');
+  assert(result.labels.join('')==="AA'A'A", `variant labels, got ${result.labels.join('')}`);
+  assert(result.summary.phraseCount===4, 'phrase count');
+  assert(result.summary.averageLength===2, 'average length');
+
+  window.FormAnalysisCore.insertFormLabels(doc,result.phrases);
+  assert(doc.querySelector('measure[number="1"] rehearsal').textContent==='A', 'label A inserted');
+  assert(doc.querySelector('measure[number="3"] rehearsal').textContent==="A'", 'variant label inserted');
+
+  document.getElementById('out').textContent='PASS';
+}catch(error){
+  document.getElementById('out').textContent=`FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>
