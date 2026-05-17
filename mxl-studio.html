@@ -17,6 +17,7 @@
 <script src="chord-tools-core.js"></script>
 <script src="history-core.js?v=1"></script>
 <script src="fingering-core.js?v=1"></script>
+<script src="voice-leading-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 </head>
 <body>
@@ -158,6 +159,7 @@ const NAV = [
   {section:'분석',items:[
     {id:'roman',icon:'Ⅰ',label:'로마 숫자 분석'},
     {id:'fingering',icon:'🖐',label:'운지법 표시'},
+    {id:'voiceleading',icon:'🔍',label:'성부 진행 분석'},
   ]},
 ];
 
@@ -3593,6 +3595,86 @@ function FingeringPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
 }
 
 /* ==============================================================
+   PANEL: VOICE LEADING
+   ============================================================== */
+function VoiceLeadingPanel({files,activeFile=0,showProgress,hideProgress}){
+  const [analysis,setAnalysis]=useState(null);
+  const [showSuggestions,setShowSuggestions]=useState(false);
+  const [log,setLog]=useState([]);
+  const file=files[activeFile]||files[0];
+  const severityLabel={error:'오류',warning:'경고',info:'정보'};
+
+  const runAnalysis=useCallback(async()=>{
+    if(!files.length){alert('먼저 파일을 업로드하세요.');return}
+    if(!window.VoiceLeadingCore){alert('성부 진행 분석 모듈을 불러오지 못했습니다.');return}
+    setLog([]);
+    setShowSuggestions(false);
+    showProgress('성부 진행 분석 중...');
+    await new Promise(r=>setTimeout(r,50));
+    try{
+      const result=window.VoiceLeadingCore.analyzeVoiceLeading(file.xmlDoc);
+      setAnalysis(result);
+      setLog([
+        {m:`${file.name} · 성부 ${result.parts.length}개 · 위반 ${result.violations.length}건`,t:'info'},
+        {m:`성부 진행 점수 ${result.score}점`,t:result.counts.error?'warn':'ok'},
+      ]);
+    }catch(e){
+      setLog([{m:e.message,t:'err'}]);
+    }finally{
+      hideProgress();
+    }
+  },[files.length,file,showProgress,hideProgress]);
+
+  const scrollToMeasure=useCallback(measure=>{
+    window.dispatchEvent(new CustomEvent('mxl-scroll-measure',{detail:{measure}}));
+  },[]);
+
+  const counts=analysis?.counts||{error:0,warning:0,info:0};
+  const violations=analysis?.violations||[];
+
+  return <div>
+    <h2 className="panel__heading">성부 진행 분석</h2>
+    <p className="panel__description">파트 간 진행을 비교해 평행5도, 평행옥타브, 숨은5도, 성부교차, 큰 도약, 연속 도약을 검사합니다.</p>
+    <div className="btn-row">
+      <button className="btn btn--primary" onClick={runAnalysis} disabled={!files.length}>🔍 분석 실행</button>
+      <button className="btn btn--secondary" onClick={()=>setShowSuggestions(s=>!s)} disabled={!violations.length}>수정 제안</button>
+    </div>
+
+    {analysis&&<div className="stats-row voiceleading-summary">
+      <div className="stat-tile"><div className="stat-tile__value">{violations.length}</div><div className="stat-tile__label">총 위반</div></div>
+      <div className="stat-tile"><div className="stat-tile__value">{counts.error||0}</div><div className="stat-tile__label">오류</div></div>
+      <div className="stat-tile"><div className="stat-tile__value">{counts.warning||0}</div><div className="stat-tile__label">경고</div></div>
+      <div className="stat-tile"><div className="stat-tile__value">{analysis.score}</div><div className="stat-tile__label">점수</div></div>
+    </div>}
+
+    {showSuggestions&&violations.length>0&&<div className="card">
+      <div className="card__title">수정 제안</div>
+      <div className="voiceleading-suggestions">
+        {violations.map((v,i)=><div className="voiceleading-suggestion" key={`${v.type}-${v.measure}-${v.beat}-${i}`}>{v.suggestion}</div>)}
+      </div>
+    </div>}
+
+    {analysis&&<div className="voiceleading-table-wrap">
+      <table className="roman-table voiceleading-table">
+        <thead><tr><th>마디</th><th>박자</th><th>규칙</th><th>설명</th><th>심각도</th></tr></thead>
+        <tbody>
+          {violations.map((v,i)=><tr key={`${v.type}-${v.measure}-${v.beat}-${i}`} onClick={()=>scrollToMeasure(v.measure)}>
+            <td>{v.measure}</td>
+            <td>{v.beat}</td>
+            <td>{v.type}</td>
+            <td>{v.description}</td>
+            <td><span className={`severity-pill severity-pill--${v.severity}`}>{severityLabel[v.severity]||v.severity}</span></td>
+          </tr>)}
+          {!violations.length&&<tr><td colSpan="5">감지된 성부 진행 위반이 없습니다.</td></tr>}
+        </tbody>
+      </table>
+    </div>}
+
+    <LogPanel lines={log}/>
+  </div>;
+}
+
+/* ==============================================================
    PANEL: STATISTICS
    ============================================================== */
 function StatsPanel({files,showProgress,hideProgress}){
@@ -4134,6 +4216,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
       {icon:'🎸',label:'코드 분석',            onClick:()=>sel('right','chords')},
       {icon:'Ⅰ',label:'로마 숫자 분석',      onClick:()=>sel('right','roman')},
       {icon:'🖐',label:'운지법 표시',          onClick:()=>sel('right','fingering')},
+      {icon:'🔍',label:'성부 진행 분석',      onClick:()=>sel('right','voiceleading')},
       {icon:'📊',label:'통계 분석',            onClick:()=>sel('right','stats')},
     ]},
   ];
@@ -4214,6 +4297,20 @@ function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
       }
     })();
     return()=>{cancelled=true};
+  },[files,activeFile]);
+
+  useEffect(()=>{
+    const handler=e=>{
+      const measure=Math.max(1,parseInt(e.detail?.measure||'1',10));
+      const box=containerRef.current;
+      if(!box||!files.length)return;
+      const total=(files[activeFile]||files[0])?.xmlDoc?.querySelector('part')?.querySelectorAll('measure')?.length||1;
+      const maxScroll=Math.max(0,box.scrollHeight-box.clientHeight);
+      const ratio=total>1?(measure-1)/(total-1):0;
+      box.scrollTo({top:maxScroll*ratio,behavior:'smooth'});
+    };
+    window.addEventListener('mxl-scroll-measure',handler);
+    return()=>window.removeEventListener('mxl-scroll-measure',handler);
   },[files,activeFile]);
 
   if(!files.length)return <div className="main-score">
@@ -4731,7 +4828,7 @@ const RIGHT_ACTIVITY_ITEMS=[
   {id:'notation',icon:'✏️'},{id:'export',icon:'📤'},{id:'sep3',sep:true},
   {id:'color',icon:'🎨'},{id:'harmony',icon:'🔗'},{id:'chordtools',icon:'🔧'},
   {id:'numbering',icon:'🔢'},{id:'lyricstyle',icon:'🔡'},{id:'sep4',sep:true},
-  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'stats',icon:'📊'},
+  {id:'chords',icon:'🎸'},{id:'roman',icon:'Ⅰ'},{id:'fingering',icon:'🖐'},{id:'voiceleading',icon:'🔍'},{id:'stats',icon:'📊'},
 ];
 
 const RIGHT_PANEL_IDS=new Set(RIGHT_ACTIVITY_ITEMS.filter(i=>!i.sep).map(i=>i.id));
@@ -4743,7 +4840,8 @@ const PANEL_LABELS={
   ossia:'Ossia 마디',clef:'음자리표 변환',
   parts:'파트 추출',notation:'악보 표기 변환',export:'이미지 / PDF',
   color:'색깔 악보',harmony:'화성 쌓기',chordtools:'코드 도구',numbering:'숫자 악보',
-  lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',stats:'통계 분석',
+  lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',fingering:'운지법 표시',
+  voiceleading:'성부 진행 분석',stats:'통계 분석',
 };
 
 function App(){
@@ -4990,6 +5088,7 @@ function App(){
     chords:<ChordsPanel {...panelProps}/>,
     roman:<RomanAnalysisPanel {...panelProps}/>,
     fingering:<FingeringPanel {...panelProps}/>,
+    voiceleading:<VoiceLeadingPanel {...panelProps}/>,
     stats:<StatsPanel {...panelProps}/>,
   };
 
