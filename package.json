@@ -1,0 +1,21 @@
+{
+  "name": "mxl-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "악보 디자이너(MXL Studio) 자동 테스트 기반",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "playwright test",
+    "e2e:smoke": "playwright test tests/e2e/00-smoke.spec.js --grep @smoke",
+    "e2e:prod": "playwright test tests/e2e/00-smoke.spec.js --grep @smoke"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.61.1",
+    "fake-indexeddb": "^6.2.5",
+    "http-server": "^14.1.1",
+    "jsdom": "^29.1.1",
+    "vitest": "^4.1.8"
+  }
+}

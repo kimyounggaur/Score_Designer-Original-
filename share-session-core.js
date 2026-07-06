@@ -4,6 +4,70 @@
   const SHARE_SIZE_WARN=200*1024;
   const SHARE_SIZE_LIMIT=500*1024;
 
+  function supportsCompression(){
+    return typeof global.CompressionStream!=='undefined'&&typeof global.DecompressionStream!=='undefined';
+  }
+
+  function bytesFromText(text){
+    return new TextEncoder().encode(text);
+  }
+
+  function textFromBytes(bytes){
+    return new TextDecoder().decode(bytes);
+  }
+
+  function bytesToStream(bytes){
+    return new ReadableStream({
+      start(controller){
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    });
+  }
+
+  async function streamToBytes(stream){
+    const reader=stream.getReader();
+    const chunks=[];
+    let total=0;
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      chunks.push(value);
+      total+=value.length;
+    }
+    const output=new Uint8Array(total);
+    let offset=0;
+    chunks.forEach(chunk=>{output.set(chunk,offset);offset+=chunk.length;});
+    return output;
+  }
+
+  function bytesToBase64Url(bytes){
+    let binary='';
+    const chunk=0x8000;
+    for(let i=0;i<bytes.length;i+=chunk)binary+=String.fromCharCode(...bytes.slice(i,i+chunk));
+    return btoa(binary).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+
+  function base64UrlToBytes(value){
+    const padded=value.replace(/-/g,'+').replace(/_/g,'/')+'='.repeat((4-value.length%4)%4);
+    const binary=atob(padded);
+    const bytes=new Uint8Array(binary.length);
+    for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
+    return bytes;
+  }
+
+  async function gzipToBase64Url(text){
+    if(!supportsCompression())throw new Error('CompressionStream is not supported');
+    const stream=bytesToStream(bytesFromText(text)).pipeThrough(new global.CompressionStream('gzip'));
+    return bytesToBase64Url(await streamToBytes(stream));
+  }
+
+  async function gunzipFromBase64Url(value){
+    if(!supportsCompression())throw new Error('DecompressionStream is not supported');
+    const stream=bytesToStream(base64UrlToBytes(value)).pipeThrough(new global.DecompressionStream('gzip'));
+    return textFromBytes(await streamToBytes(stream));
+  }
+
   function encodeUnicode(text){
     return btoa(unescape(encodeURIComponent(text)));
   }
@@ -27,6 +91,19 @@
     return title?`${title.replace(/[\\/:*?"<>|]+/g,'_')}.xml`:fallback;
   }
 
+  function fileXmlString(file){
+    if(file?.xml)return file.xml;
+    if(file?.xmlString)return file.xmlString;
+    if(file?.xmlStr)return file.xmlStr;
+    if(file?.xmlDoc)return serializeXmlDoc(file.xmlDoc);
+    return '';
+  }
+
+  function fileName(file,xmlStr){
+    if(file?.name)return file.name;
+    try{return scoreTitle(parseXml(xmlStr))}catch(e){return 'shared.xml'}
+  }
+
   function generateShareURL(files,selectedIdx=0,href){
     const file=files[selectedIdx]||files[0];
     if(!file?.xmlDoc)throw new Error('No file to share');
@@ -36,13 +113,58 @@
     return `${base}?share=${encodeURIComponent(encodeUnicode(xmlStr))}`;
   }
 
+  function buildShareURL(file,href){
+    const xmlStr=fileXmlString(file);
+    if(!xmlStr)throw new Error('No file to share');
+    const base=(href||global.location.href).split('?')[0].split('#')[0];
+    return `${base}?share=${encodeURIComponent(encodeUnicode(xmlStr))}`;
+  }
+
+  async function buildShareURLv2Info(file,href){
+    const xmlStr=fileXmlString(file);
+    if(!xmlStr)throw new Error('No file to share');
+    const name=fileName(file,xmlStr);
+    const payload=JSON.stringify({name,xml:xmlStr,sourceName:file?.sourceName||name||'share-url'});
+    const originalBytes=bytesFromText(payload).length;
+    const base=(href||global.location.href).split('?')[0].split('#')[0];
+    if(!supportsCompression()){
+      const url=buildShareURL(file,href);
+      const compressedBytes=bytesFromText(new URL(url).search).length;
+      return {url,version:'v1',originalBytes,compressedBytes,ratio:0,warn:compressedBytes>SHARE_SIZE_WARN,tooLarge:compressedBytes>SHARE_SIZE_LIMIT};
+    }
+    const compressed=await gzipToBase64Url(payload);
+    const fragment=`v2.${compressed}`;
+    const compressedBytes=bytesFromText(fragment).length;
+    return {
+      url:`${base}#${fragment}`,
+      version:'v2',
+      originalBytes,
+      compressedBytes,
+      ratio:originalBytes?Math.max(0,Math.round((1-compressedBytes/originalBytes)*100)):0,
+      warn:compressedBytes>SHARE_SIZE_WARN,
+      tooLarge:compressedBytes>SHARE_SIZE_LIMIT,
+    };
+  }
+
   function parseShareURL(url){
     const parsed=new URL(url||global.location.href);
     const shareData=parsed.searchParams.get('share');
     if(!shareData)return null;
     const xmlStr=decodeUnicode(shareData);
     const xmlDoc=parseXml(xmlStr);
-    return {name:scoreTitle(xmlDoc),xmlDoc,xmlString:xmlStr,size:xmlStr.length,sourceName:'share-url'};
+    return {name:scoreTitle(xmlDoc),xmlDoc,xmlString:xmlStr,xml:xmlStr,size:xmlStr.length,sourceName:'share-url'};
+  }
+
+  async function parseShareURLAny(url){
+    const parsed=new URL(url||global.location.href);
+    const fragment=parsed.hash.replace(/^#/,'');
+    if(fragment.startsWith('v2.')){
+      const payload=JSON.parse(await gunzipFromBase64Url(fragment.slice(3)));
+      const xmlStr=payload.xml||payload.xmlString||'';
+      const xmlDoc=parseXml(xmlStr);
+      return {name:payload.name||scoreTitle(xmlDoc),xmlDoc,xmlString:xmlStr,xml:xmlStr,size:xmlStr.length,sourceName:payload.sourceName||'share-url'};
+    }
+    return parseShareURL(url);
   }
 
   function serializeFiles(files){
@@ -110,8 +232,14 @@
     SLOT_KEY,
     SHARE_SIZE_WARN,
     SHARE_SIZE_LIMIT,
+    supportsCompression,
+    gzipToBase64Url,
+    gunzipFromBase64Url,
+    buildShareURLv2Info,
+    buildShareURL,
     generateShareURL,
     parseShareURL,
+    parseShareURLAny,
     serializeSession,
     hydrateSession,
     formatSavedAt,

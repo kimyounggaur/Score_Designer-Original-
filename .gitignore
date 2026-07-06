@@ -1,6 +1,6 @@
 node_modules/
-package-lock.json
-package.json
 __pycache__/
 .pytest_cache/
 .venv/
+playwright-report/
+test-results/

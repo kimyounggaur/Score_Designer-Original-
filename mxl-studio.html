@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>악보 디자이너 — React</title>
+<link rel="icon" href="data:,">
 <link rel="stylesheet" href="styles.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,6 +25,7 @@
 <script src="pattern-search-core.js?v=1"></script>
 <script src="layout-core.js?v=1"></script>
 <script src="share-session-core.js?v=1"></script>
+<script src="session-store-core.js?v=1"></script>
 <script src="annotations-core.js?v=1"></script>
 <script src="form-analysis-core.js?v=1"></script>
 <script src="lyrics-core.js?v=1"></script>
@@ -188,6 +190,13 @@ function midiToNote(midi){const o=Math.floor(midi/12)-1;const s=((midi%12)+12)%1
 function fmtNote(n){return n?n.step+(n.alter===1?'#':n.alter===-1?'♭':'')+n.octave:'-'}
 function parseNoteStr(s){const m=s.match(/^([A-G])([#b]?)(\d+)$/);if(!m)return null;return{step:m[1],alter:m[2]==='#'?1:m[2]==='b'?-1:0,octave:parseInt(m[3])}}
 function cloneDoc(d){return new DOMParser().parseFromString(new XMLSerializer().serializeToString(d),'text/xml')}
+function formatBytes(value){
+  if(!Number.isFinite(value))return '-';
+  const units=['B','KB','MB','GB'];
+  let n=value;let i=0;
+  while(n>=1024&&i<units.length-1){n/=1024;i++}
+  return `${n>=10||i===0?Math.round(n):Math.round(n*10)/10}${units[i]}`;
+}
 function insertNoteheadInOrder(note,nh){
   const anchors=['stem','time-modification','accidental','dot','type'];
   for(const tag of anchors){
@@ -4628,6 +4637,7 @@ function LayoutPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate
 
 function ShareModal({open,onClose,files,activeFile,onNotice}){
   const [shareUrl,setShareUrl]=useState('');
+  const [shareInfo,setShareInfo]=useState(null);
   const [copyState,setCopyState]=useState('');
   const qrRef=useRef(null);
   const file=files[activeFile]||files[0];
@@ -4637,19 +4647,32 @@ function ShareModal({open,onClose,files,activeFile,onNotice}){
   },[file]);
 
   useEffect(()=>{
-    if(!open||!file?.xmlDoc||!window.ShareSessionCore){setShareUrl('');return}
-    try{
-      setShareUrl(window.ShareSessionCore.generateShareURL(files,files[activeFile]?activeFile:0));
-      setCopyState('');
-    }catch(e){
-      setShareUrl('');
-      setCopyState(e.message);
-    }
+    if(!open||!file?.xmlDoc||!window.ShareSessionCore){setShareUrl('');setShareInfo(null);return}
+    let cancelled=false;
+    (async()=>{
+      try{
+        const info=await window.ShareSessionCore.buildShareURLv2Info(file,window.location.href);
+        if(cancelled)return;
+        setShareInfo(info);
+        setShareUrl(info.url);
+        setCopyState('');
+      }catch(e){
+        if(cancelled)return;
+        setShareInfo(null);
+        setShareUrl('');
+        setCopyState(e.message);
+      }
+    })();
+    return()=>{cancelled=true};
   },[open,file,files,activeFile]);
 
   useEffect(()=>{
     if(!open||!shareUrl||!qrRef.current)return;
     qrRef.current.innerHTML='';
+    if(shareUrl.length>2048){
+      qrRef.current.textContent='QR로는 너무 큽니다.';
+      return;
+    }
     if(window.QRCode){
       new QRCode(qrRef.current,{text:shareUrl,width:164,height:164,correctLevel:QRCode.CorrectLevel.M});
     }else{
@@ -4672,17 +4695,22 @@ function ShareModal({open,onClose,files,activeFile,onNotice}){
 
   if(!open)return null;
   return <div className="modal-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose()}}>
-    <div className="share-modal">
+    <div className="share-modal" role="dialog" aria-modal="true" aria-labelledby="share-modal-title">
       <div className="share-modal__header">
         <div>
-          <div className="share-modal__title">악보 URL 공유</div>
+          <div className="share-modal__title" id="share-modal-title">악보 URL 공유</div>
           <div className="share-modal__subtitle">선택된 단일 파일을 URL 안에 저장합니다.</div>
         </div>
         <button className="share-modal__close" onClick={onClose}>×</button>
       </div>
       {!files.length?<div className="card__text">공유할 파일이 없습니다.</div>:<>
         <textarea className="share-modal__url" readOnly value={shareUrl} />
-        {xmlSize>window.ShareSessionCore?.SHARE_SIZE_WARN&&<div className="share-modal__warning">파일이 커서 URL이 길어질 수 있습니다. 현재 {Math.round(xmlSize/1024)}KB</div>}
+        {shareInfo&&<div className="share-modal__status">
+          원본 {formatBytes(shareInfo.originalBytes)} → 압축 {formatBytes(shareInfo.compressedBytes)} ({shareInfo.ratio}% 절감)
+        </div>}
+        {shareInfo?.tooLarge&&<div className="share-modal__warning">링크가 너무 큽니다. 파일을 줄인 뒤 다시 시도하세요.</div>}
+        {!shareInfo?.tooLarge&&shareInfo?.warn&&<div className="share-modal__warning">링크가 큽니다. 일부 메신저에서는 잘릴 수 있습니다.</div>}
+        {!shareInfo&&xmlSize>window.ShareSessionCore?.SHARE_SIZE_WARN&&<div className="share-modal__warning">파일이 커서 URL이 길어질 수 있습니다. 현재 {Math.round(xmlSize/1024)}KB</div>}
         <div className="btn-row">
           <button className="btn btn--primary" onClick={copy} disabled={!shareUrl}>복사</button>
           <button className="btn btn--secondary" onClick={onClose}>닫기</button>
@@ -6044,6 +6072,20 @@ function App(){
   },[pushHistory]);
   const panelProps={files,activeFile,showProgress,hideProgress,onFilesUpdate:updateFiles,annotations,setAnnotations};
 
+  useEffect(()=>{
+    window.__mxlGetState=()=>({
+      files,
+      activeFile,
+      history,
+      historyIndex,
+      restoreSession:pendingRestore,
+      leftPanel,
+      rightPanel,
+      bpm,
+    });
+    return()=>{delete window.__mxlGetState};
+  },[files,activeFile,history,historyIndex,pendingRestore,leftPanel,rightPanel,bpm]);
+
   const restoreSessionData=useCallback((session,label='세션 복원')=>{
     if(!window.ShareSessionCore)return;
     const hydrated=window.ShareSessionCore.hydrateSession(session);
@@ -6060,26 +6102,45 @@ function App(){
     if(!window.ShareSessionCore)return;
     if(sessionBootRef.current)return;
     sessionBootRef.current=true;
-    setSessionSlots(window.ShareSessionCore.readJson(window.ShareSessionCore.SLOT_KEY)||[]);
-    try{
-      const shared=window.ShareSessionCore.parseShareURL(window.location.href);
-      if(shared){
-        const loaded=[shared];
-        setFiles(loaded);
-        setActiveFile(0);
-        pushHistory(loaded,'공유 악보 불러오기');
-        setHistoryNotice({m:'공유 악보를 불러왔습니다.',t:'ok'});
-        return;
+    let cancelled=false;
+    (async()=>{
+      try{
+        if(window.SessionStoreCore){
+          await window.SessionStoreCore.migrateFromLocalStorage();
+          const stored=await window.SessionStoreCore.listSessions();
+          if(!cancelled)setSessionSlots(stored.filter(session=>String(session.id||'').startsWith('slot-')));
+        }else{
+          setSessionSlots(window.ShareSessionCore.readJson(window.ShareSessionCore.SLOT_KEY)||[]);
+        }
+      }catch(e){
+        if(!cancelled)setSessionSlots(window.ShareSessionCore.readJson(window.ShareSessionCore.SLOT_KEY)||[]);
       }
-    }catch(e){
-      setHistoryNotice({m:'공유 링크 파싱 실패',t:'err'});
-    }
-    const saved=window.ShareSessionCore.readJson(window.ShareSessionCore.SESSION_KEY);
-    if(saved?.files?.length)setPendingRestore(saved);
-    try{
-      const savedAnnotations=JSON.parse(localStorage.getItem('mxlstudio_annotations_v1')||'[]');
-      if(Array.isArray(savedAnnotations))setAnnotations(savedAnnotations);
-    }catch(e){}
+      try{
+        const shared=await window.ShareSessionCore.parseShareURLAny(window.location.href);
+        if(cancelled)return;
+        if(shared){
+          const loaded=[shared];
+          setFiles(loaded);
+          setActiveFile(0);
+          pushHistory(loaded,'공유 악보 불러오기');
+          setHistoryNotice({m:'공유 악보를 불러왔습니다.',t:'ok'});
+          return;
+        }
+      }catch(e){
+        if(!cancelled)setHistoryNotice({m:'공유 링크 파싱 실패',t:'err'});
+      }
+      try{
+        const saved=window.SessionStoreCore
+          ? (window.SessionStoreCore.loadLocalSession?.('autosave')||await window.SessionStoreCore.loadSession('autosave'))
+          : window.ShareSessionCore.readJson(window.ShareSessionCore.SESSION_KEY);
+        if(!cancelled&&saved?.files?.length)setPendingRestore(saved);
+      }catch(e){}
+      try{
+        const savedAnnotations=JSON.parse(localStorage.getItem('mxlstudio_annotations_v1')||'[]');
+        if(!cancelled&&Array.isArray(savedAnnotations))setAnnotations(savedAnnotations);
+      }catch(e){}
+    })();
+    return()=>{cancelled=true};
   },[pushHistory]);
 
   useEffect(()=>{
@@ -6089,30 +6150,40 @@ function App(){
   useEffect(()=>{
     if(!window.ShareSessionCore||!files.length)return;
     const timer=setTimeout(()=>{
-      try{
+      (async()=>{
+        try{
         const session=window.ShareSessionCore.serializeSession({
           files,
           activePanel:leftPanel,
           rightPanel,
           selectedFileIdx:activeFile,
         });
-        window.ShareSessionCore.writeJson(window.ShareSessionCore.SESSION_KEY,session);
+        if(window.SessionStoreCore)await window.SessionStoreCore.saveSession({...session,id:'autosave'});
+        else window.ShareSessionCore.writeJson(window.ShareSessionCore.SESSION_KEY,session);
         setSavedNotice(`저장됨 ${window.ShareSessionCore.shortTime(session.savedAt)}`);
         setTimeout(()=>setSavedNotice(null),2000);
-      }catch(e){}
+        }catch(e){}
+      })();
     },5000);
     return()=>clearTimeout(timer);
   },[files,leftPanel,rightPanel,activeFile]);
 
-  const saveSessionSlot=useCallback(()=>{
+  const saveSessionSlot=useCallback(async()=>{
     if(!files.length)return;
     const name=prompt('저장할 세션 이름을 입력하세요.','MXL Studio Session');
     if(!name)return;
     try{
       const session=window.ShareSessionCore.serializeSession({files,activePanel:leftPanel,rightPanel,selectedFileIdx:activeFile});
       const slot={...session,id:`slot-${Date.now()}`,name};
-      const next=window.ShareSessionCore.upsertSessionSlot(sessionSlots,slot);
-      window.ShareSessionCore.writeJson(window.ShareSessionCore.SLOT_KEY,next);
+      let next;
+      if(window.SessionStoreCore){
+        await window.SessionStoreCore.saveSession(slot);
+        const stored=await window.SessionStoreCore.listSessions();
+        next=stored.filter(item=>String(item.id||'').startsWith('slot-'));
+      }else{
+        next=window.ShareSessionCore.upsertSessionSlot(sessionSlots,slot);
+        window.ShareSessionCore.writeJson(window.ShareSessionCore.SLOT_KEY,next);
+      }
       setSessionSlots(next);
       setHistoryNotice({m:'현재 세션을 저장했습니다.',t:'ok'});
     }catch(e){setHistoryNotice({m:e.message,t:'err'})}
