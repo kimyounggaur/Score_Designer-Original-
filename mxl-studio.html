@@ -6033,6 +6033,12 @@ function App(){
     for(const file of fileList){
       try{
         const ext=file.name.split('.').pop().toLowerCase();
+        if(!['mxl','xml','musicxml','mscz'].includes(ext)){
+          const detail=ext==='pdf'
+            ? 'PDF는 직접 불러올 수 없습니다. MuseScore 등에서 MusicXML(.mxl, .musicxml, .xml)로 내보낸 뒤 업로드하세요.'
+            : '지원하지 않는 파일 형식입니다. MusicXML(.mxl, .xml, .musicxml) 또는 .mscz 파일을 업로드하세요.';
+          throw new Error(detail);
+        }
         let xmlString;let importedName=file.name;
         if(ext==='mxl'){
           const zip=await JSZip.loadAsync(file);let xmlFile=null;

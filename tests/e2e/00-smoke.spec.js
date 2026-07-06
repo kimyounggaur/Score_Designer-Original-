@@ -29,6 +29,30 @@ test.describe('MXL Studio smoke', () => {
     });
   });
 
+  test('@smoke rejects PDF uploads with a helpful message', async ({ page }) => {
+    await openApp(page);
+
+    const messages = [];
+    page.once('dialog', async (dialog) => {
+      messages.push(dialog.message());
+      await dialog.dismiss();
+    });
+    await page.evaluate(() => {
+      const file = new File(['%PDF-1.4\n%%EOF'], 'unsupported-score.pdf', { type: 'application/pdf' });
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      document.querySelector('.upload-zone')?.dispatchEvent(new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer,
+      }));
+    });
+
+    expect(messages[0]).toContain('PDF는 직접 불러올 수 없습니다');
+    await expect(page.locator('.file-entry__name')).toHaveCount(0);
+    await expect(page.locator('.header__badge')).toContainText('파일 0개');
+  });
+
   test('@smoke transposes uploaded score by semitone mode', async ({ page }) => {
     await openApp(page);
     await uploadFixture(page);
