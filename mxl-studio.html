@@ -5225,6 +5225,10 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
   },[onSelectLeft,onSelectRight]);
 
   const close=useCallback(fn=>{fn();setOpen(null);},[]);
+  const openDoc=useCallback(href=>{
+    window.open(href,'_blank','noopener,noreferrer');
+    setOpen(null);
+  },[]);
 
   const groups=[
     {id:'file',label:'파일',items:[
@@ -5275,6 +5279,10 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
       {icon:'📊',label:'형식 분석',            onClick:()=>sel('right','formanalysis')},
       {icon:'⭐',label:'난이도 평가',          onClick:()=>sel('right','difficulty')},
       {icon:'📊',label:'통계 분석',            onClick:()=>sel('right','stats')},
+    ]},
+    {id:'help',label:'도움말',items:[
+      {icon:'⚡',label:'퀵스타트 설명서',       onClick:()=>openDoc('manual/MXL-Studio-Quick-Start-ko.html')},
+      {icon:'📘',label:'사용자 설명서',         onClick:()=>openDoc('manual/MXL-Studio-User-Manual-ko.html')},
     ]},
   ];
 

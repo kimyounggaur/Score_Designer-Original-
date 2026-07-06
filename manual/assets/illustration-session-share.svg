@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720">
+  <defs>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0f7ae5"/><stop offset="1" stop-color="#49b3ff"/></linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#11a97d"/><stop offset="1" stop-color="#7ee2bf"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#1b2430" flood-opacity="0.18"/></filter>
+    <style>
+      .title{font:700 42px Malgun Gothic,Arial,sans-serif;fill:#172033}
+      .label{font:700 24px Malgun Gothic,Arial,sans-serif;fill:#172033}
+      .body{font:500 18px Malgun Gothic,Arial,sans-serif;fill:#526072}
+      .small{font:500 15px Malgun Gothic,Arial,sans-serif;fill:#667386}
+      .card{fill:#fff;stroke:#dfe6ef;stroke-width:2;rx:24;filter:url(#shadow)}
+    </style>
+  </defs>
+
+  <rect width="1400" height="720" fill="#f7fafc"/>
+  <text x="70" y="86" class="title">저장과 공유 구조</text>
+  <text x="72" y="126" class="body">브라우저 안의 자동 저장과 파일/URL 기반 공유를 함께 사용하면 작업 손실을 줄일 수 있습니다.</text>
+  <g transform="translate(80 210)">
+    <rect width="290" height="300" rx="28" class="card"/>
+    <text x="145" y="74" text-anchor="middle" font-size="54">🎼</text>
+    <text x="145" y="130" text-anchor="middle" class="label">현재 악보</text>
+    <text x="145" y="170" text-anchor="middle" class="body">편집 중인 파일과</text>
+    <text x="145" y="202" text-anchor="middle" class="body">히스토리 상태</text>
+  </g>
+  <path d="M 390 360 H 515" stroke="#8fa0b5" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 515 360 l-18 -15 m18 15 l-18 15" stroke="#8fa0b5" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <g transform="translate(540 190)">
+    <rect width="330" height="155" rx="28" fill="#eaf4ff" stroke="#bedcff" stroke-width="2" filter="url(#shadow)"/>
+    <text x="165" y="62" text-anchor="middle" class="label">자동 저장</text>
+    <text x="165" y="104" text-anchor="middle" class="body">브라우저 IndexedDB</text>
+  </g>
+  <g transform="translate(540 385)">
+    <rect width="330" height="155" rx="28" fill="#eefaf4" stroke="#bde7cf" stroke-width="2" filter="url(#shadow)"/>
+    <text x="165" y="62" text-anchor="middle" class="label">세션 메뉴</text>
+    <text x="165" y="104" text-anchor="middle" class="body">슬롯 저장, JSON 백업</text>
+  </g>
+  <path d="M 890 360 H 1010" stroke="#8fa0b5" stroke-width="7" stroke-linecap="round"/>
+  <path d="M 1010 360 l-18 -15 m18 15 l-18 15" stroke="#8fa0b5" stroke-width="7" stroke-linecap="round" fill="none"/>
+  <g transform="translate(1035 210)">
+    <rect width="290" height="300" rx="28" class="card"/>
+    <text x="145" y="74" text-anchor="middle" font-size="54">🔗</text>
+    <text x="145" y="130" text-anchor="middle" class="label">공유 URL</text>
+    <text x="145" y="170" text-anchor="middle" class="body">압축 링크와 QR</text>
+    <text x="145" y="202" text-anchor="middle" class="body">단일 파일 공유</text>
+  </g>
+  <rect x="88" y="585" width="1236" height="64" rx="22" fill="#fff4e5" stroke="#ffd79b"/>
+  <text x="120" y="625" class="label">권장 사용</text>
+  <text x="285" y="625" class="body">작업 중에는 자동 저장, 수업 전에는 JSON 백업, 학생 배포에는 PDF 또는 공유 URL을 선택하세요.</text>
+</svg>
