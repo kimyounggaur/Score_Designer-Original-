@@ -53,6 +53,31 @@ test.describe('MXL Studio smoke', () => {
     await expect(page.locator('.header__badge')).toContainText('파일 0개');
   });
 
+  test('@smoke rejects disguised PDF payloads before XML parsing', async ({ page }) => {
+    await openApp(page);
+
+    const messages = [];
+    page.once('dialog', async (dialog) => {
+      messages.push(dialog.message());
+      await dialog.dismiss();
+    });
+    await page.evaluate(() => {
+      const file = new File(['%PDF-1.7\n%%EOF'], 'renamed-score.musicxml', { type: 'text/xml' });
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      document.querySelector('.upload-zone')?.dispatchEvent(new DragEvent('drop', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer,
+      }));
+    });
+
+    expect(messages[0]).toContain('PDF는 직접 불러올 수 없습니다');
+    expect(messages[0]).not.toContain('XML 파싱 오류');
+    await expect(page.locator('.file-entry__name')).toHaveCount(0);
+    await expect(page.locator('.header__badge')).toContainText('파일 0개');
+  });
+
   test('@smoke transposes uploaded score by semitone mode', async ({ page }) => {
     await openApp(page);
     await uploadFixture(page);

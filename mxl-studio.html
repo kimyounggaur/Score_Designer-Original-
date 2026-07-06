@@ -6054,8 +6054,12 @@ function App(){
           xmlString=converted.xmlString;
           importedName=converted.name;
         }else{xmlString=await file.text()}
+        const isPdfPayload=/^\s*%PDF-/.test(xmlString||'');
         const xmlDoc=new DOMParser().parseFromString(xmlString,'text/xml');
-        if(xmlDoc.querySelector('parsererror'))throw new Error('XML 파싱 오류');
+        if(xmlDoc.querySelector('parsererror')){
+          if(ext==='pdf'||isPdfPayload)throw new Error('PDF는 직접 불러올 수 없습니다. MuseScore 등에서 MusicXML(.mxl, .musicxml, .xml)로 내보낸 뒤 업로드하세요.');
+          throw new Error('XML 파싱 오류');
+        }
         newFiles.push({name:importedName,xmlDoc,xmlString,sourceName:file.name});
       }catch(e){alert(`${file.name}: ${e.message}`)}
     }
