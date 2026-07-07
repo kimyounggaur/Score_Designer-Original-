@@ -22,44 +22,58 @@
     return Array.from(measure?.querySelectorAll?.('direction words')||[]).some(words=>isNoChordText(words.textContent));
   }
 
-  function preserveNoChordHarmonies(xmlDoc){
-    const stats={kept:0,removedNoChord:0,removedOther:0};
+  function removeNoChordWords(measure,stats){
+    measure.querySelectorAll('direction').forEach(direction=>{
+      let touched=false;
+      direction.querySelectorAll('words').forEach(words=>{
+        if(!isNoChordText(words.textContent))return;
+        words.remove();
+        stats.removedWords++;
+        touched=true;
+      });
+      if(!touched)return;
+      direction.querySelectorAll('direction-type').forEach(type=>{
+        if(!type.children.length&&!type.textContent.trim())type.remove();
+      });
+      if(!direction.children.length&&!direction.textContent.trim()){
+        direction.remove();
+        stats.removedDirections++;
+      }
+    });
+  }
+
+  function removeNoChordMarkings(xmlDoc){
+    const stats={removedNoChord:0,removedWords:0,removedDirections:0};
     Array.from(xmlDoc?.querySelectorAll?.('measure')||[]).forEach(measure=>{
-      let keptNoChord=false;
+      measure.querySelectorAll('harmony').forEach(harmony=>{
+        if(!isNoChordHarmony(harmony))return;
+        harmony.remove();
+        stats.removedNoChord++;
+      });
+      removeNoChordWords(measure,stats);
+    });
+    return stats;
+  }
+
+  function preserveNoChordHarmonies(xmlDoc){
+    const stats={kept:0,removedNoChord:0,removedOther:0,removedWords:0,removedDirections:0};
+    Array.from(xmlDoc?.querySelectorAll?.('measure')||[]).forEach(measure=>{
       measure.querySelectorAll('harmony').forEach(harmony=>{
         if(isNoChordHarmony(harmony)){
-          if(keptNoChord){
-            harmony.remove();
-            stats.removedNoChord++;
-          }else{
-            keptNoChord=true;
-            stats.kept++;
-          }
+          harmony.remove();
+          stats.removedNoChord++;
         }else{
           harmony.remove();
           stats.removedOther++;
         }
       });
+      removeNoChordWords(measure,stats);
     });
     return stats;
   }
 
   function dedupeNoChordHarmonies(xmlDoc){
-    const stats={kept:0,removedNoChord:0};
-    Array.from(xmlDoc?.querySelectorAll?.('measure')||[]).forEach(measure=>{
-      let keptNoChord=false;
-      measure.querySelectorAll('harmony').forEach(harmony=>{
-        if(!isNoChordHarmony(harmony))return;
-        if(keptNoChord){
-          harmony.remove();
-          stats.removedNoChord++;
-        }else{
-          keptNoChord=true;
-          stats.kept++;
-        }
-      });
-    });
-    return stats;
+    return removeNoChordMarkings(xmlDoc);
   }
 
   global.ChordToolsCore = {
@@ -68,5 +82,6 @@
     isNoChordText,
     measureHasNoChordHarmony,
     preserveNoChordHarmonies,
+    removeNoChordMarkings,
   };
 })(window);

@@ -78,6 +78,53 @@ test.describe('MXL Studio smoke', () => {
     await expect(page.locator('.header__badge')).toContainText('파일 0개');
   });
 
+  test('@smoke strips N.C. no-chord markings on upload', async ({ page }) => {
+    await openApp(page);
+
+    const noChordXml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Music</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>0</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+        <clef><sign>G</sign><line>2</line></clef>
+      </attributes>
+      <harmony><kind>none</kind></harmony>
+      <direction><direction-type><words>N.C.</words></direction-type></direction>
+      <note><rest/><duration>4</duration><type>whole</type></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration><type>whole</type></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+    await page.locator('input.upload-zone__input[type="file"]').setInputFiles({
+      name: 'no-chord.musicxml',
+      mimeType: 'application/vnd.recordare.musicxml+xml',
+      buffer: Buffer.from(noChordXml),
+    });
+
+    await expect(page.locator('.file-entry__name')).toContainText('no-chord.musicxml');
+    await page.waitForFunction(() => Boolean(window.__mxlGetState?.()?.files?.length));
+    const state = await page.evaluate(() => {
+      const doc = window.__mxlGetState?.()?.files?.[0]?.xmlDoc;
+      return {
+        noChordHarmonyCount: Array.from(doc?.querySelectorAll('harmony') || []).filter((harmony) => {
+          const kind = harmony.querySelector('kind');
+          return ['none', 'no-chord'].includes((kind?.textContent || '').trim().toLowerCase());
+        }).length,
+        noChordWordsCount: Array.from(doc?.querySelectorAll('direction words') || []).filter((words) =>
+          /^n[.,]?c[.,]?$/i.test((words.textContent || '').replace(/\s+/g, ''))
+        ).length,
+      };
+    });
+    expect(state).toEqual({ noChordHarmonyCount: 0, noChordWordsCount: 0 });
+  });
+
   test('@smoke transposes uploaded score by semitone mode', async ({ page }) => {
     await openApp(page);
     await uploadFixture(page);

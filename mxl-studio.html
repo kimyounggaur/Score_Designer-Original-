@@ -2910,7 +2910,6 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
               const p=getNotePitch(note);if(!p)return;ns.push(noteToMidi(p.step,p.alter,p.octave)%12)})});
           const chord=detectChord(ns);if(!chord||chord==='?')continue;
           const meas=parts[0].querySelectorAll('measure')[m];if(!meas)continue;
-          if(window.ChordToolsCore.measureHasNoChordHarmony(meas))continue;
           if(!replaceExisting&&meas.querySelector('harmony'))continue;
           const parsed=parseChordSymbol(chord);if(!parsed)continue;
           const harm=doc.createElement('harmony');const root=doc.createElement('root');
@@ -5943,6 +5942,18 @@ function App(){
   const showProgress=useCallback(msg=>setProgress({visible:true,msg}),[]);
   const hideProgress=useCallback(()=>setProgress({visible:false,msg:''}),[]);
 
+  const stripNoChordMarkingsFromFile=useCallback(file=>{
+    if(!file?.xmlDoc||!window.ChordToolsCore?.removeNoChordMarkings)return file;
+    const xmlDoc=cloneDoc(file.xmlDoc);
+    const stats=window.ChordToolsCore.removeNoChordMarkings(xmlDoc);
+    const removed=(stats?.removedNoChord||0)+(stats?.removedWords||0)+(stats?.removedDirections||0);
+    return removed?{...file,xmlDoc,xmlString:new XMLSerializer().serializeToString(xmlDoc)}:file;
+  },[]);
+
+  const stripNoChordMarkingsFromFiles=useCallback(fileList=>
+    (fileList||[]).map(stripNoChordMarkingsFromFile)
+  ,[stripNoChordMarkingsFromFile]);
+
   const pushHistory=useCallback((nextFiles,label='변환')=>{
     const next=GlobalHistoryCore.pushHistoryEntry(history,historyIndex,nextFiles,label);
     setHistory(next.history);
@@ -6060,6 +6071,12 @@ function App(){
           if(ext==='pdf'||isPdfPayload)throw new Error('PDF는 직접 불러올 수 없습니다. MuseScore 등에서 MusicXML(.mxl, .musicxml, .xml)로 내보낸 뒤 업로드하세요.');
           throw new Error('XML 파싱 오류');
         }
+        if(window.ChordToolsCore?.removeNoChordMarkings){
+          const stats=window.ChordToolsCore.removeNoChordMarkings(xmlDoc);
+          if((stats.removedNoChord||0)+(stats.removedWords||0)+(stats.removedDirections||0)>0){
+            xmlString=new XMLSerializer().serializeToString(xmlDoc);
+          }
+        }
         newFiles.push({name:importedName,xmlDoc,xmlString,sourceName:file.name});
       }catch(e){alert(`${file.name}: ${e.message}`)}
     }
@@ -6107,14 +6124,15 @@ function App(){
   const restoreSessionData=useCallback((session,label='세션 복원')=>{
     if(!window.ShareSessionCore)return;
     const hydrated=window.ShareSessionCore.hydrateSession(session);
-    setFiles(hydrated.files);
-    setActiveFile(Math.min(hydrated.selectedFileIdx||0,Math.max(0,hydrated.files.length-1)));
+    const cleanFiles=stripNoChordMarkingsFromFiles(hydrated.files);
+    setFiles(cleanFiles);
+    setActiveFile(Math.min(hydrated.selectedFileIdx||0,Math.max(0,cleanFiles.length-1)));
     if(hydrated.activePanel)setLeftPanel(hydrated.activePanel);
     if(hydrated.rightPanel)setRightPanel(hydrated.rightPanel);
-    pushHistory(hydrated.files,label);
+    pushHistory(cleanFiles,label);
     setPendingRestore(null);
     setHistoryNotice({m:label,t:'ok'});
-  },[pushHistory]);
+  },[pushHistory,stripNoChordMarkingsFromFiles]);
 
   useEffect(()=>{
     if(!window.ShareSessionCore)return;

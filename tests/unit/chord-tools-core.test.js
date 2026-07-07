@@ -33,13 +33,24 @@ describe('ChordToolsCore', () => {
     expect(window.ChordToolsCore.measureHasNoChordHarmony(measures[3])).toBe(true);
   });
 
-  it('preserves N.C. harmonies while clearing ordinary harmonies', () => {
+  it('removes N.C. markings while clearing ordinary harmonies', () => {
     const doc = new DOMParser().parseFromString(xml, 'text/xml');
 
     window.ChordToolsCore.preserveNoChordHarmonies(doc);
 
-    expect(doc.querySelectorAll('measure')[0].querySelectorAll('harmony')).toHaveLength(1);
-    expect(doc.querySelectorAll('measure')[0].querySelector('kind').textContent).toBe('none');
+    expect(doc.querySelectorAll('measure')[0].querySelectorAll('harmony')).toHaveLength(0);
     expect(doc.querySelectorAll('measure')[1].querySelectorAll('harmony')).toHaveLength(0);
+    expect(doc.querySelectorAll('measure')[2].querySelectorAll('words')).toHaveLength(0);
+  });
+
+  it('strips no-chord harmony and words without touching ordinary chords', () => {
+    const doc = new DOMParser().parseFromString(xml, 'text/xml');
+
+    window.ChordToolsCore.removeNoChordMarkings(doc);
+
+    expect(doc.querySelectorAll('measure')[0].querySelectorAll('harmony')).toHaveLength(0);
+    expect(doc.querySelectorAll('measure')[1].querySelectorAll('harmony')).toHaveLength(1);
+    expect(doc.querySelectorAll('measure')[2].querySelectorAll('words')).toHaveLength(0);
+    expect(doc.querySelectorAll('measure')[3].querySelectorAll('harmony')).toHaveLength(0);
   });
 });
