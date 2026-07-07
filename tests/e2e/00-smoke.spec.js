@@ -29,7 +29,7 @@ test.describe('MXL Studio smoke', () => {
     });
   });
 
-  test('@smoke renders ossia overlay with nonzero SVG width', async ({ page }) => {
+  test('@smoke inserts ossia block into score flow', async ({ page }) => {
     await openApp(page);
     await uploadFixture(page);
 
@@ -47,23 +47,27 @@ test.describe('MXL Studio smoke', () => {
 
     await expect.poll(() => page.evaluate(() => {
       const file = window.__mxlGetState?.()?.files?.[0];
-      const overlay = document.querySelector('.ossia-overlay');
+      const overlay = document.querySelector('.ossia-inline');
+      const mainScore = document.querySelector('.score-main-render');
       const svg = overlay?.querySelector('svg');
-      const overlayRect = overlay?.getBoundingClientRect();
       const svgRect = svg?.getBoundingClientRect();
       const style = overlay ? getComputedStyle(overlay) : null;
       return {
         hasOssiaXml: Boolean(file?.ossiaMxml),
-        overlayUsable: (overlayRect?.width || 0) > 100,
+        insertedInScoreContainer: overlay?.parentElement?.classList.contains('score-container') || false,
+        beforeMainScore: Boolean(overlay && mainScore && (overlay.compareDocumentPosition(mainScore) & Node.DOCUMENT_POSITION_FOLLOWING)),
         svgUsable: (svgRect?.width || 0) > 100,
+        notAbsolute: style?.position !== 'absolute',
         transparentFrame: style?.backgroundColor === 'rgba(0, 0, 0, 0)',
         noBorder: style?.borderTopWidth === '0px',
         noShadow: style?.boxShadow === 'none',
       };
     })).toEqual({
       hasOssiaXml: true,
-      overlayUsable: true,
+      insertedInScoreContainer: true,
+      beforeMainScore: true,
       svgUsable: true,
+      notAbsolute: true,
       transparentFrame: true,
       noBorder: true,
       noShadow: true,

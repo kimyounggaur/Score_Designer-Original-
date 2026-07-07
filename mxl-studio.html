@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>악보 디자이너 — React</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="styles.css?v=ossia-transparent-20260707">
+<link rel="stylesheet" href="styles.css?v=ossia-inline-20260707">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -4862,7 +4862,7 @@ function AnnotationsPanel({files,activeFile=0,annotations,setAnnotations,onFiles
     const printable=window.AnnotationsCore.filterForPrint(fileAnnotations,mode);
     const win=window.open('','_blank');
     if(!win){alert('팝업이 차단되었습니다.');return}
-    const svg=document.querySelector('.score-container svg')?.cloneNode(true);
+    const svg=document.querySelector('.score-main-render svg')?.cloneNode(true);
     if(svg){
       const ns='http://www.w3.org/2000/svg';
       printable.forEach((a,i)=>{
@@ -5312,19 +5312,20 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
 function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying,annotations,onAnnotationEdit,onAnnotationCreate}){
   const containerRef=useRef(null);
   const ossiaRef=useRef(null);
+  const scoreRenderRef=useRef(null);
   const osmdRef=useRef(null);
   const ossiaOsmdRef=useRef(null);
   const [rendered,setRendered]=useState(false);
 
   useEffect(()=>{
-    if(!files.length||!containerRef.current){setRendered(false);if(onOsmdReady)onOsmdReady(null);return}
+    if(!files.length||!containerRef.current||!scoreRenderRef.current){setRendered(false);if(onOsmdReady)onOsmdReady(null);return}
     const file=files[activeFile]||files[0];
     let cancelled=false;
     if(onOsmdReady)onOsmdReady(null);
     (async()=>{
       try{
-        containerRef.current.innerHTML='';
-        const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(containerRef.current,{
+        scoreRenderRef.current.innerHTML='';
+        const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(scoreRenderRef.current,{
           autoResize:true,backend:'svg',drawTitle:true,drawComposer:true,
           drawPartNames:true,drawMeasureNumbers:true,
         });
@@ -5333,7 +5334,7 @@ function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying,annot
         if(cancelled)return;
         osmd.render();
         if(onOsmdReady)onOsmdReady(osmd);
-        applyLyricStylesToSvg(containerRef.current,file.xmlDoc);
+        applyLyricStylesToSvg(scoreRenderRef.current,file.xmlDoc);
 
         // Ossia 오버레이 렌더링 (있는 경우)
         if(ossiaRef.current){
@@ -5396,9 +5397,11 @@ function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying,annot
       <span className="score-measure-overlay__label">Measure</span>
       <span className="score-measure-overlay__value">{playbackMeasure||1}</span>
     </div>
-    <div className="score-container" ref={containerRef}/>
+    <div className="score-container" ref={containerRef}>
+      <div className="ossia-inline" ref={ossiaRef}/>
+      <div className="score-main-render" ref={scoreRenderRef}/>
+    </div>
     <AnnotationOverlay annotations={annotations||[]} onEdit={onAnnotationEdit} onCreate={onAnnotationCreate}/>
-    <div className="ossia-overlay" ref={ossiaRef}/>
   </div>;
 }
 
@@ -6252,7 +6255,7 @@ function App(){
 
   const exportPNG=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
-    const svgEl=document.querySelector('.main-score svg');
+    const svgEl=document.querySelector('.score-main-render svg');
     if(!svgEl){alert('악보가 렌더링되지 않았습니다.');return}
     showProgress('PNG 생성 중...');
     try{
@@ -6286,7 +6289,7 @@ function App(){
 
   const exportPDF=useCallback(()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
-    const svgEl=document.querySelector('.main-score svg');
+    const svgEl=document.querySelector('.score-main-render svg');
     if(!svgEl){alert('악보가 렌더링되지 않았습니다.');return}
     const fn=(files[activeFile]||files[0]).name.replace(/\.(mxl|xml|musicxml)$/i,'');
     const svgClone=svgEl.cloneNode(true);

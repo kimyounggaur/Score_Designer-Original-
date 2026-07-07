@@ -1067,12 +1067,8 @@ body {
   text-align: center;
 }
 
-/* ===== OSSIA OVERLAY (top-left floating mini-staff) ===== */
-.ossia-overlay {
-  position: absolute;
-  top: 24px;
-  left: 32px;
-  z-index: 20;
+/* ===== OSSIA INLINE BLOCK ===== */
+.ossia-inline {
   width: 480px;
   max-width: calc(100% - 64px);
   min-height: 96px;
@@ -1087,15 +1083,21 @@ body {
   pointer-events: none;
 }
 
-.ossia-overlay > div {
+.ossia-inline > div {
   width: 100%;
 }
 
-.ossia-overlay:empty {
+.ossia-inline:empty {
   visibility: hidden;
+  min-height: 0;
+  max-height: 0;
 }
 
-.ossia-overlay svg {
+.ossia-inline:not(:empty) {
+  margin-bottom: 8px;
+}
+
+.ossia-inline svg {
   max-width: 100%;
   height: auto;
   display: block;
