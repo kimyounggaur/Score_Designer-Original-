@@ -1073,8 +1073,11 @@ body {
   top: 24px;
   left: 32px;
   z-index: 20;
-  max-width: 480px;
-  max-height: 160px;
+  width: 480px;
+  max-width: calc(100% - 64px);
+  min-height: 96px;
+  max-height: 180px;
+  box-sizing: border-box;
   overflow: hidden;
   background: var(--bg-score, #ffffff);
   border: 1px solid var(--border-subtle, rgba(0,0,0,0.08));
@@ -1084,8 +1087,12 @@ body {
   pointer-events: none;
 }
 
+.ossia-overlay > div {
+  width: 100%;
+}
+
 .ossia-overlay:empty {
-  display: none;
+  visibility: hidden;
 }
 
 .ossia-overlay svg {

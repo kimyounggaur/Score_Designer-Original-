@@ -29,6 +29,40 @@ test.describe('MXL Studio smoke', () => {
     });
   });
 
+  test('@smoke renders ossia overlay with nonzero SVG width', async ({ page }) => {
+    await openApp(page);
+    await uploadFixture(page);
+
+    await page.evaluate(() => {
+      const addText = '\uCD94\uAC00';
+      const addButton = Array.from(document.querySelectorAll('button')).find((button) => {
+        const text = button.textContent || '';
+        return text.includes('Ossia') && text.includes(addText);
+      });
+      if (!(addButton instanceof HTMLButtonElement)) {
+        throw new Error('Ossia add button not found');
+      }
+      addButton.click();
+    });
+
+    await expect.poll(() => page.evaluate(() => {
+      const file = window.__mxlGetState?.()?.files?.[0];
+      const overlay = document.querySelector('.ossia-overlay');
+      const svg = overlay?.querySelector('svg');
+      const overlayRect = overlay?.getBoundingClientRect();
+      const svgRect = svg?.getBoundingClientRect();
+      return {
+        hasOssiaXml: Boolean(file?.ossiaMxml),
+        overlayUsable: (overlayRect?.width || 0) > 100,
+        svgUsable: (svgRect?.width || 0) > 100,
+      };
+    })).toEqual({
+      hasOssiaXml: true,
+      overlayUsable: true,
+      svgUsable: true,
+    });
+  });
+
   test('@smoke rejects PDF uploads with a helpful message', async ({ page }) => {
     await openApp(page);
 
