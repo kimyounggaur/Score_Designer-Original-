@@ -1079,11 +1079,11 @@ body {
   max-height: 180px;
   box-sizing: border-box;
   overflow: hidden;
-  background: var(--bg-score, #ffffff);
-  border: 1px solid var(--border-subtle, rgba(0,0,0,0.08));
-  border-radius: 6px;
-  padding: 6px 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
   pointer-events: none;
 }
 

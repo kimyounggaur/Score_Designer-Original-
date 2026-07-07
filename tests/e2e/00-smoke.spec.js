@@ -51,15 +51,22 @@ test.describe('MXL Studio smoke', () => {
       const svg = overlay?.querySelector('svg');
       const overlayRect = overlay?.getBoundingClientRect();
       const svgRect = svg?.getBoundingClientRect();
+      const style = overlay ? getComputedStyle(overlay) : null;
       return {
         hasOssiaXml: Boolean(file?.ossiaMxml),
         overlayUsable: (overlayRect?.width || 0) > 100,
         svgUsable: (svgRect?.width || 0) > 100,
+        transparentFrame: style?.backgroundColor === 'rgba(0, 0, 0, 0)',
+        noBorder: style?.borderTopWidth === '0px',
+        noShadow: style?.boxShadow === 'none',
       };
     })).toEqual({
       hasOssiaXml: true,
       overlayUsable: true,
       svgUsable: true,
+      transparentFrame: true,
+      noBorder: true,
+      noShadow: true,
     });
   });
 
