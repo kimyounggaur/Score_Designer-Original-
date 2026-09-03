@@ -78,12 +78,10 @@
   }
 
   function getFileXml(file){
-    if(file?.xml)return file.xml;
-    if(file?.xmlString)return file.xmlString;
     if(file?.xmlDoc && global.XMLSerializer){
       return new global.XMLSerializer().serializeToString(file.xmlDoc);
     }
-    return '';
+    return file?.xml || file?.xmlString || '';
   }
 
   function createPayload(file){

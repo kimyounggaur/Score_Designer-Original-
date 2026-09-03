@@ -35,3 +35,6 @@
 - TEST-01, TEST-02, TEST-03, TEST-04
 - OPS-01, OPS-02, OPS-03, OPS-04
 - DOC-01, DOC-02, DOC-03
+
+## 2026-09-03 · P1-1
+재현 E2E 수정 전 D4 기대/C4 수신으로 실패, 수정 후 통과. 25개 패널 커밋 지점과 App.updateFiles 방어 경계 통일. npm run check: 유닛 15개, 스모크 7개(38.5초) 통과.

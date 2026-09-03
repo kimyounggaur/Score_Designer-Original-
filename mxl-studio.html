@@ -163,6 +163,10 @@ function midiToNote(midi){const o=Math.floor(midi/12)-1;const s=((midi%12)+12)%1
 function fmtNote(n){return n?n.step+(n.alter===1?'#':n.alter===-1?'♭':'')+n.octave:'-'}
 function parseNoteStr(s){const m=s.match(/^([A-G])([#b]?)(\d+)$/);if(!m)return null;return{step:m[1],alter:m[2]==='#'?1:m[2]==='b'?-1:0,octave:parseInt(m[3])}}
 function cloneDoc(d){return new DOMParser().parseFromString(new XMLSerializer().serializeToString(d),'text/xml')}
+function commitFile(file, doc, extra){
+  const xmlString=new XMLSerializer().serializeToString(doc);
+  return {...file,...(extra||{}),xmlDoc:doc,xmlString};
+}
 function serializeSessionFiles(files){
   return Array.from(files||[]).map(file=>({
     name:file.name,
@@ -603,17 +607,17 @@ function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
             if(i===selKey)previewDoc=doc;
             lines.push({m:`✓ ${base(file)} → ${KEY_NAMES[i]} Major`,t:'ok'});
           }
-          updatedFiles.push({...file,xmlDoc:previewDoc||transposeDoc(file.xmlDoc,0,0)});
+          updatedFiles.push(commitFile(file,previewDoc||transposeDoc(file.xmlDoc,0,0)));
         }else if(mode==='semitone'){
           const doc=transposeDoc(file.xmlDoc,semi,null);
-          updatedFiles.push({...file,xmlDoc:doc});
+          updatedFiles.push(commitFile(file,doc));
           lines.push({m:`✓ ${base(file)} → ${semi>0?'+':''}${semi} 반음`,t:'ok'});
         }else if(mode==='interval'){
           const s=computeIntervalSemis(ivNum,ivQual);
           if(s===undefined){lines.push({m:`❌ 지원하지 않는 조합`,t:'err'});continue}
           const shift=s*ivDir;
           const doc=transposeDoc(file.xmlDoc,shift,null);
-          updatedFiles.push({...file,xmlDoc:doc});
+          updatedFiles.push(commitFile(file,doc));
           const qLabel=INTERVAL_QUALITIES.find(q=>q.id===ivQual)?.label||ivQual;
           const nLabel=INTERVAL_NUMBERS.find(n=>n.id===ivNum)?.label||ivNum;
           lines.push({m:`✓ ${base(file)} → ${ivDir>0?'↑':'↓'} ${qLabel} ${nLabel} (${shift>0?'+':''}${shift}반음)`,t:'ok'});
@@ -622,7 +626,7 @@ function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
           const ci=KEY_FIFTHS.indexOf(fifths);const cs=ci>=0?ci:0;
           const s=(selKey-cs+12)%12;
           const doc=transposeDoc(file.xmlDoc,s,selKey);
-          updatedFiles.push({...file,xmlDoc:doc});
+          updatedFiles.push(commitFile(file,doc));
           lines.push({m:`✓ ${base(file)} → ${KEY_NAMES[selKey]} (${s}반음)`,t:'ok'});
         }
       }
@@ -728,7 +732,7 @@ function RangePanel({files,showProgress,hideProgress,onFilesUpdate}){
           if(midi<lm||midi>hm)return;
           const np=midiToNote(midi);setNotePitch(note,np.step,np.alter,np.octave);
         });
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${adj}개 음표 조정`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'음역대 자동 조정');
@@ -804,7 +808,7 @@ function InstrumentPanel({files,showProgress,hideProgress,onFilesUpdate}){
           else if(np.alter!==0){acc=doc.createElement('accidental');acc.textContent=np.alter===1?'sharp':'flat';const pi=note.querySelector('pitch');if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);else note.appendChild(acc)}
           cnt++;
         });
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 음표 변환`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'이조 악기 변환');
@@ -914,7 +918,7 @@ function TempoPanel({files,showProgress,hideProgress,onFilesUpdate}){
         }
         if(optMetro)doc.querySelectorAll('metronome per-minute').forEach(pm=>{pm.textContent=String(bpm);ch.push('metronome 변경')});
         if(optStretch&&rat!==1){let sc=0;doc.querySelectorAll('note duration').forEach(d=>{const old=parseInt(d.textContent);if(old>0){d.textContent=String(Math.round(old/rat));sc++}});if(sc)ch.push(`${sc}개 duration 변환`)}
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name} → ${bpm} BPM`,t:'ok'});
         ch.forEach(c=>lines.push({m:`    ${c}`}));
       }
@@ -1064,7 +1068,7 @@ function KeyChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
           });
         });
 
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${changeCount}개 조바꿈 적용`,t:'ok'});
         sorted.forEach(ch=>lines.push({m:`    마디 ${ch.measure}부터 → ${KEY_NAMES[ch.key]} Major`}));
       }
@@ -1278,7 +1282,7 @@ function CapoPanel({files,showProgress,hideProgress,onFilesUpdate}){
           });
         });
 
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}`,t:'ok'});
         sorted.forEach(cp=>lines.push({m:`    마디 ${cp.measure}부터 Capo ${cp.fret} Fret 적용`}));
       }
@@ -1479,7 +1483,7 @@ function TempoChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
           insertCount++;
         });
 
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${insertCount}개 템포 변경 삽입`,t:'ok'});
         sorted.forEach(ch=>lines.push({m:`    마디 ${ch.measure} → ${ch.bpm} BPM (${getTempoTerm(ch.bpm)})`}));
       }
@@ -1822,7 +1826,7 @@ function PartsPanel({files,showProgress,hideProgress,onFilesUpdate}){
         const doc=cloneDoc(file.xmlDoc);
         doc.querySelectorAll('part-list score-part').forEach(sp=>{if(!keep.includes(sp.getAttribute('id')))sp.remove()});
         doc.querySelectorAll('part').forEach(p=>{if(!keep.includes(p.getAttribute('id')))p.remove()});
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${keep.length}파트 유지`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'파트 추출');
@@ -1918,7 +1922,7 @@ function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
           if(!slashKeep)doc.querySelectorAll('harmony').forEach(h=>h.remove());
           ch.push(`슬래시 ${sc}개`);
         }
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         const label=ch.length?'':' (원본 복원)';
         lines.push({m:`✓ ${file.name}${label}`,t:'ok'});ch.forEach(c=>lines.push({m:`    ${c}`}));
       }
@@ -2242,7 +2246,7 @@ function ColorPanel({files,showProgress,hideProgress,onFilesUpdate}){
           if(doStem){let st=note.querySelector('stem');if(st)st.setAttribute('color',color)}
           cnt++;
         });
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 색상 적용`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'색상 악보 생성');
@@ -2320,7 +2324,7 @@ function HarmonyPanel({files,showProgress,hideProgress,onFilesUpdate}){
             if(doDown)addCN(chromatic?midi-4:getDiaThirdBelow(midi,kr));
           });
         });
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${added}개 화음 추가`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'화성 쌓기');
@@ -2408,7 +2412,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
             h.querySelector('kind').textContent=p.kind;cnt++;
           }});
         });
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 변경`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'코드 일괄 변경');
@@ -2443,7 +2447,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
           harm.appendChild(root);const kind=doc.createElement('kind');kind.textContent=parsed.kind;harm.appendChild(kind);
           const fn=meas.querySelector('note');if(fn)meas.insertBefore(harm,fn);else meas.appendChild(harm);ins++;
         }
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${ins}마디 코드 삽입`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'코드 분석 및 삽입');
@@ -2480,7 +2484,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
           if(invEl.nextSibling)invEl.parentNode.insertBefore(bass,invEl.nextSibling);else invEl.parentNode.appendChild(bass);
           ok++;
         });
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${ok}개 적용${skip?`, ${skip}개 생략`:''}`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'코드 자리바꿈');
@@ -2499,7 +2503,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
         const invEl=h.querySelector('inversion');const bassEl=h.querySelector('bass');
         if(invEl){invEl.remove();n++}if(bassEl){bassEl.remove();n++}
       });
-      updatedFiles.push({...file,xmlDoc:doc});
+      updatedFiles.push(commitFile(file,doc));
       lines.push({m:`✓ ${file.name}: ${n}개 요소 제거`,t:'ok'});
     }
     onFilesUpdate(updatedFiles,'코드 자리바꿈 원위치');
@@ -2591,7 +2595,7 @@ function NumberingPanel({files,showProgress,hideProgress,onFilesUpdate}){
               note.appendChild(doc.importNode(origLyric,true));cnt++;
             });
           });
-          updatedFiles.push({...file,xmlDoc:doc});
+          updatedFiles.push(commitFile(file,doc));
           lines.push({m:`✓ ${file.name}: ${cnt}개 원본 가사 복원`,t:'ok'});
           continue;
         }
@@ -2608,7 +2612,7 @@ function NumberingPanel({files,showProgress,hideProgress,onFilesUpdate}){
           const txt=doc.createElement('text');txt.textContent=numStr;lyric.appendChild(txt);
           note.appendChild(lyric);cnt++;
         });
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 숫자 삽입`,t:'ok'});
       }
       lastOutRef.current=updatedFiles;
@@ -2695,7 +2699,7 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
             cnt++;
           });
         });
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 가사 텍스트 수정`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'가사 스타일 적용');
@@ -2713,7 +2717,7 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
       doc.querySelectorAll('lyric text').forEach(t=>{
         ['font-size','font-weight','font-style','font-family','color'].forEach(a=>t.removeAttribute(a));cnt++;
       });
-      updatedFiles.push({...file,xmlDoc:doc});
+      updatedFiles.push(commitFile(file,doc));
       lines.push({m:`✓ ${file.name}: ${cnt}개 초기화`,t:'ok'});
     }
     onFilesUpdate(updatedFiles,'가사 스타일 초기화');
@@ -2736,7 +2740,7 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
             lyric.querySelectorAll('text').forEach(t=>{t.setAttribute('color',color);cnt++});
           });
         });
-        updatedFiles.push({...file,xmlDoc:doc});
+        updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 가사에 계이름 색상 적용`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'가사 색상 적용');
@@ -2926,7 +2930,7 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
       const source=window.RomanAnalysis.detectRomanNumeral(doc);
       const count=window.RomanAnalysis.insertRomanNumerals(doc,source.rows);
       const xmlString=new XMLSerializer().serializeToString(doc);
-      const updatedFiles=files.map((f,i)=>i===fileIndex?{...f,xmlDoc:doc,xmlString}:f);
+      const updatedFiles=files.map((f,i)=>i===fileIndex?commitFile(f,doc):f);
       onFilesUpdate(updatedFiles,'로마 숫자 삽입');
       setAnalysis(window.RomanAnalysis.detectRomanNumeral(doc));
       setLog([{m:`${count}개 마디에 로마 숫자를 삽입했습니다.`,t:'ok'}]);
@@ -3175,7 +3179,7 @@ function ClefPanel({files,showProgress,hideProgress,onFilesUpdate}){
 
         const shiftStr=semiShift!==0?` (${semiShift>0?'+':''}${semiShift}반음 이동)`:'';
         lines.push({m:`✓ ${file.name} → ${cfg.label}${shiftStr}`,t:'ok'});
-        return{...file,xmlDoc:doc};
+        returncommitFile(file,doc);
       });
       onFilesUpdate(updatedFiles,'음자리표 변환');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
@@ -4256,8 +4260,9 @@ function App(){
   },[pushHistory]);
 
   const updateFiles=useCallback((newFiles,label='변환')=>{
-    setFiles(newFiles);
-    pushHistory(newFiles,label);
+    const committed=newFiles.map(file=>commitFile(file,file.xmlDoc));
+    setFiles(committed);
+    pushHistory(committed,label);
   },[pushHistory]);
   const panelProps={files,activeFile,showProgress,hideProgress,onFilesUpdate:updateFiles};
 

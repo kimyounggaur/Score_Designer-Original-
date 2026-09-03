@@ -45,4 +45,13 @@ describe('ShareSessionCore', () => {
     expect(parsed.name).toBe('legacy.musicxml');
     expect(parsed.xml).toBe(xml);
   });
+
+  it('prefers edited xmlDoc over stale xml and xmlString', async () => {
+    const core = await loadCore();
+    const xmlDoc = new DOMParser().parseFromString('<score-partwise><part id="edited"/></score-partwise>', 'text/xml');
+    const url = core.buildShareURL({ name: 'edit.xml', xml, xmlString: xml, xmlDoc }, 'https://example.com/');
+    const parsed = await core.parseShareURLAny(url);
+    expect(parsed.xml).toContain('id="edited"');
+    expect(parsed.xml).not.toContain('안녕');
+  });
 });
