@@ -15,6 +15,7 @@ test('@panels A-B loop returns cursor to its first measure',async({page})=>{
   await expect(page.locator('.score-main-render svg')).toBeVisible();
   await page.getByRole('button',{name:'A-B',exact:true}).click();
   await page.getByTitle('재생',{exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>window.Tone?.Transport.state)).toBe('started');
   const cursor=page.locator('.score-main-render img[id^="cursorImg"]');
   await page.evaluate(()=>{Tone.Transport.seconds=Tone.Transport.loopEnd-.3;});
   await expect(cursor).toHaveAttribute('data-source-measure','2');

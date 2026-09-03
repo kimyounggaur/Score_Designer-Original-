@@ -31,7 +31,6 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script crossorigin="anonymous" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script crossorigin="anonymous" integrity="sha384-ku9eM40vVDsFUiERorrdlHlF0LIhdfn716M7TntM72Uo98T7LWiogD3hNenPx8Q0" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script crossorigin="anonymous" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script crossorigin="anonymous" integrity="sha384-c6Uo4N9c3SOEigMVzP6IshUG1wQ5uMp3xeoQFiHWAQ86joWdgyajkvopySyKy/Z6" src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <script crossorigin="anonymous" integrity="sha384-fg0GMOE+ryaeFG8a+kaykJwFk/KI5rLyPkxfxxHjlfBbC8HkEuNcl44thRQD6MzE" src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 <script src="chord-tools-core.js"></script>
 <script src="chord-symbol-core.js?v=1"></script>
@@ -57,7 +56,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
   동적 데이터 값은 CSS Custom Properties(--변수)로만 전달.
   ================================================================
 -->
-<script type="text/babel">
+<script type="text/babel" data-presets="react">
 const missingLibraries=['React','ReactDOM','opensheetmusicdisplay','JSZip','HistoryCore'].filter(name=>!window[name]);
 if(missingLibraries.length){
   document.getElementById('boot-status').textContent='필수 라이브러리('+missingLibraries.join(', ')+')를 불러오지 못했습니다. 네트워크를 확인하고 새로고침하세요.';
@@ -301,6 +300,18 @@ function getDocBpm(xmlDoc,fallback=120){
   const pm=xmlDoc?.querySelector?.('metronome per-minute');
   const fromText=parseFloat(pm?.textContent||'');
   return fromText>0?fromText:fallback;
+}
+const scriptPromises=new Map();
+function loadScript(url,integrity){
+  if(scriptPromises.has(url))return scriptPromises.get(url);
+  const promise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');script.src=url;script.integrity=integrity;script.crossOrigin='anonymous';
+    const timer=setTimeout(()=>{script.remove();reject(new Error('재생 라이브러리 로드 시간이 초과되었습니다.'));},15000);
+    script.onload=()=>{clearTimeout(timer);resolve();};
+    script.onerror=()=>{clearTimeout(timer);script.remove();reject(new Error('재생 라이브러리를 불러오지 못했습니다. 네트워크를 확인하고 새로고침해주세요.'));};
+    document.head.appendChild(script);
+  });
+  scriptPromises.set(url,promise);promise.catch(()=>scriptPromises.delete(url));return promise;
 }
 function sessionHash(text){
   let hash=2166136261;
@@ -3547,6 +3558,9 @@ function createMidiSynth(instrument){
 function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmdRef}){
   const notify=useNotify();
   const [isPlaying,setIsPlaying]=useState(false);
+  const [toneState,setToneState]=useState(window.Tone?'ready':'idle');
+  const playRequestRef=useRef(0);
+  const toneLoadingRef=useRef(false);
   const [positionSec,setPositionSec]=useState(0);
   const [instrument,setInstrument]=useState('piano');
   const [volumeDb,setVolumeDb]=useState(-8);
@@ -3624,7 +3638,7 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
   },[]);
 
   const handleStop=useCallback(()=>{
-    cancelTransport();resetCursor();
+    playRequestRef.current++;cancelTransport();resetCursor();
     isPlayingRef.current=false;
     setIsPlaying(false);
     setPositionSec(0);
@@ -3668,12 +3682,23 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
   ]);
 
   const handlePlay=useCallback(async()=>{
-    if(isPlaying)return;
+    if(isPlaying||toneLoadingRef.current)return;
     if(!file){notify('먼저 파일을 업로드해주세요.','warn');return;}
     if(!window.PlaybackCore){notify('재생 코어를 불러오지 못했습니다. 새로고침해주세요.','error');return;}
-    if(!window.Tone){notify('Tone.js가 아직 로드되지 않았습니다.','warn');return;}
+    const request=++playRequestRef.current;
+    if(!window.Tone){
+      toneLoadingRef.current=true;setToneState('loading');
+      try{
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js','sha384-c6Uo4N9c3SOEigMVzP6IshUG1wQ5uMp3xeoQFiHWAQ86joWdgyajkvopySyKy/Z6');
+        if(!window.Tone)throw new Error('재생 라이브러리가 초기화되지 않았습니다.');
+        setToneState('ready');
+      }catch(error){setToneState('error');notify(error.message,'err');return;}
+      finally{toneLoadingRef.current=false;}
+    }
+    if(request!==playRequestRef.current)return;
     if(!playableEvents.length){notify('재생할 음표가 없습니다.','warn');return;}
-    await Tone.start();
+    try{await Tone.start();}catch(error){notify('오디오를 시작할 수 없습니다: '+error.message,'err');return;}
+    if(request!==playRequestRef.current)return;
     if(!schedulePlayback())return;
     const basePosition=positionSec>=(playbackData.totalDuration||0)-0.01?0:positionSec;
     const loopA=getMeasureStart(loopStart);
@@ -3737,7 +3762,7 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
     if(!window.Tone)return;
     const master=Tone.Master||Tone.Destination;
     if(master?.volume)master.volume.value=volumeDb;
-  },[volumeDb]);
+  },[volumeDb,toneState]);
 
   useEffect(()=>{
     if(!window.Tone||!isPlayingRef.current)return;
@@ -3766,6 +3791,7 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
   useEffect(()=>()=>{handleStop();disposeSynth();},[handleStop,disposeSynth]);
 
   useEffect(()=>{
+    playRequestRef.current++;
     if(isPlayingRef.current)handleStop();
     else if(window.Tone)Tone.Transport.cancel();
     setPositionSec(0);
@@ -3774,8 +3800,8 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
   return <div className="transport-inner">
     <div className="midi-player" style={{'--midi-progress':`${progressPct}%`}}>
       <div className="midi-player__controls">
-        <button className={`transport__btn transport__btn--play${isPlaying?' transport__btn--playing':''}`} onClick={handlePlay} title="재생" disabled={!window.Tone||!window.PlaybackCore}>▶</button>
-        {(!window.Tone||!window.PlaybackCore)&&<span role="status">재생 라이브러리를 불러오지 못했습니다.</span>}
+        <button className={`transport__btn transport__btn--play${isPlaying?' transport__btn--playing':''}`} onClick={handlePlay} title="재생" disabled={toneState==='loading'||toneState==='error'||!window.PlaybackCore}>{toneState==='loading'?'불러오는 중…':'▶'}</button>
+        {(toneState==='error'||!window.PlaybackCore)&&<span role="status">재생 라이브러리를 불러오지 못했습니다.</span>}
         <button className="transport__btn" onClick={handlePause} title="일시정지">⏸</button>
         <button className="transport__btn" onClick={handleStop} title="정지">⏹</button>
       </div>
