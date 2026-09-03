@@ -411,7 +411,7 @@ function HistoryPanel({history,historyIndex,onUndo,onRedo,onJump,onClear,notice}
     <div className="history-panel__header">
       <div>
         <div className="history-panel__title">히스토리</div>
-        <div className="history-panel__meta">{history.length} / 50</div>
+        <div className="history-panel__meta">{history.length} / 50 · 메모리 약 {(GlobalHistoryCore.estimateHistoryBytes(history)/1048576).toFixed(2)} MB</div>
       </div>
       <div className="history-panel__actions">
         <button className="history-panel__btn" onClick={onUndo} disabled={!canUndo} title="Undo" aria-label="실행 취소">↩</button>
@@ -461,31 +461,7 @@ function Toggle({on,onClick,label}){
   return <button type="button" role="switch" aria-checked={!!on} aria-label={label} className={`toggle${on?' toggle--on':''}`} onClick={onClick}/>;
 }
 
-const GlobalHistoryCore = window.HistoryCore || {
-  MAX_HISTORY:50,
-  cloneFiles(files){
-    return Array.from(files||[]).map(file=>({
-      ...file,
-      xmlDoc:file?.xmlDoc?.cloneNode ? file.xmlDoc.cloneNode(true) : file?.xmlDoc,
-    }));
-  },
-  pushHistoryEntry(history,index,files,label,timestamp){
-    const nextEntry={
-      files:this.cloneFiles(files),
-      label:label||'변환',
-      timestamp:timestamp||Date.now(),
-    };
-    const truncated=Array.from(history||[]).slice(0,index+1);
-    const nextHistory=[...truncated,nextEntry].slice(-this.MAX_HISTORY);
-    return {history:nextHistory,index:nextHistory.length-1};
-  },
-  restoreHistoryFiles(entry){
-    return this.cloneFiles(entry?.files||[]);
-  },
-  serializeHistoryMeta(history){
-    return Array.from(history||[]).map(({label,timestamp})=>({label,timestamp}));
-  },
-};
+const GlobalHistoryCore=window.HistoryCore;
 
 /* ==============================================================
    PANEL: UPLOAD
@@ -4062,6 +4038,7 @@ function App(){
   const [playback,setPlayback]=useState({isPlaying:false,currentMeasure:0});
   const [history,setHistory]=useState([]);
   const [historyIndex,setHistoryIndex]=useState(-1);
+  const historyStateRef=useRef({history:[],index:-1});
   const [historyNotice,setHistoryNotice]=useState(null);
   const [restoreSession,setRestoreSession]=useState(null);
   const [sessionStatus,setSessionStatus]=useState({backend:'',usage:null,quota:null,savedAt:null,error:null});
@@ -4093,15 +4070,18 @@ function App(){
   const hideProgress=useCallback(()=>setProgress({visible:false,msg:''}),[]);
 
   const pushHistory=useCallback((nextFiles,label='변환')=>{
-    const next=GlobalHistoryCore.pushHistoryEntry(history,historyIndex,nextFiles,label);
+    const previous=historyStateRef.current;
+    const next=GlobalHistoryCore.pushHistoryEntry(previous.history,previous.index,nextFiles,label);
+    historyStateRef.current=next;
     setHistory(next.history);
     setHistoryIndex(next.index);
     setHistoryNotice({m:`기록: ${label}`,t:'info'});
-  },[history,historyIndex]);
+  },[]);
 
   const restoreHistoryAt=useCallback((newIdx,notice)=>{
     if(newIdx<0||newIdx>=history.length)return;
     const restored=GlobalHistoryCore.restoreHistoryFiles(history[newIdx]);
+    historyStateRef.current={history:historyStateRef.current.history,index:newIdx};
     setHistoryIndex(newIdx);
     setFiles(restored);
     setActiveFile(prev=>Math.max(0,Math.min(prev,Math.max(0,restored.length-1))));
@@ -4123,6 +4103,7 @@ function App(){
   },[history,restoreHistoryAt]);
 
   const clearHistory=useCallback(()=>{
+    historyStateRef.current={history:[],index:-1};
     setHistory([]);
     setHistoryIndex(-1);
     setHistoryNotice({m:'히스토리를 모두 지웠습니다.',t:'warn'});
