@@ -169,18 +169,35 @@ function commitFile(file, doc, extra){
   const xmlString=new XMLSerializer().serializeToString(doc);
   return {...file,...(extra||{}),xmlDoc:doc,xmlString};
 }
+function validOssia(xml){
+  if(typeof xml!=='string'||!xml)return undefined;
+  const doc=new DOMParser().parseFromString(xml,'text/xml');
+  return !doc.querySelector('parsererror')&&doc.documentElement.localName==='score-partwise'?xml:undefined;
+}
+async function buildMxlBlob(file){
+  if(!window.JSZip)return null;
+  const zip=new window.JSZip();
+  zip.file('META-INF/container.xml','<?xml version="1.0" encoding="UTF-8"?><container version="1.0"><rootfiles><rootfile full-path="score.xml" media-type="application/vnd.recordare.musicxml+xml"/></rootfiles></container>');
+  zip.file('score.xml',new XMLSerializer().serializeToString(file.xmlDoc));
+  return zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:'application/vnd.recordare.musicxml'});
+}
 function serializeSessionFiles(files){
   return Array.from(files||[]).map(file=>({
     name:file.name,
     sourceName:file.sourceName||file.name,
     xml:new XMLSerializer().serializeToString(file.xmlDoc),
+    ossiaMxml:file.ossiaMxml,
+    ossiaMeta:file.ossiaMeta,
   }));
 }
 function hydrateSessionFiles(session){
   return Array.from(session?.files||[]).map(file=>{
     const xmlString=file.xml||file.xmlString||'';
     const xmlDoc=new DOMParser().parseFromString(xmlString,'text/xml');
+    const ossiaMxml=validOssia(file.ossiaMxml);
     return {
+      ossiaMxml,
+      ossiaMeta:ossiaMxml?file.ossiaMeta:undefined,
       name:file.name||file.sourceName||'복원된 악보.musicxml',
       sourceName:file.sourceName||file.name,
       xmlString,
@@ -1721,14 +1738,14 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
           ossiaDoc.querySelectorAll('work,movement-title,movement-number,credit').forEach(el=>el.remove());
 
           const ossiaMxml=new XMLSerializer().serializeToString(ossiaDoc);
-          console.log('[Ossia] Generated XML length:',ossiaMxml.length,'| kept measures:',keptMeasures.length);
+
           updatedFiles.push({...file,ossiaMxml,ossiaMeta:{startMeasure,endMeasure,label:ossiaLabel}});
           lines.push({m:`✓ ${file.name}: Ossia 오버레이 생성 (마디 ${startMeasure}-${endMeasure})`,t:'ok'});
           if(totalShift!==0){
             lines.push({m:`    변형: ${transposeSemi>0?'+':''}${transposeSemi}반음, ${octaveShift>0?'+':''}${octaveShift}옥타브`});
           }
         }catch(fileErr){
-          console.error('[Ossia] 파일 처리 에러:',fileErr);
+
           lines.push({m:`❌ ${file.name}: ${fileErr.message}`,t:'err'});
           updatedFiles.push(file);
         }
@@ -1737,7 +1754,7 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
       lines.push({m:'✅ 적용 완료! 악보 좌측 상단에 Ossia가 표시됩니다.',t:'ok'});
       setLog(lines);
     }catch(e){
-      console.error('[Ossia] 전역 에러:',e);
+
       setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}]);
     }
     hideProgress();
@@ -3277,7 +3294,7 @@ function applyLyricStylesToSvg(container,xmlDoc){
 /* ==============================================================
    MENUBAR — top dropdown menu for all panels
    ============================================================== */
-function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF,files,activeFile=0}){
+function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportXML,onExportPNG,onExportPDF,files,activeFile=0}){
   const [open,setOpen]=useState(null);
   const [ddPos,setDdPos]=useState({top:78,left:0});
   const navRef=useRef();
@@ -3310,7 +3327,8 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF
     {id:'file',label:'파일',items:[
       {icon:'📂',label:'파일 업로드',         onClick:()=>sel('left','upload')},
       {sep:true},
-      {icon:'⬇',label:'MXL 내보내기',         onClick:()=>close(onExportMXL), dis:!files.length},
+      {icon:'⬇',label:'MXL(.mxl) 내보내기',         onClick:()=>close(onExportMXL), dis:!files.length},
+      {icon:'⬇',label:'MusicXML(.xml) 내보내기',onClick:()=>close(onExportXML),dis:!files.length},
       {icon:'🖼',label:'PNG 내보내기',         onClick:()=>close(onExportPNG), dis:!files.length},
       {icon:'📄',label:'PDF 내보내기',         onClick:()=>close(onExportPDF), dis:!files.length},
     ]},
@@ -4131,6 +4149,8 @@ function App(){
           sourceName:shared.sourceName||shared.name||'공유 악보.musicxml',
           xmlString:shared.xml,
           xmlDoc,
+          ossiaMxml:validOssia(shared.ossiaMxml),
+          ossiaMeta:shared.ossiaMeta,
         }];
         setFiles(restored);
         setActiveFile(0);
@@ -4286,13 +4306,23 @@ function App(){
     return()=>{delete window.__mxlGetState;delete window.__mxlSetActiveFile};
   },[files,activeFile,history,historyIndex,restoreSession,sessionStatus,shareModal,leftPanel,rightPanel,bpm]);
 
-  const exportMXL=useCallback(()=>{
+  const exportXML=useCallback(()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
     const file=files[activeFile]||files[0];
     const xmlStr=new XMLSerializer().serializeToString(file.xmlDoc);
     const blob=new Blob([xmlStr],{type:'text/xml'});
     downloadBlob(blob,file.name.replace(/\.(mxl|xml|musicxml)$/i,'')+'.xml');
   },[files,activeFile]);
+
+  const exportMXL=useCallback(async()=>{
+    if(!files.length)return;
+    try{
+      const file=files[activeFile]||files[0];
+      const blob=await buildMxlBlob(file);
+      if(blob)downloadBlob(blob,file.name.replace(/\.(mxl|xml|musicxml)$/i,'')+'.mxl');
+      else{exportXML();setHistoryNotice({m:'JSZip을 불러오지 못해 비압축 XML로 저장했습니다.',t:'warn'});}
+    }catch(error){setHistoryNotice({m:'MXL 내보내기 실패: '+error.message,t:'err'});}
+  },[files,activeFile,exportXML]);
 
   const exportPNG=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -4386,6 +4416,7 @@ function App(){
         onSelectLeft={selectLeftPanel}
         onSelectRight={selectRightPanel}
         onExportMXL={exportMXL}
+        onExportXML={exportXML}
         onExportPNG={exportPNG}
         onExportPDF={exportPDF}
         files={files}
