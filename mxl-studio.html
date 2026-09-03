@@ -3337,6 +3337,8 @@ function applyLyricStylesToSvg(container,xmlDoc){
 /* ==============================================================
    MENUBAR — top dropdown menu for all panels
    ============================================================== */
+function ActivityIcon({icon}){return <span aria-hidden="true">{icon==='capo_svg'?<svg enableBackground="new 0 0 64 64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" className="activity-icon"><g><g><g><g><path d="m53.9844437 12.04v1.2600002l-22.1299992 3.71-9.5599995 1.6100006c-2.1276703.2700176-2.8390522 3.2936745-1.0499039 4.4800148 4.4422474 3.2166824 24.5818214 17.7894573 29.4199028 21.2899837l-.4599991.5900002-18.4500007-11.2000007c-.2600002-.1499977-.5799999-.1800003-.8600006-.079998-.2799988.0999985-.5099983.3199997-.6099987.6100006l-4.1800003 12.0099983h-1.2900009l3.4400005-13.8400002c.1000004-.4300003-.0799999-.8699989-.4599991-1.1000004l-9.9099998-6.0099983c-1.2125359-.7878056-2.9595737.191925-2.9099655 1.6400509-.0032091 6.0960388.0022526 18.8394089-.0000353 24.9899483h-2.3599997l-2.5799999-32.2999992c-.3102512-3.0670624 2.248661-5.9857826 5.3400478-6.0399542-.0000486-.0000468 38.6099511-1.6200466 38.6099511-1.6200466zm-36.0699997 6.8399992c-.101759-3.9959745-5.9388266-3.9951725-6.0399981.0000916.1043539 3.9818439 5.9362364 3.981039 6.0399981-.0000916z" fill="currentColor"/><path d="m16.974 34.39h.97v13.3h-.97z" fill="currentColor"/><path d="m14.8944445 17.8500004c1.3369493.0188828 1.3467607 2.0289402-.000041 2.0499973-1.344841-.0265503-1.3345757-2.0260124.000041-2.0499973z" fill="currentColor"/></g></g></g></g></svg>:icon==='panflute_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" className="activity-icon"><g><rect x="8" y="4" width="6" height="12" rx="3" fill="currentColor"/><rect x="16" y="4" width="6" height="14" rx="3" fill="currentColor"/><rect x="24" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="32" y="4" width="6" height="18" rx="3" fill="currentColor"/><rect x="40" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="48" y="4" width="6" height="14" rx="3" fill="currentColor"/><path d="M6 22 Q6 16 12 16 L52 16 Q58 16 58 22 L58 28 Q58 30 56 30 L8 30 Q6 30 6 28 Z" fill="#E85A5A"/><circle cx="14" cy="24" r="2.5" fill="#3D4550"/><circle cx="24" cy="24" r="2.5" fill="#3D4550"/><circle cx="34" cy="24" r="2.5" fill="#3D4550"/><circle cx="44" cy="24" r="2.5" fill="#3D4550"/><circle cx="54" cy="24" r="2.5" fill="#3D4550"/></g></svg>:icon==='transpose_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" className="activity-icon"><g><line x1="4" y1="16" x2="60" y2="16" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="24" x2="60" y2="24" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="32" x2="60" y2="32" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="40" x2="60" y2="40" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="48" x2="60" y2="48" stroke="#A89A6B" strokeWidth="2"/><text x="12" y="42" fontSize="24" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">9</text><text x="14" y="52" fontSize="16" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">8</text><path d="M 20 26 Q 18 32 20 38" stroke="#9B9FD8" strokeWidth="3" fill="none" strokeLinecap="round"/><path d="M 36 32 L 34 22 L 32 28 L 30 22 L 28 32" stroke="#9B9FD8" strokeWidth="2.5" fill="none"/><path d="M 48 26 L 46 16 L 44 22 L 42 16 L 40 26" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/><path d="M 56 28 L 54 18 L 52 24 L 50 18 L 48 28" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/></g></svg>:icon}</span>;}
+
 function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportXML,onExportPNG,onExportPDF,files,activeFile=0}){
   const [open,setOpen]=useState(null);
   const [ddPos,setDdPos]=useState({top:78,left:0});
@@ -3445,10 +3447,14 @@ function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
   const osmdRef=useRef(null);
   const ossiaOsmdRef=useRef(null);
   const [rendered,setRendered]=useState(false);
+  const [renderError,setRenderError]=useState(null);
+  const [ossiaError,setOssiaError]=useState(null);
+  const [renderAttempt,setRenderAttempt]=useState(0);
 
   useEffect(()=>{
     if(!files.length||!containerRef.current||!scoreRenderRef.current){setRendered(false);if(onOsmdReady)onOsmdReady(null);return}
     const file=files[activeFile]||files[0];
+    setRenderError(null);setOssiaError(null);setRendered(false);
     let cancelled=false;
     if(onOsmdReady)onOsmdReady(null);
     (async()=>{
@@ -3480,18 +3486,18 @@ function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
               ossiaOsmd.zoom=0.65;
               ossiaOsmd.render();
             }catch(oe){
-              ossiaRef.current.innerHTML='<div style="padding:8px;color:#c33;font-size:11px">Ossia 렌더링 실패: '+oe.message+'</div>';
+              if(!cancelled)setOssiaError(oe.message);
             }
           }
         }
 
         setRendered(true);
       }catch(e){
-        if(containerRef.current)containerRef.current.innerHTML='<div style="text-align:center;color:#aeaeb2;padding:40px">렌더링 실패: '+e.message+'</div>';
+        if(!cancelled)setRenderError(e.message);
       }
     })();
     return()=>{cancelled=true};
-  },[files,activeFile]);
+  },[files,activeFile,renderAttempt]);
 
   if(!files.length)return <div className="main-score">
     <div className="score-empty">
@@ -3512,6 +3518,8 @@ function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
       <span className="score-measure-overlay__label">Measure</span>
       <span className="score-measure-overlay__value">{playbackMeasure||1}</span>
     </div>
+    {renderError&&<div className="score-error" role="alert">악보를 렌더링하지 못했습니다. {renderError}<button type="button" className="btn btn--secondary" onClick={()=>setRenderAttempt(n=>n+1)}>다시 렌더</button></div>}
+    {ossiaError&&<div className="ossia-inline__error" role="alert">Ossia 렌더링 실패: {ossiaError}</div>}
     <div className="score-container" ref={containerRef}>
       <div className="ossia-inline" ref={ossiaRef}/>
       <div className="score-main-render" ref={scoreRenderRef}/>
@@ -3522,147 +3530,6 @@ function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
 /* ==============================================================
    TRANSPORT BAR — bottom playback / tempo bar
    ============================================================== */
-function CursorTransportBar({files,activeFile=0,bpm,onBpmChange,osmdRef}){
-  const [isPlaying,setIsPlaying]=useState(false);
-  const timerRef=useRef(null);
-  const playingRef=useRef(false);
-  const bpmRef=useRef(bpm);
-
-  useEffect(()=>{bpmRef.current=bpm;},[bpm]);
-
-  const fileCount=files.length;
-  const totalNotes=useMemo(()=>{
-    let n=0;files.forEach(f=>{n+=f.xmlDoc.querySelectorAll('note:not([rest])').length});return n;
-  },[files,activeFile]);
-  const totalMeasures=useMemo(()=>{
-    if(!files.length)return 0;
-    return activeDoc(files,activeFile).querySelector('part')?.querySelectorAll('measure')?.length||0;
-  },[files,activeFile]);
-
-  /* ── 정지 (내부용) ── */
-  const doStop=useCallback(()=>{
-    clearTimeout(timerRef.current);
-    timerRef.current=null;
-    playingRef.current=false;
-    setIsPlaying(false);
-  },[]);
-
-  /* 파일 바뀌면 자동 정지 */
-  useEffect(()=>{doStop();},[files,activeFile,doStop]);
-
-  /* ── 한 스텝씩 커서 전진 ── */
-  const tick=useCallback(()=>{
-    const osmd=osmdRef?.current;
-    if(!osmd?.cursor||!playingRef.current)return;
-    try{
-      /* 현재 음표 길이(4분음표 단위) 읽기 → 다음 tick 간격 계산 */
-      let qLen=1;
-      try{
-        const notes=osmd.cursor.NotesUnderCursor?.();
-        if(notes&&notes.length>0&&notes[0].length?.realValue)
-          qLen=notes[0].length.realValue;
-      }catch(_){}
-      const ms=Math.max(60,Math.round(qLen*(60000/bpmRef.current)));
-
-      timerRef.current=setTimeout(()=>{
-        if(!playingRef.current)return;
-        const o=osmdRef?.current;
-        if(!o?.cursor)return;
-        if(o.cursor.Iterator?.EndReached){doStop();return;}
-        o.cursor.next();
-        if(o.cursor.Iterator?.EndReached){doStop();return;}
-        tick();
-      },ms);
-    }catch(e){doStop();}
-  },[osmdRef,doStop]);
-
-  /* ── 재생 / 일시정지 ── */
-  const handlePlay=useCallback(()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return;}
-    const osmd=osmdRef?.current;
-    if(!osmd?.cursor){alert('악보가 아직 렌더링되지 않았습니다.');return;}
-    if(playingRef.current){doStop();return;}       /* 일시정지 */
-    try{
-      osmd.cursor.show();
-      playingRef.current=true;
-      setIsPlaying(true);
-      tick();
-    }catch(e){doStop();}
-  },[files.length,osmdRef,doStop,tick]);
-
-  /* ── 정지 + 처음으로 ── */
-  const handleStop=useCallback(()=>{
-    doStop();
-    try{const osmd=osmdRef?.current;if(osmd?.cursor){osmd.cursor.reset();osmd.cursor.show();}}catch(_){}
-  },[osmdRef,doStop]);
-
-  /* ── 처음으로 (재생 상태 유지) ── */
-  const handleRewind=useCallback(()=>{
-    const wasPlaying=playingRef.current;
-    doStop();
-    try{
-      const osmd=osmdRef?.current;
-      if(osmd?.cursor){osmd.cursor.reset();osmd.cursor.show();}
-    }catch(_){}
-    if(wasPlaying){
-      playingRef.current=true;
-      setIsPlaying(true);
-      tick();
-    }
-  },[osmdRef,doStop,tick]);
-
-  return <div className="transport">
-    <div className="transport-inner">
-      <div className="transport__section">
-        <button className="transport__btn" onClick={handleRewind} title="처음으로">⏮</button>
-        <button
-          className={`transport__btn transport__btn--play${isPlaying?' transport__btn--playing':''}`}
-          onClick={handlePlay}
-          title={isPlaying?'일시정지':'재생'}>
-          {isPlaying?'⏸':'▶'}
-        </button>
-        <button className="transport__btn" onClick={handleStop} title="정지 / 처음으로">⏹</button>
-      </div>
-
-      <div className="transport__divider"/>
-
-      <div className="transport__section">
-        <div>
-          <div className="transport__label">Tempo</div>
-          <div className="transport__value transport__value--accent">{bpm} BPM</div>
-        </div>
-        <input className="transport__tempo-slider" type="range" min={20} max={300} value={bpm}
-          onChange={e=>onBpmChange(parseInt(e.target.value))}/>
-      </div>
-
-      <div className="transport__divider"/>
-
-      <div className="transport__section">
-        <div>
-          <div className="transport__label">마디</div>
-          <div className="transport__value">{totalMeasures}</div>
-        </div>
-      </div>
-
-      <div className="transport__divider"/>
-
-      <div className="transport__section">
-        <div>
-          <div className="transport__label">음표</div>
-          <div className="transport__value">{totalNotes}</div>
-        </div>
-      </div>
-
-      <div className="transport__section--right">
-        <div>
-          <div className="transport__label">파일</div>
-          <div className="transport__value">{fileCount}개</div>
-        </div>
-      </div>
-    </div>
-  </div>;
-}
-
 function createMidiSynth(instrument){
   if(!window.Tone)return null;
   const baseEnvelope={attack:0.01,decay:0.1,sustain:0.7,release:0.3};
@@ -4044,6 +3911,7 @@ function App(){
   const [shareModal,setShareModal]=useState(null);
   const shareLoadedRef=useRef(false);
   const osmdRef=useRef(null);
+  // OSMD 인스턴스는 P5-3 재생 커서 동기화에 사용합니다.
   const handleOsmdReady=useCallback(osmd=>{osmdRef.current=osmd;},[]);
   const handlePlaybackUpdate=useCallback(next=>{
     setPlayback(prev=>
@@ -4519,7 +4387,7 @@ function App(){
               className={`activity-bar__btn${leftPanel===item.id?' activity-bar__btn--active':''}`}
               onClick={()=>{setLeftPanel(item.id);if(!showLeft)setShowLeft(true)}}
               title={PANEL_LABELS[item.id]||item.id}>
-              {item.icon==='capo_svg'?<svg id="Fill" enableBackground="new 0 0 64 64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><g><g><g><path d="m53.9844437 12.04v1.2600002l-22.1299992 3.71-9.5599995 1.6100006c-2.1276703.2700176-2.8390522 3.2936745-1.0499039 4.4800148 4.4422474 3.2166824 24.5818214 17.7894573 29.4199028 21.2899837l-.4599991.5900002-18.4500007-11.2000007c-.2600002-.1499977-.5799999-.1800003-.8600006-.079998-.2799988.0999985-.5099983.3199997-.6099987.6100006l-4.1800003 12.0099983h-1.2900009l3.4400005-13.8400002c.1000004-.4300003-.0799999-.8699989-.4599991-1.1000004l-9.9099998-6.0099983c-1.2125359-.7878056-2.9595737.191925-2.9099655 1.6400509-.0032091 6.0960388.0022526 18.8394089-.0000353 24.9899483h-2.3599997l-2.5799999-32.2999992c-.3102512-3.0670624 2.248661-5.9857826 5.3400478-6.0399542-.0000486-.0000468 38.6099511-1.6200466 38.6099511-1.6200466zm-36.0699997 6.8399992c-.101759-3.9959745-5.9388266-3.9951725-6.0399981.0000916.1043539 3.9818439 5.9362364 3.981039 6.0399981-.0000916z" fill="currentColor"/><path d="m16.974 34.39h.97v13.3h-.97z" fill="currentColor"/><path d="m14.8944445 17.8500004c1.3369493.0188828 1.3467607 2.0289402-.000041 2.0499973-1.344841-.0265503-1.3345757-2.0260124.000041-2.0499973z" fill="currentColor"/></g></g></g></g></svg>:item.icon==='panflute_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><rect x="8" y="4" width="6" height="12" rx="3" fill="currentColor"/><rect x="16" y="4" width="6" height="14" rx="3" fill="currentColor"/><rect x="24" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="32" y="4" width="6" height="18" rx="3" fill="currentColor"/><rect x="40" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="48" y="4" width="6" height="14" rx="3" fill="currentColor"/><path d="M6 22 Q6 16 12 16 L52 16 Q58 16 58 22 L58 28 Q58 30 56 30 L8 30 Q6 30 6 28 Z" fill="#E85A5A"/><circle cx="14" cy="24" r="2.5" fill="#3D4550"/><circle cx="24" cy="24" r="2.5" fill="#3D4550"/><circle cx="34" cy="24" r="2.5" fill="#3D4550"/><circle cx="44" cy="24" r="2.5" fill="#3D4550"/><circle cx="54" cy="24" r="2.5" fill="#3D4550"/></g></svg>:item.icon==='transpose_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><line x1="4" y1="16" x2="60" y2="16" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="24" x2="60" y2="24" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="32" x2="60" y2="32" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="40" x2="60" y2="40" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="48" x2="60" y2="48" stroke="#A89A6B" strokeWidth="2"/><text x="12" y="42" fontSize="24" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">9</text><text x="14" y="52" fontSize="16" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">8</text><path d="M 20 26 Q 18 32 20 38" stroke="#9B9FD8" strokeWidth="3" fill="none" strokeLinecap="round"/><path d="M 36 32 L 34 22 L 32 28 L 30 22 L 28 32" stroke="#9B9FD8" strokeWidth="2.5" fill="none"/><path d="M 48 26 L 46 16 L 44 22 L 42 16 L 40 26" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/><path d="M 56 28 L 54 18 L 52 24 L 50 18 L 48 28" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/></g></svg>:item.icon}
+              <ActivityIcon icon={item.icon}/>
             </button>
       )}
     </nav>
@@ -4533,7 +4401,7 @@ function App(){
               className={`activity-bar__btn${rightPanel===item.id?' activity-bar__btn--active':''}`}
               onClick={()=>{setRightPanel(item.id);if(!showRight)setShowRight(true)}}
               title={PANEL_LABELS[item.id]||item.id}>
-              {item.icon==='capo_svg'?<svg id="Fill" enableBackground="new 0 0 64 64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><g><g><g><path d="m53.9844437 12.04v1.2600002l-22.1299992 3.71-9.5599995 1.6100006c-2.1276703.2700176-2.8390522 3.2936745-1.0499039 4.4800148 4.4422474 3.2166824 24.5818214 17.7894573 29.4199028 21.2899837l-.4599991.5900002-18.4500007-11.2000007c-.2600002-.1499977-.5799999-.1800003-.8600006-.079998-.2799988.0999985-.5099983.3199997-.6099987.6100006l-4.1800003 12.0099983h-1.2900009l3.4400005-13.8400002c.1000004-.4300003-.0799999-.8699989-.4599991-1.1000004l-9.9099998-6.0099983c-1.2125359-.7878056-2.9595737.191925-2.9099655 1.6400509-.0032091 6.0960388.0022526 18.8394089-.0000353 24.9899483h-2.3599997l-2.5799999-32.2999992c-.3102512-3.0670624 2.248661-5.9857826 5.3400478-6.0399542-.0000486-.0000468 38.6099511-1.6200466 38.6099511-1.6200466zm-36.0699997 6.8399992c-.101759-3.9959745-5.9388266-3.9951725-6.0399981.0000916.1043539 3.9818439 5.9362364 3.981039 6.0399981-.0000916z" fill="currentColor"/><path d="m16.974 34.39h.97v13.3h-.97z" fill="currentColor"/><path d="m14.8944445 17.8500004c1.3369493.0188828 1.3467607 2.0289402-.000041 2.0499973-1.344841-.0265503-1.3345757-2.0260124.000041-2.0499973z" fill="currentColor"/></g></g></g></g></svg>:item.icon==='panflute_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><rect x="8" y="4" width="6" height="12" rx="3" fill="currentColor"/><rect x="16" y="4" width="6" height="14" rx="3" fill="currentColor"/><rect x="24" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="32" y="4" width="6" height="18" rx="3" fill="currentColor"/><rect x="40" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="48" y="4" width="6" height="14" rx="3" fill="currentColor"/><path d="M6 22 Q6 16 12 16 L52 16 Q58 16 58 22 L58 28 Q58 30 56 30 L8 30 Q6 30 6 28 Z" fill="#E85A5A"/><circle cx="14" cy="24" r="2.5" fill="#3D4550"/><circle cx="24" cy="24" r="2.5" fill="#3D4550"/><circle cx="34" cy="24" r="2.5" fill="#3D4550"/><circle cx="44" cy="24" r="2.5" fill="#3D4550"/><circle cx="54" cy="24" r="2.5" fill="#3D4550"/></g></svg>:item.icon==='transpose_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" style={{width:'1em',height:'1em'}}><g><line x1="4" y1="16" x2="60" y2="16" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="24" x2="60" y2="24" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="32" x2="60" y2="32" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="40" x2="60" y2="40" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="48" x2="60" y2="48" stroke="#A89A6B" strokeWidth="2"/><text x="12" y="42" fontSize="24" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">9</text><text x="14" y="52" fontSize="16" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">8</text><path d="M 20 26 Q 18 32 20 38" stroke="#9B9FD8" strokeWidth="3" fill="none" strokeLinecap="round"/><path d="M 36 32 L 34 22 L 32 28 L 30 22 L 28 32" stroke="#9B9FD8" strokeWidth="2.5" fill="none"/><path d="M 48 26 L 46 16 L 44 22 L 42 16 L 40 26" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/><path d="M 56 28 L 54 18 L 52 24 L 50 18 L 48 28" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/></g></svg>:item.icon}
+              <ActivityIcon icon={item.icon}/>
             </button>
       )}
     </nav>
