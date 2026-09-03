@@ -2408,3 +2408,4 @@ body {
   .session-save-row { flex-wrap:wrap; }.session-save-row label { width:100%; }
   .score-zoom { right:8px; bottom:8px; }.score-zoom button { padding:8px; }
 }
+:root .score-main-render img[id^="cursorImg"] { filter: hue-rotate(65deg); pointer-events: none; z-index: 2 !important; }

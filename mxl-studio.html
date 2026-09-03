@@ -3446,7 +3446,7 @@ function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasur
   const changeZoom=useCallback(value=>setZoom(Math.round(Math.max(.5,Math.min(2,value))*10)/10),[]);
   const redraw=useCallback(value=>{
     if(!readyRef.current||!osmdRef.current)return;
-    try{osmdRef.current.zoom=value;osmdRef.current.render();applyLyricStylesToSvg(scoreRenderRef.current,activeDoc(files,activeFile));}
+    try{onOsmdReady?.(null);osmdRef.current.zoom=value;osmdRef.current.render();onOsmdReady?.(osmdRef.current);applyLyricStylesToSvg(scoreRenderRef.current,activeDoc(files,activeFile));}
     catch(error){setRenderError(error.message);}
   },[files,activeFile]);
   const fitZoom=useCallback(()=>{
@@ -3581,7 +3581,7 @@ function createMidiSynth(instrument){
   return{synth,effect,dispose(){try{synth.dispose();effect?.dispose();}catch(_){}}};
 }
 
-function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
+function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmdRef}){
   const notify=useNotify();
   const [isPlaying,setIsPlaying]=useState(false);
   const [positionSec,setPositionSec]=useState(0);
@@ -3594,6 +3594,29 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
   const [loopEnd,setLoopEnd]=useState(1);
   const synthRef=useRef(null);
   const isPlayingRef=useRef(false);
+  const cursorStateRef=useRef({cursor:null,index:-1});
+  const resetCursor=useCallback(()=>{
+    const cursor=osmdRef?.current?.cursor;
+    cursor?.hide();cursor?.reset();cursorStateRef.current={cursor:null,index:-1};
+  },[osmdRef]);
+  const syncCursor=useCallback((sec,timeline)=>{
+    const cursor=osmdRef?.current?.cursor,entry=window.PlaybackCore?.measureAtTime(timeline,sec);
+    if(!cursor?.iterator||!entry)return;
+    const previous=cursorStateRef.current;
+    if(previous.cursor===cursor&&previous.index===entry.index&&!cursor.hidden)return;
+    // OSMD 1.8.9 public getter is CurrentMeasureIndex (capital C).
+    // Source index, not unfolded index/printed number, also handles pickup 0.
+    if(previous.cursor!==cursor||entry.sourceIndex<cursor.iterator.CurrentMeasureIndex)cursor.reset();
+    let steps=0;
+    while(cursor.iterator.CurrentMeasureIndex<entry.sourceIndex&&!cursor.iterator.EndReached&&steps++<500)cursor.next();
+    cursor.show();cursorStateRef.current={cursor,index:entry.index};
+    const element=cursor.cursorElement;
+    if(element){
+      element.setAttribute('aria-hidden','true');element.dataset.sourceMeasure=String(entry.measure);
+      const box=element.getBoundingClientRect(),viewport=element.closest('.score-container')?.getBoundingClientRect();
+      if(viewport&&(box.top<viewport.top||box.bottom>viewport.bottom||box.left<viewport.left||box.right>viewport.right))element.scrollIntoView({block:'center',inline:'nearest',behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});
+    }
+  },[osmdRef]);
 
   const playbackData=useMemo(()=>{
     if(!file?.xmlDoc||!window.PlaybackCore)return{events:[],parts:[],measureTimeline:[],totalMeasures:0,totalDuration:0};
@@ -3638,12 +3661,12 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
   },[]);
 
   const handleStop=useCallback(()=>{
-    cancelTransport();
+    cancelTransport();resetCursor();
     isPlayingRef.current=false;
     setIsPlaying(false);
     setPositionSec(0);
     onPlaybackUpdate?.({isPlaying:false,currentMeasure:0});
-  },[cancelTransport,onPlaybackUpdate]);
+  },[cancelTransport,onPlaybackUpdate,resetCursor]);
 
   const schedulePlayback=useCallback(()=>{
     if(!window.Tone)return false;
@@ -3668,7 +3691,7 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
     Tone.Transport.loopEnd=endSec;
     if(!loopEnabled){
       Tone.Transport.scheduleOnce(()=>{
-        Tone.Transport.stop();
+        Tone.Transport.stop();resetCursor();
         isPlayingRef.current=false;
         setIsPlaying(false);
         setPositionSec(playbackData.totalDuration||0);
@@ -3678,7 +3701,7 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
     return true;
   },[
     ensureSynth,playableEvents,currentBpm,loopEnabled,loopStart,loopEnd,
-    getMeasureStart,getMeasureEnd,playbackData.totalDuration,onPlaybackUpdate
+    getMeasureStart,getMeasureEnd,playbackData.totalDuration,onPlaybackUpdate,resetCursor
   ]);
 
   const handlePlay=useCallback(async()=>{
@@ -3696,12 +3719,13 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
       ?loopA
       :Math.min(Math.max(0,basePosition),playbackData.totalDuration||0);
     Tone.Transport.seconds=startAt;
+    syncCursor(startAt,playbackData.measureTimeline);
     Tone.Transport.start();
     isPlayingRef.current=true;
     setIsPlaying(true);
   },[
     isPlaying,file,playableEvents.length,schedulePlayback,positionSec,playbackData.totalDuration,
-    loopEnabled,loopStart,loopEnd,getMeasureStart,getMeasureEnd
+    loopEnabled,loopStart,loopEnd,getMeasureStart,getMeasureEnd,syncCursor,playbackData.measureTimeline
   ]);
 
   const handlePause=useCallback(()=>{
@@ -3767,9 +3791,10 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
       if(!window.Tone)return;
       const sec=Math.max(0,Tone.Transport.seconds||0);
       setPositionSec(loopEnabled?sec:Math.min(sec,playbackData.totalDuration||sec));
+      syncCursor(sec,playbackData.measureTimeline);
     },100);
     return()=>clearInterval(id);
-  },[isPlaying,loopEnabled,playbackData.totalDuration]);
+  },[isPlaying,loopEnabled,playbackData.totalDuration,playbackData.measureTimeline,syncCursor]);
 
   useEffect(()=>{
     onPlaybackUpdate?.({isPlaying,currentMeasure:isPlaying?currentMeasure:0});
@@ -3867,12 +3892,13 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
   </div>;
 }
 
-function TransportBar({files,activeFile,bpm,onBpmChange,onPlaybackUpdate}){
+function TransportBar({files,activeFile,bpm,onBpmChange,onPlaybackUpdate,osmdRef}){
   const file=files[activeFile]||files[0]||null;
   return <div className="transport">
     <MidiPlayer
       file={file}
       fileCount={files.length}
+      osmdRef={osmdRef}
       currentBpm={bpm}
       onBpmChange={onBpmChange}
       onPlaybackUpdate={onPlaybackUpdate}
@@ -4075,7 +4101,7 @@ function App(){
   const shareLoadedRef=useRef(false);
   const osmdRef=useRef(null);
   // OSMD 인스턴스는 P5-3 재생 커서 동기화에 사용합니다.
-  const handleOsmdReady=useCallback(osmd=>{osmdRef.current=osmd;},[]);
+  const handleOsmdReady=useCallback(osmd=>{osmdRef.current?.cursor?.hide();osmdRef.current?.cursor?.reset();osmdRef.current=osmd;},[]);
   const handlePlaybackUpdate=useCallback(next=>{
     setPlayback(prev=>
       prev.isPlaying===next.isPlaying&&prev.currentMeasure===next.currentMeasure?prev:next
@@ -4644,6 +4670,7 @@ function App(){
       bpm={bpm}
       onBpmChange={setBpm}
       onPlaybackUpdate={handlePlaybackUpdate}
+      osmdRef={osmdRef}
     /></PanelErrorBoundary>
 
     {/* ── PROGRESS OVERLAY ── */}
