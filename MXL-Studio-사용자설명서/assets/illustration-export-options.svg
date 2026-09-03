@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720">
+  <defs>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0f7ae5"/><stop offset="1" stop-color="#49b3ff"/></linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#11a97d"/><stop offset="1" stop-color="#7ee2bf"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#1b2430" flood-opacity="0.18"/></filter>
+    <style>
+      .title{font:700 42px Malgun Gothic,Arial,sans-serif;fill:#172033}
+      .label{font:700 24px Malgun Gothic,Arial,sans-serif;fill:#172033}
+      .body{font:500 18px Malgun Gothic,Arial,sans-serif;fill:#526072}
+      .small{font:500 15px Malgun Gothic,Arial,sans-serif;fill:#667386}
+      .card{fill:#fff;stroke:#dfe6ef;stroke-width:2;rx:24;filter:url(#shadow)}
+    </style>
+  </defs>
+  
+  <rect width="1400" height="720" fill="#f8fafc"/>
+  <text x="70" y="86" class="title">내보내기 선택 가이드</text>
+  <text x="72" y="126" class="body">목적에 맞는 출력 형식을 고르면 수업 준비 시간이 줄어듭니다.</text>
+  <g transform="translate(90 220)">
+      <rect width="270" height="300" rx="28" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <rect x="32" y="34" width="86" height="86" rx="22" fill="#0f7ae5"/>
+      <text x="75" y="91" text-anchor="middle" font-size="30" font-family="Arial" font-weight="700" fill="#fff">MXL</text>
+      <text x="32" y="158" class="label">편집 가능한 원본 보존</text>
+      <foreignObject x="32" y="185" width="205" height="90"><div xmlns="http://www.w3.org/1999/xhtml" style="font:500 18px Malgun Gothic,Arial,sans-serif;color:#526072;line-height:1.55">MuseScore 등 다른 편집 도구로 이어 작업할 때</div></foreignObject>
+    </g><g transform="translate(410 220)">
+      <rect width="270" height="300" rx="28" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <rect x="32" y="34" width="86" height="86" rx="22" fill="#16a779"/>
+      <text x="75" y="91" text-anchor="middle" font-size="30" font-family="Arial" font-weight="700" fill="#fff">PNG</text>
+      <text x="32" y="158" class="label">슬라이드와 학습지 이미지</text>
+      <foreignObject x="32" y="185" width="205" height="90"><div xmlns="http://www.w3.org/1999/xhtml" style="font:500 18px Malgun Gothic,Arial,sans-serif;color:#526072;line-height:1.55">한 장짜리 문제, 썸네일, 프레젠테이션에 삽입할 때</div></foreignObject>
+    </g><g transform="translate(730 220)">
+      <rect width="270" height="300" rx="28" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <rect x="32" y="34" width="86" height="86" rx="22" fill="#ef5a7a"/>
+      <text x="75" y="91" text-anchor="middle" font-size="30" font-family="Arial" font-weight="700" fill="#fff">PDF</text>
+      <text x="32" y="158" class="label">인쇄와 배포</text>
+      <foreignObject x="32" y="185" width="205" height="90"><div xmlns="http://www.w3.org/1999/xhtml" style="font:500 18px Malgun Gothic,Arial,sans-serif;color:#526072;line-height:1.55">학생에게 나눠 줄 완성본이 필요할 때</div></foreignObject>
+    </g><g transform="translate(1050 220)">
+      <rect width="270" height="300" rx="28" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <rect x="32" y="34" width="86" height="86" rx="22" fill="#7c5cff"/>
+      <text x="75" y="91" text-anchor="middle" font-size="30" font-family="Arial" font-weight="700" fill="#fff">ABC/LilyPond</text>
+      <text x="32" y="158" class="label">텍스트 악보</text>
+      <foreignObject x="32" y="185" width="205" height="90"><div xmlns="http://www.w3.org/1999/xhtml" style="font:500 18px Malgun Gothic,Arial,sans-serif;color:#526072;line-height:1.55">간단한 코드 공유나 다른 조판 도구로 넘길 때</div></foreignObject>
+    </g>
+  <rect x="90" y="580" width="1210" height="74" rx="24" fill="#eaf4ff" stroke="#bedcff"/>
+  <text x="128" y="626" class="label">실무 팁</text>
+  <text x="260" y="626" class="body">원본 보관은 MXL, 수업 배포는 PDF, 화면 자료는 PNG, 링크 공유는 상단 공유 버튼을 사용합니다.</text>
+</svg>

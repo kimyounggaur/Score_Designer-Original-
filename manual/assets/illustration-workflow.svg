@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="720" viewBox="0 0 1400 720">
+  <defs>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0f7ae5"/><stop offset="1" stop-color="#49b3ff"/></linearGradient>
+    <linearGradient id="mint" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#11a97d"/><stop offset="1" stop-color="#7ee2bf"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#1b2430" flood-opacity="0.18"/></filter>
+    <style>
+      .title{font:700 42px Malgun Gothic,Arial,sans-serif;fill:#172033}
+      .label{font:700 24px Malgun Gothic,Arial,sans-serif;fill:#172033}
+      .body{font:500 18px Malgun Gothic,Arial,sans-serif;fill:#526072}
+      .small{font:500 15px Malgun Gothic,Arial,sans-serif;fill:#667386}
+      .card{fill:#fff;stroke:#dfe6ef;stroke-width:2;rx:24;filter:url(#shadow)}
+    </style>
+  </defs>
+  
+  <rect width="1400" height="720" fill="#f5f8fc"/>
+  <text x="70" y="90" class="title">기본 작업 흐름</text>
+  <text x="72" y="130" class="body">업로드부터 공유까지 한 화면에서 이어지는 수업 자료 제작 과정</text>
+  <g>
+      <rect x="80" y="220" width="210" height="210" rx="26" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="185" cy="292" r="44" fill="url(#blue)"/>
+      <text x="185" y="306" text-anchor="middle" font-family="Arial" font-size="38" font-weight="700" fill="#fff">1</text>
+      <text x="185" y="375" text-anchor="middle" class="label">파일 업로드</text>
+      <text x="185" y="410" text-anchor="middle" class="small">악보 파일 불러오기</text>
+      <path d="M 300 325 H 332" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round"/><path d="M 332 325 l-14 -12 m14 12 l-14 12" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round" fill="none"/>
+    </g><g>
+      <rect x="340" y="220" width="210" height="210" rx="26" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="445" cy="292" r="44" fill="#7c5cff"/>
+      <text x="445" y="306" text-anchor="middle" font-family="Arial" font-size="38" font-weight="700" fill="#fff">2</text>
+      <text x="445" y="375" text-anchor="middle" class="label">편집/변환</text>
+      <text x="445" y="410" text-anchor="middle" class="small">조, 템포, 악기 조정</text>
+      <path d="M 560 325 H 592" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round"/><path d="M 592 325 l-14 -12 m14 12 l-14 12" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round" fill="none"/>
+    </g><g>
+      <rect x="600" y="220" width="210" height="210" rx="26" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="705" cy="292" r="44" fill="url(#mint)"/>
+      <text x="705" y="306" text-anchor="middle" font-family="Arial" font-size="38" font-weight="700" fill="#fff">3</text>
+      <text x="705" y="375" text-anchor="middle" class="label">분석/주석</text>
+      <text x="705" y="410" text-anchor="middle" class="small">코드와 메모 추가</text>
+      <path d="M 820 325 H 852" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round"/><path d="M 852 325 l-14 -12 m14 12 l-14 12" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round" fill="none"/>
+    </g><g>
+      <rect x="860" y="220" width="210" height="210" rx="26" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="965" cy="292" r="44" fill="#ffb340"/>
+      <text x="965" y="306" text-anchor="middle" font-family="Arial" font-size="38" font-weight="700" fill="#fff">4</text>
+      <text x="965" y="375" text-anchor="middle" class="label">저장/공유</text>
+      <text x="965" y="410" text-anchor="middle" class="small">세션과 URL 보관</text>
+      <path d="M 1080 325 H 1112" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round"/><path d="M 1112 325 l-14 -12 m14 12 l-14 12" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round" fill="none"/>
+    </g><g>
+      <rect x="1120" y="220" width="210" height="210" rx="26" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="1225" cy="292" r="44" fill="#ef5a7a"/>
+      <text x="1225" y="306" text-anchor="middle" font-family="Arial" font-size="38" font-weight="700" fill="#fff">5</text>
+      <text x="1225" y="375" text-anchor="middle" class="label">내보내기</text>
+      <text x="1225" y="410" text-anchor="middle" class="small">PDF, PNG, MXL 생성</text>
+      
+    </g>
+  <rect x="80" y="520" width="1240" height="92" rx="24" fill="#eaf4ff" stroke="#bedcff"/>
+  <text x="118" y="568" class="label">핵심 원칙</text>
+  <text x="260" y="568" class="body">중앙 악보를 보면서 좌우 도구를 열고, 히스토리로 되돌리며, 마지막에는 세션 또는 파일로 결과를 보관합니다.</text>
+</svg>

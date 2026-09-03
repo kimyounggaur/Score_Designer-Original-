@@ -1,0 +1,13 @@
+node_modules/
+playwright-report/
+test-results/
+.DS_Store
+Thumbs.db
+_archive/
+tmp/
+tmp-*
+*.log
+.codex-push/
+_site/
+.env
+.env.*

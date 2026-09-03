@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760">
+  <defs>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0d7be8"/><stop offset="1" stop-color="#54c7ff"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#11a97d"/><stop offset="1" stop-color="#89e1bd"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#111827" flood-opacity=".16"/></filter>
+    <style>
+      .title{font:800 44px Malgun Gothic,Arial,sans-serif;fill:#172033}
+      .label{font:800 25px Malgun Gothic,Arial,sans-serif;fill:#172033}
+      .body{font:500 19px Malgun Gothic,Arial,sans-serif;fill:#526072}
+      .small{font:500 16px Malgun Gothic,Arial,sans-serif;fill:#667386}
+      .white{font:800 28px Malgun Gothic,Arial,sans-serif;fill:#fff}
+    </style>
+  </defs>
+  
+  <rect width="1400" height="760" fill="#f5f8fc"/>
+  <text x="74" y="90" class="title">10분 퀵스타트 루트</text>
+  <text x="76" y="132" class="body">처음 쓰는 날에는 아래 6단계만 따라 해도 업로드부터 PDF 공유까지 끝낼 수 있습니다.</text>
+  <g>
+      <rect x="78" y="200" width="360" height="178" rx="28" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="140" cy="268" r="42" fill="#0d7be8"/>
+      <text x="140" y="282" text-anchor="middle" font-family="Arial" font-size="36" font-weight="800" fill="#fff">1</text>
+      <text x="204" y="262" class="label">앱 열기</text>
+      <foreignObject x="204" y="282" width="200" height="76"><div xmlns="http://www.w3.org/1999/xhtml" style="font:500 17px Malgun Gothic,Arial,sans-serif;color:#526072;line-height:1.48">상단 메뉴, 중앙 악보, 좌우 도구 위치를 확인합니다.</div></foreignObject>
+      <path d="M 452 288 H 498" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round"/><path d="M 498 288 l-14 -12 m14 12 l-14 12" stroke="#9aa8ba" stroke-width="6" fill="none" stroke-linecap="round"/>
+      
+    </g><g>
+      <rect x="508" y="200" width="360" height="178" rx="28" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="570" cy="268" r="42" fill="#7c5cff"/>
+      <text x="570" y="282" text-anchor="middle" font-family="Arial" font-size="36" font-weight="800" fill="#fff">2</text>
+      <text x="634" y="262" class="label">파일 업로드</text>
+      <foreignObject x="634" y="282" width="200" height="76"><div xmlns="http://www.w3.org/1999/xhtml" style="font:500 17px Malgun Gothic,Arial,sans-serif;color:#526072;line-height:1.48">MusicXML/MXL 파일을 드래그하거나 클릭해 불러옵니다.</div></foreignObject>
+      <path d="M 882 288 H 928" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round"/><path d="M 928 288 l-14 -12 m14 12 l-14 12" stroke="#9aa8ba" stroke-width="6" fill="none" stroke-linecap="round"/>
+      
+    </g><g>
+      <rect x="938" y="200" width="360" height="178" rx="28" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="1000" cy="268" r="42" fill="#11a97d"/>
+      <text x="1000" y="282" text-anchor="middle" font-family="Arial" font-size="36" font-weight="800" fill="#fff">3</text>
+      <text x="1064" y="262" class="label">조옮김</text>
+      <foreignObject x="1064" y="282" width="200" height="76"><div xmlns="http://www.w3.org/1999/xhtml" style="font:500 17px Malgun Gothic,Arial,sans-serif;color:#526072;line-height:1.48">변환 메뉴 또는 왼쪽 조옮김 아이콘에서 목표 조를 선택합니다.</div></foreignObject>
+      
+      <path d="M 1118 398 V 438 H 258" stroke="#9aa8ba" stroke-width="6" fill="none" stroke-linecap="round"/><path d="M 258 438 l14 -12 m-14 12 l14 12" stroke="#9aa8ba" stroke-width="6" fill="none" stroke-linecap="round"/>
+    </g><g>
+      <rect x="78" y="450" width="360" height="178" rx="28" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="140" cy="518" r="42" fill="#ffb340"/>
+      <text x="140" y="532" text-anchor="middle" font-family="Arial" font-size="36" font-weight="800" fill="#fff">4</text>
+      <text x="204" y="512" class="label">분석/주석</text>
+      <foreignObject x="204" y="532" width="200" height="76"><div xmlns="http://www.w3.org/1999/xhtml" style="font:500 17px Malgun Gothic,Arial,sans-serif;color:#526072;line-height:1.48">코드, 로마 숫자, 주석 메모를 추가해 수업 해설을 만듭니다.</div></foreignObject>
+      <path d="M 452 538 H 498" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round"/><path d="M 498 538 l-14 -12 m14 12 l-14 12" stroke="#9aa8ba" stroke-width="6" fill="none" stroke-linecap="round"/>
+      
+    </g><g>
+      <rect x="508" y="450" width="360" height="178" rx="28" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="570" cy="518" r="42" fill="#ef5a7a"/>
+      <text x="570" y="532" text-anchor="middle" font-family="Arial" font-size="36" font-weight="800" fill="#fff">5</text>
+      <text x="634" y="512" class="label">저장/공유</text>
+      <foreignObject x="634" y="532" width="200" height="76"><div xmlns="http://www.w3.org/1999/xhtml" style="font:500 17px Malgun Gothic,Arial,sans-serif;color:#526072;line-height:1.48">세션 저장, JSON 백업, URL, QR 코드 중 목적에 맞게 고릅니다.</div></foreignObject>
+      <path d="M 882 538 H 928" stroke="#9aa8ba" stroke-width="6" stroke-linecap="round"/><path d="M 928 538 l-14 -12 m14 12 l-14 12" stroke="#9aa8ba" stroke-width="6" fill="none" stroke-linecap="round"/>
+      
+    </g><g>
+      <rect x="938" y="450" width="360" height="178" rx="28" fill="#fff" stroke="#dfe6ef" stroke-width="2" filter="url(#shadow)"/>
+      <circle cx="1000" cy="518" r="42" fill="#3147d7"/>
+      <text x="1000" y="532" text-anchor="middle" font-family="Arial" font-size="36" font-weight="800" fill="#fff">6</text>
+      <text x="1064" y="512" class="label">내보내기</text>
+      <foreignObject x="1064" y="532" width="200" height="76"><div xmlns="http://www.w3.org/1999/xhtml" style="font:500 17px Malgun Gothic,Arial,sans-serif;color:#526072;line-height:1.48">PDF, PNG, MXL로 완성본을 저장하거나 배포합니다.</div></foreignObject>
+      
+      
+    </g>
+  <rect x="76" y="690" width="1248" height="1" fill="#d8e1ec"/>
+  <text x="76" y="724" class="small">권장 순서: 업로드 후 바로 저장/내보내기보다, 먼저 중앙 악보를 보고 변환과 분석이 의도대로 반영됐는지 확인하세요.</text>
+</svg>

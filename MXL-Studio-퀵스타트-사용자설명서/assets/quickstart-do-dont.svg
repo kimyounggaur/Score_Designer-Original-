@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760">
+  <defs>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#0d7be8"/><stop offset="1" stop-color="#54c7ff"/></linearGradient>
+    <linearGradient id="green" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#11a97d"/><stop offset="1" stop-color="#89e1bd"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#111827" flood-opacity=".16"/></filter>
+    <style>
+      .title{font:800 44px Malgun Gothic,Arial,sans-serif;fill:#172033}
+      .label{font:800 25px Malgun Gothic,Arial,sans-serif;fill:#172033}
+      .body{font:500 19px Malgun Gothic,Arial,sans-serif;fill:#526072}
+      .small{font:500 16px Malgun Gothic,Arial,sans-serif;fill:#667386}
+      .white{font:800 28px Malgun Gothic,Arial,sans-serif;fill:#fff}
+    </style>
+  </defs>
+  
+  <rect width="1400" height="760" fill="#f8fafc"/>
+  <text x="74" y="86" class="title">퀵스타트 체크리스트</text>
+  <text x="76" y="128" class="body">처음 사용하는 날에는 이 항목만 확인해도 안정적으로 작업할 수 있습니다.</text>
+  <rect x="80" y="190" width="590" height="470" rx="32" fill="#eefaf4" stroke="#bde7cf" stroke-width="2" filter="url(#shadow)"/>
+  <text x="120" y="250" class="label">하면 좋은 것</text>
+  
+    <circle cx="132" cy="315" r="21" fill="#11a97d"/>
+    <path d="M 122 314 l8 9 l18 -24" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="174" y="324" class="body">파일 업로드 후 중앙 악보를 먼저 확인</text>
+  
+    <circle cx="132" cy="391" r="21" fill="#11a97d"/>
+    <path d="M 122 390 l8 9 l18 -24" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="174" y="400" class="body">큰 편집 전 세션 저장 또는 JSON 백업</text>
+  
+    <circle cx="132" cy="467" r="21" fill="#11a97d"/>
+    <path d="M 122 466 l8 9 l18 -24" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="174" y="476" class="body">조옮김 후 조표와 첫 마디 확인</text>
+  
+    <circle cx="132" cy="543" r="21" fill="#11a97d"/>
+    <path d="M 122 542 l8 9 l18 -24" stroke="#fff" stroke-width="7" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="174" y="552" class="body">학생 배포 전 PDF/URL 직접 열어 보기</text>
+  
+  <rect x="730" y="190" width="590" height="470" rx="32" fill="#fff2f5" stroke="#ffd0dc" stroke-width="2" filter="url(#shadow)"/>
+  <text x="770" y="250" class="label">피하면 좋은 것</text>
+  
+    <circle cx="782" cy="315" r="21" fill="#ef5a7a"/>
+    <path d="M 772 315 l20 20 m0 -20 l-20 20" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+    <text x="824" y="324" class="body">원본 파일 없이 바로 덮어쓰기</text>
+  
+    <circle cx="782" cy="391" r="21" fill="#ef5a7a"/>
+    <path d="M 772 391 l20 20 m0 -20 l-20 20" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+    <text x="824" y="400" class="body">큰 악보를 URL 하나로만 공유하기</text>
+  
+    <circle cx="782" cy="467" r="21" fill="#ef5a7a"/>
+    <path d="M 772 467 l20 20 m0 -20 l-20 20" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+    <text x="824" y="476" class="body">분석 결과를 확인 없이 그대로 배포하기</text>
+  
+    <circle cx="782" cy="543" r="21" fill="#ef5a7a"/>
+    <path d="M 772 543 l20 20 m0 -20 l-20 20" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+    <text x="824" y="552" class="body">팝업 차단 상태에서 PDF 내보내기 반복</text>
+  
+</svg>

@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Roman Analysis Tests</title>
+<script src="roman-analysis-core.js?v=3"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<score-partwise version="3.1">
+  <part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list>
+  <part id="P1">
+    <measure number="1">
+      <attributes>
+        <divisions>1</divisions>
+        <key><fifths>1</fifths></key>
+        <time><beats>4</beats><beat-type>4</beat-type></time>
+      </attributes>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>E</step><octave>5</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>G</step><octave>5</octave></pitch><duration>1</duration></note>
+    </measure>
+    <measure number="2">
+      <note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>F</step><alter>1</alter><octave>4</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>C</step><octave>5</octave></pitch><duration>1</duration></note>
+    </measure>
+    <measure number="3">
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration></note>
+    </measure>
+    <measure number="4">
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration></note>
+    </measure>
+    <measure number="5">
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration></note>
+      <note><chord/><pitch><step>D</step><octave>5</octave></pitch><duration>1</duration></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+function assert(condition, message){
+  if(!condition)throw new Error(message);
+}
+
+function assertEq(actual, expected, message){
+  if(actual!==expected)throw new Error(`${message}: expected ${expected}, got ${actual}`);
+}
+
+function runTests(){
+  assert(window.RomanAnalysis, 'RomanAnalysis namespace is missing');
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  const analysis = window.RomanAnalysis.detectRomanNumeral(doc);
+  assertEq(analysis.keyName, 'G', 'key name');
+  assertEq(analysis.tonicSemi, 7, 'tonic semitone');
+  assertEq(analysis.rows.length, 5, 'analysis row count');
+  assertEq(analysis.rows[0].roman, 'Ⅱm7', 'measure 1 roman numeral');
+  assertEq(analysis.rows[1].roman, 'Ⅴ7', 'measure 2 roman numeral');
+  assertEq(analysis.rows[2].roman, 'Ⅰ', 'measure 3 roman numeral');
+  assertEq(analysis.rows[3].roman, 'Ⅳ', 'measure 4 roman numeral');
+  assertEq(analysis.rows[4].roman, 'Ⅰ', 'measure 5 roman numeral');
+  assert(analysis.cadences.some(c=>c.label==='완전종지 (PAC)'&&c.measure===3), 'PAC cadence at measure 3');
+  assert(analysis.cadences.some(c=>c.label==='변격종지 (PC)'&&c.measure===5), 'PC cadence at measure 5');
+  assert(analysis.progressions.some(p=>p.pair==='Ⅱm7 → Ⅴ7'&&p.count===1), 'two-chord progression summary');
+  window.RomanAnalysis.insertRomanNumerals(doc, analysis.rows);
+  const words = Array.from(doc.querySelectorAll('direction words')).map(w=>w.textContent);
+  assertEq(words.join(','), 'Ⅱm7,Ⅴ7,Ⅰ,Ⅳ,Ⅰ', 'inserted words');
+  return 'PASS';
+}
+
+try{
+  document.getElementById('out').textContent = runTests();
+}catch(error){
+  document.getElementById('out').textContent = `FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>

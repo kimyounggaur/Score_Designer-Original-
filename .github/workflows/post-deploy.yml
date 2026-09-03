@@ -1,0 +1,23 @@
+name: Post-deploy Smoke
+
+on:
+  workflow_run:
+    workflows: ["Deploy static site to GitHub Pages"]
+    types: [completed]
+
+jobs:
+  smoke:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: sleep 60
+      - run: npm run e2e:prod
+        env:
+          PROD_BASE_URL: https://kimyounggaur.github.io/Score_Designer-Original-

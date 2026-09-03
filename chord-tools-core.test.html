@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>Chord Tools Core Tests</title>
+<script src="chord-tools-core.js?v=3"></script>
+</head>
+<body>
+<pre id="out">running...</pre>
+<script>
+function assert(condition,message){
+  if(!condition)throw new Error(message);
+}
+
+const xml = `<score-partwise>
+  <part id="P1">
+    <measure number="1">
+      <harmony><kind>none</kind></harmony>
+      <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note>
+    </measure>
+    <measure number="2">
+      <harmony><root><root-step>G</root-step></root><kind>major</kind></harmony>
+      <note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration></note>
+    </measure>
+    <measure number="3">
+      <direction><direction-type><words>N.C.</words></direction-type></direction>
+      <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration></note>
+    </measure>
+    <measure number="4">
+      <harmony><root><root-step>A</root-step></root><kind text="N.C.">none</kind></harmony>
+      <note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration></note>
+    </measure>
+  </part>
+</score-partwise>`;
+
+try{
+  assert(window.ChordToolsCore, 'ChordToolsCore namespace is missing');
+  assert(typeof window.ChordToolsCore.isNoChordHarmony === 'function', 'isNoChordHarmony missing');
+  assert(typeof window.ChordToolsCore.preserveNoChordHarmonies === 'function', 'preserveNoChordHarmonies missing');
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  const measures = doc.querySelectorAll('measure');
+  assert(window.ChordToolsCore.measureHasNoChordHarmony(measures[0]), 'measure 1 should be treated as N.C');
+  assert(!window.ChordToolsCore.measureHasNoChordHarmony(measures[1]), 'ordinary harmony should not be N.C');
+  assert(window.ChordToolsCore.measureHasNoChordHarmony(measures[2]), 'direction words N.C should block auto chords');
+  assert(window.ChordToolsCore.measureHasNoChordHarmony(measures[3]), 'kind text N.C should block auto chords');
+  window.ChordToolsCore.preserveNoChordHarmonies(doc);
+  assert(doc.querySelectorAll('measure')[0].querySelectorAll('harmony').length === 1, 'N.C harmony must remain');
+  assert(doc.querySelectorAll('measure')[0].querySelector('kind').textContent === 'none', 'N.C kind must remain none');
+  assert(doc.querySelectorAll('measure')[1].querySelectorAll('harmony').length === 0, 'ordinary harmony should be removable when replacing');
+  document.getElementById('out').textContent = 'PASS';
+}catch(error){
+  document.getElementById('out').textContent = `FAIL\n${error.message}`;
+  throw error;
+}
+</script>
+</body>
+</html>
