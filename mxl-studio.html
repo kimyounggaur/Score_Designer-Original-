@@ -192,6 +192,14 @@ function midiToNote(midi){const o=Math.floor(midi/12)-1;const s=((midi%12)+12)%1
 function fmtNote(n){return n?n.step+(n.alter===1?'#':n.alter===-1?'♭':'')+n.octave:'-'}
 function parseNoteStr(s){const m=s.match(/^([A-G])([#b]?)(\d+)$/);if(!m)return null;return{step:m[1],alter:m[2]==='#'?1:m[2]==='b'?-1:0,octave:parseInt(m[3])}}
 function cloneDoc(d){return new DOMParser().parseFromString(new XMLSerializer().serializeToString(d),'text/xml')}
+const MAX_FILE_BYTES=20*1024*1024;
+const MAX_FILES=30;
+function uniqueFileName(name,used){
+  const dot=name.lastIndexOf('.');const stem=dot<0?name:name.slice(0,dot);const ext=dot<0?'':name.slice(dot);
+  let result=name;let suffix=2;
+  while(used.has(result))result=`${stem} (${suffix++})${ext}`;
+  used.add(result);return result;
+}
 function activeDoc(files,activeFile){return (files[activeFile]||files[0])?.xmlDoc||null;}
 function commitFile(file, doc, extra){
   const xmlString=new XMLSerializer().serializeToString(doc);
@@ -578,7 +586,7 @@ const GlobalHistoryCore = window.HistoryCore || {
 /* ==============================================================
    PANEL: UPLOAD
    ============================================================== */
-function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear}){
+function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear,uploadLog}){
   const [dragging,setDragging]=useState(false);
   const inputRef=useRef();
 
@@ -599,7 +607,7 @@ function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear}){
       <div className="upload-zone__title">파일을 여기에 드래그하거나 클릭하세요</div>
       <div className="upload-zone__subtitle">.mxl, .xml, .musicxml 파일 지원</div>
       <input ref={inputRef} className="upload-zone__input" type="file" multiple accept=".mxl,.xml,.musicxml"
-        onChange={e=>onFilesAdd(e.target.files)}/>
+        onChange={e=>{onFilesAdd(Array.from(e.target.files));e.target.value='';}}/>
     </div>
 
     {files.length>0 && <div className="file-list">
@@ -616,6 +624,7 @@ function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear}){
       })}
     </div>}
 
+    <LogPanel lines={uploadLog||[]}/>
     {files.length>0 && <div className="btn-row">
       <button className="btn btn--secondary" onClick={onClear}>🗑️ 전체 삭제</button>
     </div>}
@@ -3897,6 +3906,8 @@ function App(){
   const [leftPanel,setLeftPanel]=useState('upload');
   const [rightPanel,setRightPanel]=useState('chords');
   const [files,setFiles]=useState([]);
+  const [uploadLog,setUploadLog]=useState([]);
+  const uploadingRef=useRef(false);
   const [activeFile,setActiveFile]=useState(0);
   const [showLeft,setShowLeft]=useState(true);
   const [showRight,setShowRight]=useState(true);
@@ -4144,43 +4155,50 @@ function App(){
   },[undo,redo]);
 
   const addFiles=useCallback(async(fileList)=>{
-    showProgress('파일 읽는 중...');
-    const newFiles=[];
-    for(const file of fileList){
-      try{
-        const ext=file.name.split('.').pop().toLowerCase();
-        if(!['mxl','xml','musicxml'].includes(ext)){
-          const detail=ext==='pdf'
-            ? 'PDF는 직접 불러올 수 없습니다. MuseScore 등에서 MusicXML(.mxl, .musicxml, .xml)로 내보낸 뒤 업로드하세요.'
-            : '지원하지 않는 파일 형식입니다. MusicXML(.mxl, .xml, .musicxml) 파일을 업로드하세요.';
-          throw new Error(detail);
-        }
-        let xmlString;
-        if(ext==='mxl'){
-          const zip=await JSZip.loadAsync(file);let xmlFile=null;
-          const container=zip.file('META-INF/container.xml');
-          if(container){const cx=await container.async('string');const cd=new DOMParser().parseFromString(cx,'text/xml');
-            const rf=cd.querySelector('rootfile');if(rf){xmlFile=zip.file(rf.getAttribute('full-path'))}}
-          if(!xmlFile)zip.forEach((path,entry)=>{if(!entry.dir&&path.endsWith('.xml')&&!path.startsWith('META-INF'))xmlFile=entry});
-          if(!xmlFile)throw new Error('XML not found in MXL');
-          xmlString=await xmlFile.async('string');
-        }else{xmlString=await file.text()}
-        const isPdfPayload=/^\s*%PDF-/.test(xmlString||'');
-        const xmlDoc=new DOMParser().parseFromString(xmlString,'text/xml');
-        if(xmlDoc.querySelector('parsererror')){
-          if(ext==='pdf'||isPdfPayload)throw new Error('PDF는 직접 불러올 수 없습니다. MuseScore 등에서 MusicXML(.mxl, .musicxml, .xml)로 내보낸 뒤 업로드하세요.');
-          throw new Error('XML 파싱 오류');
-        }
-        newFiles.push({name:file.name,xmlDoc,xmlString});
-      }catch(e){alert(`${file.name}: ${e.message}`)}
-    }
-    if(newFiles.length){
-      const merged=[...files,...newFiles];
-      setFiles(merged);
-      pushHistory(merged,'파일 업로드');
-    }
-    hideProgress();
-  },[files,activeFile,showProgress,hideProgress,pushHistory]);
+    if(uploadingRef.current){setUploadLog(l=>[...l,{m:'파일을 읽는 중입니다. 완료 후 다시 추가하세요.',t:'warn'}]);return;}
+    uploadingRef.current=true;
+    const incoming=Array.from(fileList||[]),newFiles=[],lines=[];
+    const used=new Set(files.map(file=>file.name));
+    setUploadLog([]);
+    try{
+      for(let i=0;i<incoming.length;i++){
+        const file=incoming[i];
+        showProgress(`파일 읽는 중... (${i+1}/${incoming.length})`);
+        await new Promise(resolve=>setTimeout(resolve,0));
+        try{
+          if(files.length+newFiles.length>=MAX_FILES){lines.push({m:'파일은 최대 30개까지 열 수 있습니다.',t:'warn'});break;}
+          if(file.size>MAX_FILE_BYTES)throw new Error('20MB를 넘는 파일은 열 수 없습니다.');
+          const ext=file.name.split('.').pop().toLowerCase();
+          if(!['mxl','xml','musicxml'].includes(ext))throw new Error(ext==='pdf'?'PDF는 직접 불러올 수 없습니다. MusicXML로 내보낸 뒤 업로드하세요.':'지원하지 않는 파일 형식입니다. MusicXML 파일을 업로드하세요.');
+          let xmlString;
+          if(ext==='mxl'){
+            if(!window.JSZip)throw new Error('MXL 압축 라이브러리를 불러오지 못했습니다.');
+            const zip=await JSZip.loadAsync(file);let xmlFile=null;
+            const container=zip.file('META-INF/container.xml');
+            if(container){
+              const containerDoc=new DOMParser().parseFromString(await container.async('string'),'text/xml');
+              const rootfiles=containerDoc.querySelectorAll('rootfile');
+              if(rootfiles.length>1)lines.push({m:`rootfile ${rootfiles.length}개 중 첫 번째를 열었습니다.`,t:'info'});
+              if(rootfiles[0])xmlFile=zip.file(rootfiles[0].getAttribute('full-path'));
+            }
+            if(!xmlFile)zip.forEach((name,entry)=>{if(!xmlFile&&!entry.dir&&/\.(xml|musicxml)$/i.test(name)&&!name.startsWith('META-INF/'))xmlFile=entry;});
+            if(!xmlFile)throw new Error('압축 파일에서 MusicXML 악보를 찾지 못했습니다.');
+            if(xmlFile._data?.uncompressedSize>MAX_FILE_BYTES)throw new Error('압축 해제한 악보가 20MB를 넘습니다.');
+            xmlString=await xmlFile.async('string');
+          }else xmlString=await file.text();
+          if(new TextEncoder().encode(xmlString).length>MAX_FILE_BYTES)throw new Error('20MB를 넘는 악보는 열 수 없습니다.');
+          const xmlDoc=new DOMParser().parseFromString(xmlString,'text/xml');
+          if(xmlDoc.querySelector('parsererror'))throw new Error('XML 파싱 오류입니다. 파일을 확인하세요.');
+          if(xmlDoc.documentElement.localName!=='score-partwise'||!xmlDoc.querySelector('part'))throw new Error('지원하는 MusicXML 악보가 아닙니다.');
+          const name=uniqueFileName(file.name,used);
+          newFiles.push({name,sourceName:file.name,xmlDoc,xmlString});
+          if(name!==file.name)lines.push({m:`중복 이름을 ${name}(으)로 변경했습니다.`,t:'info'});
+        }catch(error){lines.push({m:`${file.name}: ${error.message}`,t:'err'});}
+      }
+      if(newFiles.length){const merged=[...files,...newFiles];setFiles(merged);pushHistory(merged,'파일 업로드');}
+      setUploadLog(lines);
+    }finally{uploadingRef.current=false;hideProgress();}
+  },[files,showProgress,hideProgress,pushHistory]);
 
   const removeFile=useCallback(i=>{
     const updated=files.filter((_,j)=>j!==i);
@@ -4290,7 +4308,7 @@ function App(){
   const selectRightPanel=useCallback(id=>{setRightPanel(id);setShowRight(true);},[]);
 
   const ALL_PANELS={
-    upload:<UploadPanel files={files} onFilesAdd={addFiles} onRemove={removeFile} onClear={clearFiles}/>,
+    upload:<UploadPanel uploadLog={uploadLog} files={files} onFilesAdd={addFiles} onRemove={removeFile} onClear={clearFiles}/>,
     transpose:<TransposePanel {...panelProps}/>,
     keychange:<KeyChangePanel {...panelProps}/>,
     capo:<CapoPanel {...panelProps}/>,
