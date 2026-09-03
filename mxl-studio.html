@@ -462,6 +462,14 @@ function noteToNumStr(step,alter,oct,keyRoot,mode,showOct,showSharp){
   return r;
 }
 
+function printScore(name){
+  const previous=document.title;
+  const restore=()=>{document.title=previous;};
+  document.title=(name||'악보').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/\.(mxl|xml|musicxml)$/i,'');
+  window.addEventListener('afterprint',restore,{once:true});
+  try{window.print();}finally{restore();}
+}
+
 function downloadBlob(blob,name){const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u)}
 
 function getIntervalName(s){
@@ -2064,7 +2072,7 @@ function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpda
 /* ==============================================================
    PANEL: EXPORT (이미지 / PDF)
    ============================================================== */
-function ExportPanel({files,activeFile=0,showProgress,hideProgress}){
+function ExportPanel({files,activeFile=0,onSelectActiveFile,showProgress,hideProgress}){
   const notify=useNotify();
   const [selIdx,setSelIdx]=useState(activeFile);
   useEffect(()=>setSelIdx(activeFile),[activeFile]);
@@ -2154,34 +2162,11 @@ function ExportPanel({files,activeFile=0,showProgress,hideProgress}){
   },[previewReady,scale,bgWhite,files,selIdx,showProgress,hideProgress]);
 
   // Export as PDF
-  const exportPDF=useCallback(async()=>{
-    if(!previewRef.current||!previewReady){notify('먼저 미리보기를 실행해주세요.','warn');return}
-    setLog([]);showProgress('PDF 생성 중...');await new Promise(r=>setTimeout(r,100));
-    try{
-      const svgEl=previewRef.current.querySelector('svg');
-      if(!svgEl)throw new Error('SVG를 찾을 수 없습니다.');
-
-      const fn=files[selIdx]?.name?.replace(/\.(mxl|xml|musicxml)$/i,'')||'score';
-      const svgClone=svgEl.cloneNode(true);
-      const svgRect=svgEl.getBoundingClientRect();
-      svgClone.setAttribute('width',svgRect.width);
-      svgClone.setAttribute('height',svgRect.height);
-      const svgData=new XMLSerializer().serializeToString(svgClone);
-
-      const printWindow=window.open('','_blank');
-      if(!printWindow){setLog([{m:'❌ 팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.',t:'err'}]);hideProgress();return}
-
-      printWindow.document.write(`<!DOCTYPE html><html><head><title>${fn}</title>
-        <style>@page{margin:10mm}body{margin:0;padding:0;background:#fff}svg{max-width:100%;height:auto}</style>
-        </head><body>${svgData}</body></html>`);
-      printWindow.document.close();
-
-      setTimeout(()=>{printWindow.print();
-        setLog([{m:`✓ ${fn}.pdf — 인쇄 대화상자에서 "PDF로 저장"을 선택하세요.`,t:'ok'}]);
-        hideProgress();
-      },800);
-    }catch(e){setLog([{m:'❌ '+e.message,t:'err'}]);hideProgress()}
-  },[previewReady,files,selIdx,showProgress,hideProgress]);
+  const exportPDF=useCallback(()=>{
+    const file=files[selIdx]||files[activeFile];
+    if(!file){notify('먼저 파일을 업로드하세요.','warn');return;}
+    printScore(file.name);
+  },[files,activeFile,selIdx,notify]);
 
   // Export all files as PNG zip
   const exportAllPNG=useCallback(async()=>{
@@ -2263,7 +2248,7 @@ function ExportPanel({files,activeFile=0,showProgress,hideProgress}){
 
     {files.length>0 && <div className="card">
       <div className="card__title">📄 파일 선택</div>
-      <select className="form-select" value={selIdx} onChange={e=>setSelIdx(parseInt(e.target.value))}>
+      <select className="form-select" value={selIdx} onChange={e=>{const index=parseInt(e.target.value);setSelIdx(index);onSelectActiveFile?.(index);}}>
         {files.map((f,i)=><option key={i} value={i}>{f.name}</option>)}
       </select>
     </div>}
@@ -3517,6 +3502,33 @@ function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasur
   const scoreRenderRef=useRef(null);
   const osmdRef=useRef(null);
   const ossiaOsmdRef=useRef(null);
+  const [zoom,setZoom]=useState(()=>{try{const value=Number(localStorage.getItem('mxlStudio.zoom'));return Number.isFinite(value)&&value>=.5&&value<=2?value:1;}catch(_){return 1;}});
+  const zoomRef=useRef(zoom);zoomRef.current=zoom;
+  const readyRef=useRef(false);
+  const printingRef=useRef(false);
+  const changeZoom=useCallback(value=>setZoom(Math.round(Math.max(.5,Math.min(2,value))*10)/10),[]);
+  const redraw=useCallback(value=>{
+    if(!readyRef.current||!osmdRef.current)return;
+    try{osmdRef.current.zoom=value;osmdRef.current.render();applyLyricStylesToSvg(scoreRenderRef.current,activeDoc(files,activeFile));}
+    catch(error){setRenderError(error.message);}
+  },[files,activeFile]);
+  const fitZoom=useCallback(()=>{
+    const svg=scoreRenderRef.current?.querySelector('svg');
+    if(!svg||!containerRef.current)return;
+    const width=parseFloat(svg.getAttribute('width'))||svg.getBoundingClientRect().width;
+    if(width>0)changeZoom(zoomRef.current*(containerRef.current.clientWidth-40)*.95/width);
+  },[changeZoom]);
+  useEffect(()=>{try{localStorage.setItem('mxlStudio.zoom',String(zoom));}catch(_){}redraw(zoom);},[zoom]);
+  useEffect(()=>{
+    const keydown=event=>{
+      if(!(event.ctrlKey||event.metaKey)||/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName)||event.target?.isContentEditable)return;
+      if(['=','+','-','0'].includes(event.key)){event.preventDefault();changeZoom(event.key==='0'?1:zoomRef.current+(event.key==='-'?-.1:.1));}
+    };
+    const before=()=>{printingRef.current=true;redraw(1);};
+    const after=()=>{printingRef.current=false;redraw(zoomRef.current);};
+    window.addEventListener('keydown',keydown);window.addEventListener('beforeprint',before);window.addEventListener('afterprint',after);
+    return()=>{window.removeEventListener('keydown',keydown);window.removeEventListener('beforeprint',before);window.removeEventListener('afterprint',after);};
+  },[redraw,changeZoom]);
   const [rendered,setRendered]=useState(false);
   const [renderError,setRenderError]=useState(null);
   const [ossiaError,setOssiaError]=useState(null);
@@ -3526,7 +3538,7 @@ function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasur
     if(!files.length||!containerRef.current||!scoreRenderRef.current){setRendered(false);if(onOsmdReady)onOsmdReady(null);return}
     const file=files[activeFile]||files[0];
     setRenderError(null);setOssiaError(null);setRendered(false);
-    let cancelled=false;
+    let cancelled=false;readyRef.current=false;
     if(onOsmdReady)onOsmdReady(null);
     (async()=>{
       try{
@@ -3538,7 +3550,8 @@ function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasur
         osmdRef.current=osmd;
         await osmd.load(new XMLSerializer().serializeToString(file.xmlDoc));
         if(cancelled)return;
-        osmd.render();
+        osmd.zoom=zoomRef.current;
+        osmd.render();readyRef.current=true;
         if(onOsmdReady)onOsmdReady(osmd);
         applyLyricStylesToSvg(scoreRenderRef.current,file.xmlDoc);
 
@@ -3567,7 +3580,7 @@ function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasur
         if(!cancelled)setRenderError(e.message);
       }
     })();
-    return()=>{cancelled=true};
+    return()=>{cancelled=true;readyRef.current=false};
   },[files,activeFile,renderAttempt]);
 
   if(!files.length)return <div className="main-score">
@@ -3595,6 +3608,12 @@ function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasur
     <div className="score-container" ref={containerRef} id="score-panel" role={files.length>1?'tabpanel':undefined} aria-labelledby={files.length>1?`file-tab-${activeFile}`:undefined}>
       <div className="ossia-inline" ref={ossiaRef}/>
       <div className="score-main-render" ref={scoreRenderRef}/>
+    </div>
+    <div className="score-zoom" aria-label="악보 확대 및 축소">
+      <button type="button" aria-label="악보 축소" onClick={()=>changeZoom(zoom-.1)}>－</button>
+      <button type="button" aria-label="악보 확대율 초기화" onClick={()=>changeZoom(1)}>{Math.round(zoom*100)}%</button>
+      <button type="button" aria-label="악보 확대" onClick={()=>changeZoom(zoom+.1)}>＋</button>
+      <button type="button" aria-label="악보 너비 맞춤" onClick={fitZoom}>맞춤</button>
     </div>
   </div>;
 }
@@ -4412,7 +4431,7 @@ function App(){
     setFiles(committed);
     pushHistory(committed,label);
   },[pushHistory]);
-  const panelProps={files,activeFile,showProgress,hideProgress,onFilesUpdate:updateFiles};
+  const panelProps={files,activeFile,onSelectActiveFile:setActiveFile,showProgress,hideProgress,onFilesUpdate:updateFiles};
 
   useEffect(()=>{
     window.__mxlSetActiveFile=index=>setActiveFile(Math.max(0,Math.min(index,files.length-1)));
@@ -4484,20 +4503,10 @@ function App(){
   },[files,activeFile,showProgress,hideProgress]);
 
   const exportPDF=useCallback(()=>{
-    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
-    const svgEl=document.querySelector('.score-main-render svg');
-    if(!svgEl){notify('악보가 렌더링되지 않았습니다.','warn');return}
-    const fn=(files[activeFile]||files[0]).name.replace(/\.(mxl|xml|musicxml)$/i,'');
-    const svgClone=svgEl.cloneNode(true);
-    const svgRect=svgEl.getBoundingClientRect();
-    svgClone.setAttribute('width',svgRect.width);svgClone.setAttribute('height',svgRect.height);
-    const svgData=new XMLSerializer().serializeToString(svgClone);
-    const win=window.open('','_blank');
-    if(!win){notify('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.','err',{duration:8000});return}
-    win.document.write(`<!DOCTYPE html><html><head><title>${fn}</title><style>@page{margin:10mm}body{margin:0;padding:0;background:#fff}svg{max-width:100%;height:auto}</style></head><body>${svgData}</body></html>`);
-    win.document.close();
-    setTimeout(()=>win.print(),800);
-  },[files,activeFile]);
+    const file=files[activeFile];
+    if(!file){notify('먼저 파일을 업로드하세요.','warn');return;}
+    printScore(file.name);
+  },[files,activeFile,notify]);
 
   const selectLeftPanel=useCallback(id=>{setLeftPanel(id);setShowLeft(true);},[]);
   const selectRightPanel=useCallback(id=>{setRightPanel(id);setShowRight(true);},[]);
