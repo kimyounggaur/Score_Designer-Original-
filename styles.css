@@ -2337,3 +2337,15 @@ body {
 .resize-handle--left { right:0; }.resize-handle--right { left:0; }
 .resize-handle:hover,.resize-handle:focus-visible { background:var(--accent); opacity:.65; }
 .header__badge { max-width:220px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+
+.session-modal { width:min(900px,calc(100vw - 32px)); max-height:85vh; overflow:auto; }
+.session-modal h3 { margin:20px 0 10px; font-size:16px; }
+.session-save-row { display:flex; align-items:center; gap:10px; }.session-save-row label { flex-shrink:0; }
+.session-save-row input { min-width:0; flex:1; }
+.session-table-wrap { overflow:auto; }
+.session-table { width:100%; border-collapse:collapse; font-size:14px; }
+.session-table th,.session-table td { padding:10px 8px; text-align:left; border-bottom:1px solid #ddd; }
+.session-row-actions { display:flex; flex-wrap:wrap; gap:5px; min-width:180px; }
+.session-row-actions button { font:inherit; padding:5px 8px; border:1px solid #ccc; border-radius:5px; background:#fff; color:#222; cursor:pointer; }
+.session-confirm { margin:12px 0; padding:12px; background:#fff4d6; border-radius:8px; color:#573b00; }
+.session-confirm .btn { margin-right:8px; }.session-storage { margin-top:16px; color:#555; font-size:13px; }

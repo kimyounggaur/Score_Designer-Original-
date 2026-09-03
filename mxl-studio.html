@@ -3370,7 +3370,7 @@ function applyLyricStylesToSvg(container,xmlDoc){
    ============================================================== */
 function ActivityIcon({icon}){return <span aria-hidden="true">{icon==='capo_svg'?<svg enableBackground="new 0 0 64 64" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" className="activity-icon"><g><g><g><g><path d="m53.9844437 12.04v1.2600002l-22.1299992 3.71-9.5599995 1.6100006c-2.1276703.2700176-2.8390522 3.2936745-1.0499039 4.4800148 4.4422474 3.2166824 24.5818214 17.7894573 29.4199028 21.2899837l-.4599991.5900002-18.4500007-11.2000007c-.2600002-.1499977-.5799999-.1800003-.8600006-.079998-.2799988.0999985-.5099983.3199997-.6099987.6100006l-4.1800003 12.0099983h-1.2900009l3.4400005-13.8400002c.1000004-.4300003-.0799999-.8699989-.4599991-1.1000004l-9.9099998-6.0099983c-1.2125359-.7878056-2.9595737.191925-2.9099655 1.6400509-.0032091 6.0960388.0022526 18.8394089-.0000353 24.9899483h-2.3599997l-2.5799999-32.2999992c-.3102512-3.0670624 2.248661-5.9857826 5.3400478-6.0399542-.0000486-.0000468 38.6099511-1.6200466 38.6099511-1.6200466zm-36.0699997 6.8399992c-.101759-3.9959745-5.9388266-3.9951725-6.0399981.0000916.1043539 3.9818439 5.9362364 3.981039 6.0399981-.0000916z" fill="currentColor"/><path d="m16.974 34.39h.97v13.3h-.97z" fill="currentColor"/><path d="m14.8944445 17.8500004c1.3369493.0188828 1.3467607 2.0289402-.000041 2.0499973-1.344841-.0265503-1.3345757-2.0260124.000041-2.0499973z" fill="currentColor"/></g></g></g></g></svg>:icon==='panflute_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" className="activity-icon"><g><rect x="8" y="4" width="6" height="12" rx="3" fill="currentColor"/><rect x="16" y="4" width="6" height="14" rx="3" fill="currentColor"/><rect x="24" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="32" y="4" width="6" height="18" rx="3" fill="currentColor"/><rect x="40" y="4" width="6" height="16" rx="3" fill="currentColor"/><rect x="48" y="4" width="6" height="14" rx="3" fill="currentColor"/><path d="M6 22 Q6 16 12 16 L52 16 Q58 16 58 22 L58 28 Q58 30 56 30 L8 30 Q6 30 6 28 Z" fill="#E85A5A"/><circle cx="14" cy="24" r="2.5" fill="#3D4550"/><circle cx="24" cy="24" r="2.5" fill="#3D4550"/><circle cx="34" cy="24" r="2.5" fill="#3D4550"/><circle cx="44" cy="24" r="2.5" fill="#3D4550"/><circle cx="54" cy="24" r="2.5" fill="#3D4550"/></g></svg>:icon==='transpose_svg'?<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" className="activity-icon"><g><line x1="4" y1="16" x2="60" y2="16" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="24" x2="60" y2="24" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="32" x2="60" y2="32" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="40" x2="60" y2="40" stroke="#A89A6B" strokeWidth="2"/><line x1="4" y1="48" x2="60" y2="48" stroke="#A89A6B" strokeWidth="2"/><text x="12" y="42" fontSize="24" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">9</text><text x="14" y="52" fontSize="16" fontFamily="serif" fill="#9B9FD8" fontWeight="bold">8</text><path d="M 20 26 Q 18 32 20 38" stroke="#9B9FD8" strokeWidth="3" fill="none" strokeLinecap="round"/><path d="M 36 32 L 34 22 L 32 28 L 30 22 L 28 32" stroke="#9B9FD8" strokeWidth="2.5" fill="none"/><path d="M 48 26 L 46 16 L 44 22 L 42 16 L 40 26" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/><path d="M 56 28 L 54 18 L 52 24 L 50 18 L 48 28" stroke="#F0A9D6" strokeWidth="2.5" fill="none"/></g></svg>:icon}</span>;}
 
-function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportXML,onExportPNG,onExportPDF,files,activeFile=0}){
+function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportXML,onExportPNG,onExportPDF,onSession,files,activeFile=0}){
   const [open,setOpen]=useState(null);
   const [ddPos,setDdPos]=useState({top:78,left:0});
   const navRef=useRef();
@@ -3402,6 +3402,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportXML,onExportPNG
   const groups=[
     {id:'file',label:'파일',items:[
       {icon:'📂',label:'파일 업로드',         onClick:()=>sel('left','upload')},
+      {icon:'💾',label:'세션 관리…',onClick:()=>close(onSession)},
       {sep:true},
       {icon:'⬇',label:'MXL(.mxl) 내보내기',         onClick:()=>close(onExportMXL), dis:!files.length},
       {icon:'⬇',label:'MusicXML(.xml) 내보내기',onClick:()=>close(onExportXML),dis:!files.length},
@@ -3965,6 +3966,111 @@ const PANEL_LABELS={
   lyricstyle:'가사 스타일',chords:'코드 분석',roman:'로마 숫자 분석',stats:'통계 분석',
 };
 
+function useModalA11y(open,onClose,dialogRef){
+  const closeRef=useRef(onClose);
+  closeRef.current=onClose;
+  useEffect(()=>{
+    if(!open)return;
+    const previous=document.activeElement;
+    const dialog=dialogRef.current;
+    if(!dialog)return;
+    const focusable=()=>Array.from(dialog.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),a[href],[tabindex="0"]')).filter(element=>element.getClientRects().length);
+    const focusTimer=setTimeout(()=>{(focusable()[0]||dialog).focus();},0);
+    const keydown=event=>{
+      if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closeRef.current();}
+      if(event.key==='Tab'){
+        const list=focusable(),first=list[0],last=list[list.length-1];
+        if(!first){event.preventDefault();dialog.focus();return;}
+        if(event.shiftKey&&(document.activeElement===first||!dialog.contains(document.activeElement))){event.preventDefault();last.focus();}
+        else if(!event.shiftKey&&(document.activeElement===last||!dialog.contains(document.activeElement))){event.preventDefault();first.focus();}
+      }
+    };
+    document.addEventListener('keydown',keydown,true);
+    return()=>{clearTimeout(focusTimer);document.removeEventListener('keydown',keydown,true);if(previous?.isConnected)previous.focus();};
+  },[open,dialogRef]);
+}
+
+function SessionModal({open,onClose,files,activeFile,onRestore,notify,sessionStatus,onStorageChange}){
+  const dialogRef=useRef(null);
+  const [name,setName]=useState('');
+  const [sessions,setSessions]=useState([]);
+  const [pending,setPending]=useState(null);
+  const [busy,setBusy]=useState(false);
+  const [renameId,setRenameId]=useState(null);
+  const [renameValue,setRenameValue]=useState('');
+  useModalA11y(open,onClose,dialogRef);
+  const refresh=useCallback(async()=>{
+    if(!window.SessionStoreCore)return;
+    setSessions(await window.SessionStoreCore.listSessions());onStorageChange?.();
+  },[onStorageChange]);
+  useEffect(()=>{if(open){setName(`악보 세션 ${new Date().toLocaleString('sv-SE').slice(0,16)}`);setPending(null);setRenameId(null);refresh().catch(error=>notify(error.message,'err'));}},[open,refresh]);
+  const perform=async(action)=>{
+    if(busy)return;
+    setBusy(true);
+    try{await action();}catch(error){notify(error.message||'세션 처리에 실패했습니다.','err');}finally{setBusy(false);}
+  };
+  const save=()=>perform(async()=>{
+    if(!files.length){notify('먼저 파일을 업로드하세요.','warn');return;}
+    if(!window.SessionStoreCore)throw new Error('세션 저장소를 사용할 수 없습니다.');
+    const session={id:`slot-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,version:1,name:name.trim()||'악보 세션',savedAt:new Date().toISOString(),activeFile,files:serializeSessionFiles(files)};
+    const result=await window.SessionStoreCore.saveSession(session);
+    if(!result.ok)throw new Error(result.reason==='too-large'?'세션이 4MB를 넘어 저장하지 못했습니다.':'세션 저장에 실패했습니다.');
+    await refresh();notify('세션을 저장했습니다.','ok');
+  });
+  const restore=async session=>{
+    await onRestore(session);setPending(null);onClose();notify('세션을 불러왔습니다.','ok');
+  };
+  const askRestore=async session=>{
+    if(!session)throw new Error('세션을 찾지 못했습니다.');
+    if(files.length)setPending({type:'restore',session});else await restore(session);
+  };
+  const confirm=()=>perform(async()=>{
+    if(pending.type==='restore')await restore(pending.session);
+    else{await window.SessionStoreCore.deleteSession(pending.id);setPending(null);await refresh();notify('세션을 삭제했습니다.','ok');}
+  });
+  const exportJson=session=>{
+    const safe=(session.name||session.id||'세션').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_');
+    const stamp=new Date().toISOString().replace(/[-:]/g,'').slice(0,13).replace('T','-');
+    downloadBlob(new Blob([JSON.stringify(session,null,2)],{type:'application/json'}),`mxl-session-${safe}-${stamp}.json`);
+  };
+  const importJson=event=>{
+    const file=event.target.files?.[0];event.target.value='';if(!file)return;
+    perform(async()=>{
+      if(file.size>4*1024*1024)throw new Error('세션 JSON은 4MB 이하만 가져올 수 있습니다.');
+      const session=JSON.parse(await file.text());
+      if(session?.version!==1||!Array.isArray(session.files)||!session.files.length||session.files.length>MAX_FILES)throw new Error('지원하는 세션 JSON 형식이 아닙니다.');
+      const restored=hydrateSessionFiles(session);
+      if(restored.length!==session.files.length||restored.some(file=>file.xmlDoc.documentElement.localName!=='score-partwise'))throw new Error('세션 안의 MusicXML 악보를 읽을 수 없습니다.');
+      await askRestore({...session,name:session.name||file.name});
+    });
+  };
+  const rename=session=>perform(async()=>{
+    if(!renameValue.trim())throw new Error('세션 이름을 입력하세요.');
+    const result=await window.SessionStoreCore.saveSession({...session,name:renameValue.trim()});
+    if(!result.ok)throw new Error('세션 이름을 저장하지 못했습니다.');
+    setRenameId(null);await refresh();notify('세션 이름을 변경했습니다.','ok');
+  });
+  if(!open)return null;
+  return <div className="share-modal-backdrop" onClick={onClose}>
+    <section className="share-modal session-modal" role="dialog" aria-modal="true" aria-labelledby="session-title" tabIndex={-1} ref={dialogRef} onClick={event=>event.stopPropagation()}>
+      <div className="share-modal__header"><h2 id="session-title">세션 관리</h2><button type="button" className="share-modal__close" onClick={onClose} aria-label="세션 관리 닫기">×</button></div>
+      <h3>현재 세션 저장</h3>
+      <div className="session-save-row"><label htmlFor="session-name">세션 이름</label><input id="session-name" className="form-input" value={name} onChange={event=>setName(event.target.value)}/><button type="button" className="btn btn--primary" disabled={busy||!files.length} onClick={save}>저장</button></div>
+      <h3>저장된 세션</h3>
+      <div className="session-table-wrap"><table className="session-table"><thead><tr><th>이름</th><th>파일</th><th>저장 시각</th><th>크기</th><th>작업</th></tr></thead>
+        <tbody>{sessions.map(session=><tr key={session.id} data-session-id={session.id}>
+          <td>{renameId===session.id?<input className="form-input" aria-label="변경할 세션 이름" value={renameValue} onChange={event=>setRenameValue(event.target.value)}/>:session.id==='autosave'?'자동 저장':session.name||session.id}</td>
+          <td>{session.files?.length||0}</td><td>{new Date(session.savedAt).toLocaleString('ko-KR')}</td><td>{formatBytes(new TextEncoder().encode(JSON.stringify(session)).length)}</td>
+          <td><div className="session-row-actions"><button type="button" disabled={busy} onClick={()=>perform(async()=>askRestore(await window.SessionStoreCore.loadSession(session.id)))}>불러오기</button><button type="button" onClick={()=>exportJson(session)}>JSON</button>
+            {session.id!=='autosave'&&<><button type="button" disabled={busy} onClick={()=>setPending({type:'delete',id:session.id})}>삭제</button>{renameId===session.id?<button type="button" onClick={()=>rename(session)}>이름 저장</button>:<button type="button" onClick={()=>{setRenameId(session.id);setRenameValue(session.name||session.id);}}>이름 변경</button>}</>}
+          </div></td></tr>)}</tbody></table>{!sessions.length&&<p>저장된 세션이 없습니다.</p>}</div>
+      {pending&&<div className="session-confirm" role="alert"><p>{pending.type==='restore'?'현재 작업을 덮어씁니다. 계속할까요?':'이 세션을 삭제할까요?'}</p><button type="button" className="btn btn--primary" onClick={confirm} disabled={busy}>확인</button><button type="button" className="btn btn--secondary" onClick={()=>setPending(null)}>취소</button></div>}
+      <h3>JSON 가져오기</h3><input type="file" accept=".json" aria-label="세션 JSON 가져오기" disabled={busy} onChange={importJson}/>
+      <p className="session-storage">저장소: {sessionStatus.backend==='idb'?'IndexedDB':'Local'} · {formatBytes(sessionStatus.usage)} / {formatBytes(sessionStatus.quota)}</p>
+    </section>
+  </div>;
+}
+
 function App(){
   const [toasts,setToasts]=useState([]);
   const toastTimers=useRef(new Map());
@@ -4003,6 +4109,11 @@ function App(){
   const [restoreSession,setRestoreSession]=useState(null);
   const [sessionStatus,setSessionStatus]=useState({backend:'',usage:null,quota:null,savedAt:null,error:null});
   const [shareModal,setShareModal]=useState(null);
+  const [sessionModalOpen,setSessionModalOpen]=useState(false);
+  const shareDialogRef=useRef(null);
+  const closeShare=useCallback(()=>setShareModal(null),[]);
+  const closeSessions=useCallback(()=>setSessionModalOpen(false),[]);
+  useModalA11y(Boolean(shareModal),closeShare,shareDialogRef);
   const shareLoadedRef=useRef(false);
   const osmdRef=useRef(null);
   // OSMD 인스턴스는 P5-3 재생 커서 동기화에 사용합니다.
@@ -4090,24 +4201,15 @@ function App(){
     setHistoryNotice({m:'이전 세션을 복원했습니다.',t:'info'});
   },[restoreSession,pushHistory]);
 
-  const saveSessionSlot=useCallback(async()=>{
-    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
-    if(!window.SessionStoreCore){notify('세션 저장소를 사용할 수 없습니다.','err');return}
-    // TODO(P3-4): 세션 모달로 대체합니다.
-    const name=window.prompt('저장할 세션 이름을 입력하세요.','악보 세션');
-    if(name===null)return;
-    const result=await window.SessionStoreCore.saveSession(
-      buildSession(`slot-${Date.now()}`,{name:name.trim()||'악보 세션'})
-    );
-    if(result.ok){
-      setSessionStatus(prev=>({...prev,backend:window.SessionStoreCore.backend(),savedAt:new Date().toISOString(),error:null}));
-      setHistoryNotice({m:'세션 슬롯을 저장했습니다.',t:'info'});
-      refreshStorageUsage();
-    }else{
-      setSessionStatus(prev=>({...prev,error:result.reason||'저장 실패'}));
-      notify(result.reason==='too-large'?'세션이 너무 커서 저장하지 못했습니다.':'세션 저장에 실패했습니다.','err');
-    }
-  },[files.length,buildSession,refreshStorageUsage]);
+  const saveSessionSlot=useCallback(()=>setSessionModalOpen(true),[]);
+  const restoreManagedSession=useCallback(async session=>{
+    const restored=hydrateSessionFiles(session);
+    if(!restored.length||restored.length!==session.files?.length)throw new Error('세션 안의 악보를 읽을 수 없습니다.');
+    setFiles(restored);
+    setActiveFile(Math.max(0,Math.min(Number(session.activeFile)||0,restored.length-1)));
+    pushHistory(restored,`세션 불러오기: ${session.name||session.id||'가져온 세션'}`);
+    setRestoreSession(null);
+  },[pushHistory]);
 
   const openShareModal=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
@@ -4438,6 +4540,7 @@ function App(){
       <PanelErrorBoundary label="메뉴"><MenuBar
         onSelectLeft={selectLeftPanel}
         onSelectRight={selectRightPanel}
+        onSession={saveSessionSlot}
         onExportMXL={exportMXL}
         onExportXML={exportXML}
         onExportPNG={exportPNG}
@@ -4454,7 +4557,7 @@ function App(){
         <button type="button" className={`header__toggle${showRight?' header__toggle--active':''}`} aria-label="도구 패널 토글" aria-pressed={showRight} onClick={()=>setShowRight(value=>!value)}>우측</button>
         <div className="header__export-group">
           <button className="header__export-btn" onClick={openShareModal} disabled={!files.length} title="압축 공유 링크 생성">공유</button>
-          <button className="header__export-btn" onClick={saveSessionSlot} disabled={!files.length} title="세션 슬롯 저장">세션</button>
+          <button className="header__export-btn" onClick={saveSessionSlot} title="세션 관리">세션</button>
           <button className="header__export-btn" onClick={exportMXL} disabled={!files.length} title="MXL 내보내기">MXL</button>
           <button className="header__export-btn" onClick={exportPNG} disabled={!files.length} title="PNG 내보내기">PNG</button>
           <button className="header__export-btn" onClick={exportPDF} disabled={!files.length} title="PDF 내보내기">PDF</button>
@@ -4471,13 +4574,15 @@ function App(){
       <button className="session-restore-banner__btn" onClick={()=>setRestoreSession(null)}>닫기</button>
     </div>}
 
+    <SessionModal open={sessionModalOpen} onClose={closeSessions} files={files} activeFile={activeFile} onRestore={restoreManagedSession} notify={notify} sessionStatus={sessionStatus} onStorageChange={refreshStorageUsage}/>
+
     {shareModal&&<div className="share-modal-backdrop" role="presentation" onClick={()=>setShareModal(null)}>
-      <section className="share-modal" role="dialog" aria-modal="true" aria-label="공유 링크" onClick={e=>e.stopPropagation()}>
+      <section ref={shareDialogRef} tabIndex={-1} className="share-modal" role="dialog" aria-modal="true" aria-label="공유 링크" onClick={e=>e.stopPropagation()}>
         <div className="share-modal__header">
           <h2>공유 링크</h2>
           <button className="share-modal__close" onClick={()=>setShareModal(null)} aria-label="닫기">×</button>
         </div>
-        <input className="share-modal__url" value={shareModal.url} readOnly onFocus={e=>e.target.select()}/>
+        <input className="share-modal__url" aria-label="공유 링크 주소" value={shareModal.url} readOnly onFocus={e=>e.target.select()}/>
         <div className="share-modal__stats">
           원본 {formatBytes(shareModal.originalBytes)} → 압축 {formatBytes(shareModal.compressedBytes)} ({shareModal.ratio}% 절감)
         </div>

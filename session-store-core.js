@@ -217,11 +217,13 @@
 
   async function deleteSession(id){
     const key = id || AUTOSAVE_ID;
+    // IndexedDB 성공 여부와 관계없이 자동 복구용 로컬 사본도 제거합니다.
+    const localResult = await localDeleteSession(key);
     const result = await idbStore(SESSION_STORE,'readwrite',async store=>{
       await requestAsPromise(store.delete(key));
       return true;
     });
-    return result || localDeleteSession(key);
+    return result || localResult;
   }
 
   async function getMeta(key){

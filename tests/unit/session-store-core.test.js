@@ -87,4 +87,14 @@ describe('SessionStoreCore', () => {
 
     expect(sessions.map((session) => session.id)).toEqual(['autosave', 'slot-new', 'slot-old']);
   });
+
+  it('deletes both IndexedDB and the fallback mirror so a slot cannot reappear', async () => {
+    const core = await loadCore();
+    await core.saveSession(makeSession('slot-delete'));
+    expect(core.loadLocalSession('slot-delete')).not.toBeNull();
+    await core.deleteSession('slot-delete');
+    expect(await core.loadSession('slot-delete')).toBeNull();
+    expect(core.loadLocalSession('slot-delete')).toBeNull();
+    expect(await core.listSessions()).toEqual([]);
+  });
 });
