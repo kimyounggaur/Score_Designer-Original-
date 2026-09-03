@@ -3440,7 +3440,7 @@ function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasur
     setRenderError(null);setOssiaError(null);setRendered(false);
     let cancelled=false;readyRef.current=false;
     if(onOsmdReady)onOsmdReady(null);
-    (async()=>{
+    const renderTimer=setTimeout(async()=>{
       try{
         scoreRenderRef.current.innerHTML='';
         const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(scoreRenderRef.current,{
@@ -3479,8 +3479,8 @@ function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasur
       }catch(e){
         if(!cancelled)setRenderError(e.message);
       }
-    })();
-    return()=>{cancelled=true;readyRef.current=false};
+    },150);
+    return()=>{clearTimeout(renderTimer);cancelled=true;readyRef.current=false};
   },[files,activeFile,renderAttempt]);
 
   if(!files.length)return <div className="main-score">
