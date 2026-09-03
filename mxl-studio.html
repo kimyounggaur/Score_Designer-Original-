@@ -3360,6 +3360,8 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportXML,onExportPNG
   const [open,setOpen]=useState(null);
   const [ddPos,setDdPos]=useState({top:78,left:0});
   const navRef=useRef();
+  const menuButtonRefs=useRef([]);
+  const dropdownRef=useRef(null);
 
   useEffect(()=>{
     if(!open)return;
@@ -3435,22 +3437,36 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportXML,onExportPNG
   ];
 
   const activeGroup=groups.find(g=>g.id===open);
+  const focusMenuButton=()=>{const index=groups.findIndex(group=>group.id===open);menuButtonRefs.current[index]?.focus();};
+  const menuKeydown=event=>{
+    const items=Array.from(dropdownRef.current?.querySelectorAll('[role="menuitem"]:not([disabled])')||[]);
+    const index=items.indexOf(document.activeElement);
+    if(['ArrowDown','ArrowUp','Home','End'].includes(event.key)){
+      event.preventDefault();const next=event.key==='Home'?0:event.key==='End'?items.length-1:(index+(event.key==='ArrowDown'?1:-1)+items.length)%items.length;items[next]?.focus();
+    }else if(event.key==='Escape'){event.preventDefault();setOpen(null);focusMenuButton();}
+    else if(['ArrowLeft','ArrowRight'].includes(event.key)){
+      event.preventDefault();const current=groups.findIndex(group=>group.id===open);const next=(current+(event.key==='ArrowRight'?1:-1)+groups.length)%groups.length;
+      const rect=menuButtonRefs.current[next].getBoundingClientRect();setDdPos({top:rect.bottom+2,left:rect.left});setOpen(groups[next].id);
+    }
+  };
+  useEffect(()=>{if(open)dropdownRef.current?.querySelector('[role="menuitem"]:not([disabled])')?.focus();},[open]);
 
   return <nav className="menubar" ref={navRef}>
     {groups.map((g,gi)=><React.Fragment key={g.id}>
       {gi===1&&<div className="menubar__sep"/>}
-      <button
+      <button type="button" ref={element=>menuButtonRefs.current[gi]=element} aria-haspopup="menu" aria-expanded={open===g.id}
+        onKeyDown={event=>{if(event.key==='ArrowDown'){event.preventDefault();openMenu(g.id,event);}}}
         className={`menubar__btn${open===g.id?' menubar__btn--open':''}`}
         onClick={e=>openMenu(g.id,e)}>
         {g.label}
       </button>
     </React.Fragment>)}
-    {activeGroup&&<div className="menubar__dropdown" style={{top:ddPos.top,left:ddPos.left}}>
+    {activeGroup&&<div className="menubar__dropdown" role="menu" aria-label={activeGroup.label} ref={dropdownRef} onKeyDown={menuKeydown} style={{'--menu-top':`${ddPos.top}px`,'--menu-left':`${ddPos.left}px`}}>
       {activeGroup.items.map((item,i)=>
         item.sep
-          ?<div key={i} className="menubar__dropdown-sep"/>
-          :<button key={i} className="menubar__dropdown-item" onClick={item.onClick} disabled={item.dis}>
-              <span style={{width:'18px',textAlign:'center',flexShrink:0}}>{item.icon}</span>
+          ?<div key={i} role="separator" className="menubar__dropdown-sep"/>
+          :<button type="button" role="menuitem" tabIndex={-1} key={i} className="menubar__dropdown-item" onClick={item.onClick} disabled={item.dis}>
+              <span className="menubar__item-icon"><ActivityIcon icon={item.icon}/></span>
               {item.label}
             </button>
       )}

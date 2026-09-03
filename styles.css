@@ -19,7 +19,7 @@
   --border-strong: rgba(0, 0, 0, 0.18);
   --text-primary: #1d1d1f;
   --text-secondary: #6e6e73;
-  --text-muted: #aeaeb2;
+  --text-muted: #63636a;
   --text-inverse: #ffffff;
   --accent: #007aff;
   --accent-hover: #0056b3;
@@ -2366,3 +2366,14 @@ body {
 .chip,.toggle,.key-grid__btn,.tempo-preset { appearance:none; font:inherit; }
 .toggle { border:0; padding:0; flex-shrink:0; }
 .upload-zone { width:100%; text-align:center; color:inherit; font:inherit; }
+
+/* 키보드 포커스와 메뉴 */
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+:focus:not(:focus-visible) { outline:none; }
+.form-input:focus-visible,.form-select:focus-visible,input:focus-visible,button:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+.menubar__dropdown { top:var(--menu-top); left:var(--menu-left); }
+.menubar__item-icon { width:18px; text-align:center; flex-shrink:0; }
+@media (prefers-reduced-motion:reduce) {
+  *,*::before,*::after { animation-duration:0s!important; animation-delay:0s!important; transition-duration:0s!important; scroll-behavior:auto!important; }
+  :root { --transition-fast:0s; --transition-normal:0s; --transition-slow:0s; }
+}
