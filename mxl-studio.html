@@ -17,6 +17,7 @@
 <script crossorigin src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 <script src="chord-tools-core.js"></script>
 <script src="history-core.js?v=1"></script>
+<script src="transpose-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 <script src="share-session-core.js?v=1"></script>
 <script src="session-store-core.js?v=1"></script>
@@ -646,6 +647,8 @@ function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
       if(acc){if(np.alter===1)acc.textContent='sharp';else if(np.alter===-1)acc.textContent='flat';else acc.remove()}
       else if(np.alter!==0){acc=doc.createElement('accidental');acc.textContent=np.alter===1?'sharp':'flat';const pi=note.querySelector('pitch');if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);else note.appendChild(acc)}
     });
+    if(window.TransposeCore)window.TransposeCore.transposeDocHarmonies(doc,semitones);
+    else setLog(l=>[...l,{m:'코드 심볼은 옮기지 못했습니다.',t:'warn'}]);
     if(targetKeyIdx!==null&&targetKeyIdx!==undefined)
       doc.querySelectorAll('key fifths').forEach(f=>f.textContent=KEY_FIFTHS[targetKeyIdx]);
     return doc;
@@ -808,6 +811,8 @@ function InstrumentPanel({files,showProgress,hideProgress,onFilesUpdate}){
           else if(np.alter!==0){acc=doc.createElement('accidental');acc.textContent=np.alter===1?'sharp':'flat';const pi=note.querySelector('pitch');if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);else note.appendChild(acc)}
           cnt++;
         });
+        if(window.TransposeCore)window.TransposeCore.transposeDocHarmonies(doc,shift);
+        else lines.push({m:'코드 심볼은 옮기지 못했습니다.',t:'warn'});
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 음표 변환`,t:'ok'});
       }
@@ -1035,9 +1040,9 @@ function KeyChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
             const semitones=(targetKeySemi-currentKeySemi+12)%12;
             if(semitones===0){currentKeySemi=targetKeySemi;return}
 
-            for(let m=ch.measure-1;m<measures.length;m++){
+            for(let m=0;m<measures.length;m++){
               const measure=measures[m];
-              if(!measure)continue;
+              if(Number(measure.getAttribute('number'))<ch.measure)continue;
 
               // Transpose notes in this measure
               measure.querySelectorAll('note').forEach(note=>{
@@ -1052,8 +1057,11 @@ function KeyChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
                 }
               });
 
+              if(window.TransposeCore)window.TransposeCore.transposeMeasureHarmonies(measure,semitones);
+              else lines.push({m:'코드 심볼은 옮기지 못했습니다.',t:'warn'});
+
               // Insert key signature change at the start measure
-              if(m===ch.measure-1){
+              if(Number(measure.getAttribute('number'))===ch.measure){
                 let attrs=measure.querySelector('attributes');
                 if(!attrs){attrs=doc.createElement('attributes');const first=measure.firstChild;if(first)measure.insertBefore(attrs,first);else measure.appendChild(attrs)}
                 let key=attrs.querySelector('key');

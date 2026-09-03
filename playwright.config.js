@@ -22,7 +22,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
     video: 'off',
     launchOptions: {
-      args: ['--autoplay-policy=no-user-gesture-required'],
+      args: ['--autoplay-policy=no-user-gesture-required', '--disable-quic'],
     },
   },
   webServer: isProd
