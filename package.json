@@ -15,6 +15,7 @@
     "check": "npm test && npm run e2e:smoke"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
     "@playwright/test": "^1.61.1",
     "fake-indexeddb": "^6.2.5",
     "http-server": "^14.1.1",
