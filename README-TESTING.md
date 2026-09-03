@@ -50,6 +50,20 @@ $env:PROD_BASE_URL='https://kimyounggaur.github.io/Score_Designer-Original-'; np
 
 ## 현재 자동 검증 범위
 
+픽스처는 `tests/fixtures/`에 있습니다.
+
+| 파일 | 검증 내용 |
+|---|---|
+| f01-basic.musicxml | C장조, 2마디 8음표 (설계 문서의 4마디 표기는 실제와 다름) |
+| f02-two-parts.musicxml | Piano/Violin, divisions 4/2 |
+| f03-pickup.musicxml | 0번 못갖춘마디 + 1~4마디 |
+| f04-minor-harmony.musicxml | A단조 Am-Dm-E7-Am 및 동시 화음 |
+| f05-transposing.musicxml | B♭ 클라리넷 D장조, transpose -2 |
+| f06-lyrics-ties.musicxml | 한글 가사·붙임줄·셋잇단음·p/f |
+| f07-enharmonic.musicxml | F♯장조 E♯, 변화음 B♯ |
+| f08-repeats-tempo.musicxml | 반복 확장 6마디, 100→60 BPM |
+| f09-real.mxl | 기존 실제 악보의 압축 MXL 회귀 |
+
 - `HistoryCore`: 딥클론 스냅샷, undo 분기 절단, 최대 50개 제한, 메타 직렬화
 - `ChordToolsCore`: N.C. 판정과 보존
 - `RomanAnalysis`: 로마 숫자 분석, 종지 검출, 악보 삽입
