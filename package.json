@@ -12,7 +12,8 @@
     "e2e:prod": "playwright test --grep @smoke --project=chromium",
     "e2e:report": "playwright show-report",
     "serve": "http-server . -p 8080 -c-1",
-    "check": "npm test && npm run e2e:smoke"
+    "check": "npm test && npm run e2e:smoke",
+    "docs:build": "node scripts/build-manuals.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",

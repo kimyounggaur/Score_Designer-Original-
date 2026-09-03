@@ -2337,6 +2337,7 @@ body {
 .resize-handle--left { right:0; }.resize-handle--right { left:0; }
 .resize-handle:hover,.resize-handle:focus-visible { background:var(--accent); opacity:.65; }
 .header__badge { max-width:220px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+@media (max-width: 1400px) { .header .session-status { display: none; } }
 
 .session-modal { width:min(900px,calc(100vw - 32px)); max-height:85vh; overflow:auto; }
 .session-modal h3 { margin:20px 0 10px; font-size:16px; }
