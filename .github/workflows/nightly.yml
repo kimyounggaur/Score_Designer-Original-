@@ -45,7 +45,6 @@ jobs:
             test-results
           retention-days: 14
   prod-smoke:
-    if: ${{ vars.PROD_BASE_URL != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -58,4 +57,4 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e:prod
         env:
-          PROD_BASE_URL: ${{ vars.PROD_BASE_URL }}
+          PROD_BASE_URL: https://kimyounggaur.github.io/Score_Designer-Original-/

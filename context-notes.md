@@ -124,3 +124,9 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 
 ## 2026-09-03 · P7-3
 4개 YAML 구문 및 workflow_run 이름 일치 검증. Node24, 패널·axe 필수 CI, 공개 파일 allowlist Pages 배포, Nightly Linux 이미지 생성 artifact 추가. 저장소/Pages 주소는 미제공이므로 잘못된 고정 URL을 vars.PROD_BASE_URL로 대체하며 미설정 시 prod 작업만 skip. 사용자 지시에 따라 로컬 구현 자체승인; git push와 실제 GitHub 실행은 하지 않음.
+
+## 2026-09-03 · P8-1
+실제 21개 패널과 Phase 1~6 기능을 기준으로 사용자 설명서·퀵스타트·업데이트 안내를 다시 작성했습니다. 미구현 주석·청음·난이도·운지·QR 등은 예정 기능 절에만 격리했습니다. 새 화면 11장(데스크톱 10, 모바일 1)을 촬영했고 PDF 10/4/3쪽과 SVG를 재생성하여 전 페이지를 렌더 검토했습니다.
+
+## 2026-09-03 · P8-2
+두 이전 프롬프트 문서에 스냅샷 경고와 완료 상태표를 추가했습니다. README·테스트 가이드·검증 보고서에 8개 코어, 21개 패널, 태그, 실측, 문서 관계, 배포 주소와 Linux 기준 이미지 대기를 기록했습니다. 사용자 확인 저장소는 kimyounggaur/Score_Designer-Original-, Pages는 https://kimyounggaur.github.io/Score_Designer-Original-/mxl-studio.html 입니다.

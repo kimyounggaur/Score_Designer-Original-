@@ -1,3 +1,13 @@
+> **Studio09 구현 상태 (2026-09-03)**
+> 아래 원문은 초기 설계 기록입니다. 현재 구현은 Studio09 개선보완 문서와 README를 우선합니다.
+
+| 프롬프트 | 상태 | 현재 구현 |
+|---|---|---|
+| PROMPT-01 MIDI 오디오 재생 | 완료 | PlaybackCore + Tone.js 지연 로드, 반복·템포·붙임줄·커서 |
+| PROMPT-02 로마 숫자 화성 분석 패널 | 완료 | RomanAnalysis, 단조·전위·부속화음 |
+| PROMPT-03 전체 Undo/Redo 히스토리 | 완료 | HistoryCore, 문자열 스냅샷과 최대 50개 기록 |
+| PROMPT-10 URL 기반 악보 공유 + 세션 자동 저장 | 완료 | ShareSessionCore·SessionStoreCore, 압축 URL·세션 모달·자동저장 |
+
 # MXL Studio — 기능 추가 바이브코딩 프롬프트집
 
 > **공통 컨텍스트 (모든 프롬프트 앞에 붙여 쓸 것)**

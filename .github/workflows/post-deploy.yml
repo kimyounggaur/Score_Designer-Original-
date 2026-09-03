@@ -7,7 +7,7 @@ permissions:
   contents: read
 jobs:
   smoke:
-    if: ${{ github.event.workflow_run.conclusion == 'success' && vars.PROD_BASE_URL != '' }}
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -22,7 +22,7 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e:prod
         env:
-          PROD_BASE_URL: ${{ vars.PROD_BASE_URL }}
+          PROD_BASE_URL: https://kimyounggaur.github.io/Score_Designer-Original-/
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

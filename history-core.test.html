@@ -19,14 +19,14 @@ function parseXml(text){
 try{
   assert(window.HistoryCore, 'HistoryCore namespace is missing');
   const first={name:'score.xml',xmlDoc:parseXml('<score><measure number="1"/></score>')};
-  const pushedA=window.HistoryCore.pushHistoryEntry([], -1, [first], '업로드');
+  const pushedA=window.HistoryCore.pushHistoryEntry([], -1, [first], '업로드', undefined, {mode:'clone'});
   assert(pushedA.history.length===1, 'first push should create one entry');
   assert(pushedA.index===0, 'first push index');
   first.xmlDoc.querySelector('measure').setAttribute('number','99');
   assert(pushedA.history[0].files[0].xmlDoc.querySelector('measure').getAttribute('number')==='1', 'snapshot must deep clone xmlDoc');
 
   const second={name:'score.xml',xmlDoc:parseXml('<score><measure number="2"/></score>')};
-  const pushedB=window.HistoryCore.pushHistoryEntry(pushedA.history, pushedA.index, [second], '조옮김');
+  const pushedB=window.HistoryCore.pushHistoryEntry(pushedA.history, pushedA.index, [second], '조옮김', undefined, {mode:'clone'});
   const restoredA=window.HistoryCore.restoreHistoryFiles(pushedB.history[0]);
   assert(restoredA[0].xmlDoc.querySelector('measure').getAttribute('number')==='1', 'restore should clone selected entry');
 

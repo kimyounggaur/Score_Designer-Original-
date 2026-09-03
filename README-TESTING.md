@@ -1,90 +1,62 @@
-# MXL Studio 테스트 가이드
+# MXL Studio09 테스트 가이드
 
-이 프로젝트는 빌드 없이 `mxl-studio.html`을 직접 실행하는 구조를 유지하면서, 자동 회귀 테스트만 npm 기반으로 붙였습니다.
+## 실행
 
-## 로컬 실행
-
-Windows 한글·공백 경로에서 forks 풀이 타임아웃되므로 `vitest.config.js`에서 threads 풀을 사용합니다.
-2026-09-03 현재 Node 24 환경 유닛 실측은 1.36초입니다. 설계 문서의 이전 실측은 유닛 약 45초, 스모크 약 2.5분입니다.
-`npm run check`로 유닛과 스모크를 연속 실행합니다. 페이지 준비 여부는 DOMContentLoaded와 앱 렌더로 판단하여 외부 폰트의 load 이벤트 지연을 피합니다.
-
-1. 의존성 설치
-
-```bash
+```powershell
 npm ci
-```
-
-2. 코어 유닛 테스트
-
-```bash
 npm test
-```
-
-3. 브라우저 스모크
-
-```bash
 npm run e2e:smoke
-```
-
-로컬에서는 설치된 Chrome을 사용합니다. CI에서는 Playwright Chromium을 설치해 실행합니다.
-
-4. 전체 E2E
-
-```bash
 npm run e2e
 ```
 
-현재 E2E는 Phase 8.3 스모크 범위입니다. 이후 30개 패널 전수, 시각 회귀, 백엔드 테스트를 같은 `tests/e2e` 아래에 단계적으로 추가합니다.
+`npm run check`는 단위 + smoke, `npm run e2e:report`는 HTML 보고서를 엽니다. Windows는 설치된 Chrome, CI는 `npx playwright install --with-deps chromium`으로 준비합니다. 테스트 서버는 8080 포트에서 자동 실행됩니다. 기존 서버가 있다면 동일한 작업 폴더인지 확인하세요.
 
-5. 프로덕션 스모크
+Vitest는 Windows 한글·공백 경로의 forks 문제를 피하려고 threads 풀을 사용합니다. Playwright는 외부 CDN의 QUIC 오류를 피하도록 `--disable-quic`를 사용하고 DOMContentLoaded 뒤 실제 앱·악보 상태를 기다립니다. 실제 소리의 청감은 자동 검증하지 않습니다.
 
-```bash
-PROD_BASE_URL=https://kimyounggaur.github.io/Score_Designer-Original- npm run e2e:prod
-```
+## 검증 범위
 
-Windows PowerShell에서는 다음처럼 실행합니다.
+| 태그 | 파일/영역 | 검사 |
+|---|---|---|
+| @smoke | 00, 02 | 시작·업로드·Ossia·조옮김·자동복원·편집 후 공유 |
+| @fixtures | 01 | f01-f09 렌더링 |
+| @panels | 03-06, 17-19, 21, panels/01-21 | 활성 파일·MXL 왕복·Ossia·재생·커서·각 패널 결과·기록 |
+| @ux | 09-13, 16 | 알림·탭·레이아웃·세션·줌·인쇄·모바일 드로어 |
+| @a11y | 14-15, a11y/axe | 키보드 버튼·메뉴, axe 네 장면 |
+| @robustness | 07-08 | CDN·패널 오류, 파일 형식·중복·크기 제한 |
+| @perf | 20, 22 | 초기 패널 수·가사 복원·자동저장 중복·지연 오디오 |
+| @visual | visual/score | f01, f04, f09 악보 스크린샷 |
 
-```powershell
-$env:PROD_BASE_URL='https://kimyounggaur.github.io/Score_Designer-Original-'; npm.cmd run e2e:prod
-```
+`tests/unit`의 8개 코어 테스트 파일은 transpose, playback, chord-symbol, chord-tools, roman-analysis, history, share-session, session-store를 검증합니다. 기존 `history-core.test.html`, `chord-tools-core.test.html`, `roman-analysis.test.html`도 보존합니다.
 
-## 현재 자동 검증 범위
-
-픽스처는 `tests/fixtures/`에 있습니다.
-
-| 파일 | 검증 내용 |
+| 픽스처 | 내용 |
 |---|---|
-| f01-basic.musicxml | C장조, 2마디 8음표 (설계 문서의 4마디 표기는 실제와 다름) |
-| f02-two-parts.musicxml | Piano/Violin, divisions 4/2 |
-| f03-pickup.musicxml | 0번 못갖춘마디 + 1~4마디 |
-| f04-minor-harmony.musicxml | A단조 Am-Dm-E7-Am 및 동시 화음 |
+| f01-basic.musicxml | C장조 2마디·8음표. 설계 문서의 4마디 표기와 다름 |
+| f02-two-parts.musicxml | Piano/Violin 4마디, divisions 4/2 |
+| f03-pickup.musicxml | 0번 못갖춘마디 + 1-4마디 |
+| f04-minor-harmony.musicxml | A단조 Am-Dm-E7-Am, 동시 화음 |
 | f05-transposing.musicxml | B♭ 클라리넷 D장조, transpose -2 |
 | f06-lyrics-ties.musicxml | 한글 가사·붙임줄·셋잇단음·p/f |
-| f07-enharmonic.musicxml | F♯장조 E♯, 변화음 B♯ |
+| f07-enharmonic.musicxml | F♯장조 E♯와 변화음 B♯ |
 | f08-repeats-tempo.musicxml | 반복 확장 6마디, 100→60 BPM |
-| f09-real.mxl | 기존 실제 악보의 압축 MXL 회귀 |
+| f09-real.mxl | 기존 실제 악보의 압축 MXL |
 
-- `HistoryCore`: 딥클론 스냅샷, undo 분기 절단, 최대 50개 제한, 메타 직렬화
-- `ChordToolsCore`: N.C. 판정과 보존
-- `RomanAnalysis`: 로마 숫자 분석, 종지 검출, 악보 삽입
-- `SessionStoreCore`: IndexedDB 저장/로드, 4MB 초과 거부, localStorage 이관, 슬롯 정렬
-- `ShareSessionCore`: gzip base64url 공유 v2, v1 하위호환
-- Playwright 스모크: 빈 앱 로드, MusicXML 업로드, 조옮김(+2 반음), 자동저장 복원, 압축 공유 링크 로드
-
-## CI 스케줄
-
-| 워크플로 | 트리거 | 내용 |
-|---|---|---|
-| CI | main push, pull_request | `npm test` 후 `npm run e2e:smoke` |
-| Nightly Full Test | 매일 21:00 UTC(한국 06:00), 수동 실행 | 유닛 + 전체 E2E + 프로덕션 스모크, 실패 시 이슈 생성 |
-| Post-deploy Smoke | GitHub Pages 배포 성공 직후 | 실제 Pages URL에서 스모크 |
-
-## 실패 처리
-
-- 유닛 실패: 해당 `*-core.js`와 대응 테스트를 함께 확인합니다.
-- E2E 실패: `playwright-report` 또는 `test-results`의 스크린샷과 trace를 확인합니다.
-- Nightly 실패: `nightly-failure` 라벨 이슈가 자동 생성되며, 같은 날짜의 실패는 기존 이슈에 코멘트로 누적됩니다.
+2026-09-03 결과: 단위 84개 통과. 전체 E2E는 84개 중 80개 통과, 4개 제외, 5.5분. `chromium` 전체와 `mobile` Pixel 5의 @ux를 실행했습니다. 모바일에서는 데스크톱 패널 너비 검사를 제외합니다.
 
 ## 스냅샷 정책
 
-시각 회귀 스냅샷은 아직 다음 단계(Phase 8.5)에서 추가합니다. 추가 후에는 Linux CI에서 생성한 스냅샷을 정본으로 삼고, 로컬 Windows/macOS에서 임의 갱신하지 않습니다.
+Linux CI가 정본입니다. Windows/macOS에서 `--update-snapshots`를 사용하지 않습니다. 첫 기준 이미지는 GitHub `Nightly Full Test`를 수동 실행하며 `update_snapshots=true`로 생성합니다. `linux-visual-baselines` 아티팩트를 검토하고 `tests/e2e/__snapshots__`에 반영합니다.
+
+Windows 시각 검사 3개는 명시적으로 제외됩니다. Linux도 기준 이미지가 없으면 최초 생성 안내와 함께 제외하고, 생성 요청 시에는 실제 이미지 3장을 만들어 아티팩트가 비어 있으면 실패합니다. 기준 이미지가 들어간 뒤에는 변경 비율 1% 초과를 실패로 처리합니다. 아직 외부 CI에서 최초 이미지를 생성하지 않았습니다.
+
+## CI와 배포
+
+| 워크플로 | 역할 |
+|---|---|
+| CI | main/PR: 단위·smoke·panels·axe 필수 |
+| Deploy static site to GitHub Pages | main/수동: 공개 파일만 Pages 업로드 |
+| Post-deploy Smoke | 배포 성공 뒤 확인된 Pages 주소 검사 |
+| Nightly Full Test | 매일 한국 06:00·수동: 전체 검증, Linux 이미지 생성 선택 |
+
+확인된 Pages 주소는 `https://kimyounggaur.github.io/Score_Designer-Original-/mxl-studio.html`입니다. 워크플로와 로컬 검증에서는 테스트가 `mxl-studio.html`을 덧붙일 수 있도록 디렉터리 주소 `https://kimyounggaur.github.io/Score_Designer-Original-/`를 `PROD_BASE_URL`로 사용합니다.
+
+실패하면 `playwright-report`와 `test-results`의 화면·trace·axe JSON을 확인하세요. 워크플로는 실행 결과 아티팩트를 남기며 외부 이슈나 메시지를 자동 발송하지 않습니다.

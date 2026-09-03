@@ -1,3 +1,7 @@
+> **스냅샷 주의 (2026-09-03)**
+> 이 문서는 다른 스냅샷(패널 30개·코어 14개) 기준입니다. Studio09에는 다음 파일이 없습니다: `fingering-core.js`, `voice-leading-core.js`, `export-formats-core.js`, `ear-training-core.js`, `pattern-search-core.js`, `layout-core.js`, `annotations-core.js`, `form-analysis-core.js`, `lyrics-core.js`, `difficulty-core.js`.
+> 이 폴더에서는 `MXL-Studio09-개선보완-바이브코딩-프롬프트(Fable51).md`의 Phase 0-8 구현을 기준으로 사용하세요. 이 문서의 Phase 2-7은 선택 Phase 9 지침에 따라 현재 소스에 맞게 재조정해야 합니다. 아래 내용은 과거 설계 기록이며 현재 구현 목록이 아닙니다.
+
 # 악보 디자이너(MXL Studio) — 차세대 기능 확장 & 주기 자동 테스트 바이브코딩 프롬프트
 
 > 대상 앱: https://kimyounggaur.github.io/Score_Designer-Original-/mxl-studio.html
