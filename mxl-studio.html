@@ -164,6 +164,7 @@ function midiToNote(midi){const o=Math.floor(midi/12)-1;const s=((midi%12)+12)%1
 function fmtNote(n){return n?n.step+(n.alter===1?'#':n.alter===-1?'♭':'')+n.octave:'-'}
 function parseNoteStr(s){const m=s.match(/^([A-G])([#b]?)(\d+)$/);if(!m)return null;return{step:m[1],alter:m[2]==='#'?1:m[2]==='b'?-1:0,octave:parseInt(m[3])}}
 function cloneDoc(d){return new DOMParser().parseFromString(new XMLSerializer().serializeToString(d),'text/xml')}
+function activeDoc(files,activeFile){return (files[activeFile]||files[0])?.xmlDoc||null;}
 function commitFile(file, doc, extra){
   const xmlString=new XMLSerializer().serializeToString(doc);
   return {...file,...(extra||{}),xmlDoc:doc,xmlString};
@@ -518,7 +519,7 @@ const GlobalHistoryCore = window.HistoryCore || {
 /* ==============================================================
    PANEL: UPLOAD
    ============================================================== */
-function UploadPanel({files,onFilesAdd,onRemove,onClear}){
+function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear}){
   const [dragging,setDragging]=useState(false);
   const inputRef=useRef();
 
@@ -585,7 +586,7 @@ function computeIntervalSemis(num,qual){
   return({major:b,minor:b-1,augmented:b+1,diminished:b-1,'double-augmented':b+2,'double-diminished':b-2})[qual];
 }
 
-function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
+function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [mode,setMode]=useState('single');
   const [selKey,setSelKey]=useState(0);
   const [semi,setSemi]=useState(0);
@@ -635,7 +636,7 @@ function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,mode,selKey,semi,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,mode,selKey,semi,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
 
   function transposeDoc(xmlDoc,semitones,targetKeyIdx){
     const doc=cloneDoc(xmlDoc);
@@ -708,7 +709,7 @@ function TransposePanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: RANGE
    ============================================================== */
-function RangePanel({files,showProgress,hideProgress,onFilesUpdate}){
+function RangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [instr,setInstr]=useState('');
   const [customLow,setCustomLow]=useState('C4');
   const [customHigh,setCustomHigh]=useState('C6');
@@ -742,7 +743,7 @@ function RangePanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,instr,customLow,customHigh,range,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,instr,customLow,customHigh,range,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">음역대 자동 조정</h2>
@@ -774,7 +775,7 @@ function RangePanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: TRANSPOSING INSTRUMENT
    ============================================================== */
-function InstrumentPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function InstrumentPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [dir,setDir]=useState('toC');
   const [sel,setSel]=useState('');
   const [customSemi,setCustomSemi]=useState(-2);
@@ -820,7 +821,7 @@ function InstrumentPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,sel,shift,dir,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,sel,shift,dir,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">이조 악기 변환</h2>
@@ -874,7 +875,7 @@ function InstrumentPanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: TEMPO
    ============================================================== */
-function TempoPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function TempoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [bpm,setBpm]=useState(120);
   const [origBpm,setOrigBpm]=useState(120);
   const [detectMsg,setDetectMsg]=useState('파일을 업로드하면 원본 템포가 표시됩니다.');
@@ -885,13 +886,13 @@ function TempoPanel({files,showProgress,hideProgress,onFilesUpdate}){
 
   useEffect(()=>{
     if(!files.length)return;
-    const doc=files[0].xmlDoc;
+    const doc=activeDoc(files,activeFile);
     const s=doc.querySelector('sound[tempo]');
     if(s){const t=parseFloat(s.getAttribute('tempo'));if(t>0){setOrigBpm(t);setBpm(t);setDetectMsg(`✓ 감지됨: ${t} BPM (${getTempoTerm(t)})`);return}}
     const pm=doc.querySelector('metronome per-minute');
     if(pm){const t=parseFloat(pm.textContent);if(t>0){setOrigBpm(t);setBpm(t);setDetectMsg(`✓ 감지됨: ${t} BPM`);return}}
     setOrigBpm(120);setBpm(120);setDetectMsg('템포 정보 없음. 기본값 120 BPM');
-  },[files]);
+  },[files,activeFile]);
 
   const fillPct=((bpm-20)/(300-20))*100;
   const ratio=(bpm/origBpm*100).toFixed(0);
@@ -931,7 +932,7 @@ function TempoPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,bpm,origBpm,optSound,optMetro,optStretch,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,bpm,origBpm,optSound,optMetro,optStretch,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">템포 조절</h2>
@@ -982,15 +983,15 @@ function TempoPanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: KEY CHANGE (마디별 조바꿈)
    ============================================================== */
-function KeyChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
+function KeyChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [changes,setChanges]=useState([{measure:1,key:0}]);
   const [log,setLog]=useState([]);
 
   const totalMeasures=useMemo(()=>{
     if(!files.length)return 0;
-    const parts=files[0].xmlDoc.querySelectorAll('part');
+    const parts=activeDoc(files,activeFile).querySelectorAll('part');
     return parts[0]?.querySelectorAll('measure')?.length||0;
-  },[files]);
+  },[files,activeFile]);
 
   const addChange=useCallback(()=>{
     const last=changes[changes.length-1];
@@ -1004,7 +1005,7 @@ function KeyChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
     const sorted=[...changes].sort((a,b)=>a.measure-b.measure);
     const segs=[];
     // Original key before first change
-    const origFifths=parseInt(files[0]?.xmlDoc.querySelector('key fifths')?.textContent||'0');
+    const origFifths=parseInt(activeDoc(files,activeFile).querySelector('key fifths')?.textContent||'0');
     const origIdx=KEY_FIFTHS.indexOf(origFifths);
     const origKey=origIdx>=0?origIdx:0;
     if(sorted[0].measure>1){
@@ -1084,7 +1085,7 @@ function KeyChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,changes,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,changes,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">마디별 조바꿈</h2>
@@ -1095,7 +1096,7 @@ function KeyChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
 
     {totalMeasures>0 && <div className="card">
       <div className="card__title">📄 악보 정보</div>
-      <div className="card__text">총 {totalMeasures}마디 · 원본 조: {KEY_NAMES[KEY_FIFTHS.indexOf(parseInt(files[0]?.xmlDoc.querySelector('key fifths')?.textContent||'0'))]||'C'} Major</div>
+      <div className="card__text">총 {totalMeasures}마디 · 원본 조: {KEY_NAMES[KEY_FIFTHS.indexOf(parseInt(activeDoc(files,activeFile).querySelector('key fifths')?.textContent||'0'))]||'C'} Major</div>
     </div>}
 
     <div className="card">
@@ -1154,20 +1155,20 @@ function KeyChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: CAPO
    ============================================================== */
-function CapoPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [capos,setCapos]=useState([{measure:1,fret:2}]);
   const [log,setLog]=useState([]);
 
   const totalMeasures=useMemo(()=>{
     if(!files.length)return 0;
-    return files[0].xmlDoc.querySelector('part')?.querySelectorAll('measure')?.length||0;
-  },[files]);
+    return activeDoc(files,activeFile).querySelector('part')?.querySelectorAll('measure')?.length||0;
+  },[files,activeFile]);
 
   const origKeyName=useMemo(()=>{
     if(!files.length)return 'C';
-    const f=parseInt(files[0].xmlDoc.querySelector('key fifths')?.textContent||'0');
+    const f=parseInt(activeDoc(files,activeFile).querySelector('key fifths')?.textContent||'0');
     const idx=KEY_FIFTHS.indexOf(f);return idx>=0?KEY_NAMES[idx]:'C';
-  },[files]);
+  },[files,activeFile]);
 
   const addCapo=useCallback(()=>{
     const last=capos[capos.length-1];
@@ -1298,7 +1299,7 @@ function CapoPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,capos,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,capos,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">카포 (Capo)</h2>
@@ -1394,24 +1395,24 @@ function CapoPanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: TEMPO CHANGE (마디별 템포)
    ============================================================== */
-function TempoChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
+function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [changes,setChanges]=useState([{measure:1,bpm:120}]);
   const [log,setLog]=useState([]);
 
   const totalMeasures=useMemo(()=>{
     if(!files.length)return 0;
-    const parts=files[0].xmlDoc.querySelectorAll('part');
+    const parts=activeDoc(files,activeFile).querySelectorAll('part');
     return parts[0]?.querySelectorAll('measure')?.length||0;
-  },[files]);
+  },[files,activeFile]);
 
   const origBpm=useMemo(()=>{
     if(!files.length)return 120;
-    const s=files[0].xmlDoc.querySelector('sound[tempo]');
+    const s=activeDoc(files,activeFile).querySelector('sound[tempo]');
     if(s)return parseFloat(s.getAttribute('tempo'))||120;
-    const pm=files[0].xmlDoc.querySelector('metronome per-minute');
+    const pm=activeDoc(files,activeFile).querySelector('metronome per-minute');
     if(pm)return parseFloat(pm.textContent)||120;
     return 120;
-  },[files]);
+  },[files,activeFile]);
 
   const addChange=useCallback(()=>{
     const last=changes[changes.length-1];
@@ -1499,7 +1500,7 @@ function TempoChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,changes,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,changes,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">마디별 템포 변경</h2>
@@ -1587,7 +1588,7 @@ function TempoChangePanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: OSSIA
    ============================================================== */
-function OssiaPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [startMeasure,setStartMeasure]=useState(1);
   const [endMeasure,setEndMeasure]=useState(1);
   const [transposeSemi,setTransposeSemi]=useState(0);
@@ -1597,9 +1598,9 @@ function OssiaPanel({files,showProgress,hideProgress,onFilesUpdate}){
 
   const totalMeasures=useMemo(()=>{
     if(!files.length)return 0;
-    const parts=files[0].xmlDoc.querySelectorAll('part');
+    const parts=activeDoc(files,activeFile).querySelectorAll('part');
     return parts[0]?.querySelectorAll('measure')?.length||0;
-  },[files]);
+  },[files,activeFile]);
 
   const run=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -1742,14 +1743,14 @@ function OssiaPanel({files,showProgress,hideProgress,onFilesUpdate}){
     hideProgress();
 
     function cloneEl(el){return el?el.cloneNode(true):null}
-  },[files,startMeasure,endMeasure,transposeSemi,octaveShift,ossiaLabel,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,startMeasure,endMeasure,transposeSemi,octaveShift,ossiaLabel,showProgress,hideProgress,onFilesUpdate]);
 
   const clearOssia=useCallback(()=>{
     if(!files.length)return;
     const updated=files.map(f=>{const{ossiaMxml,ossiaMeta,...rest}=f;return rest});
     onFilesUpdate(updated,'Ossia 제거');
     setLog([{m:'✅ Ossia 오버레이 제거됨',t:'ok'}]);
-  },[files,onFilesUpdate]);
+  },[files,activeFile,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">Ossia 마디 추가</h2>
@@ -1807,17 +1808,17 @@ function OssiaPanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: PARTS
    ============================================================== */
-function PartsPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function PartsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [partStates,setPartStates]=useState({});
   const [log,setLog]=useState([]);
 
   const parts=useMemo(()=>{
     if(!files.length)return[];
-    const pl=files[0].xmlDoc.querySelector('part-list');if(!pl)return[];
+    const pl=activeDoc(files,activeFile).querySelector('part-list');if(!pl)return[];
     return Array.from(pl.querySelectorAll('score-part')).map(sp=>({
       id:sp.getAttribute('id'),name:sp.querySelector('part-name')?.textContent||sp.getAttribute('id')
     }));
-  },[files]);
+  },[files,activeFile]);
 
   useEffect(()=>{const s={};parts.forEach(p=>s[p.id]=true);setPartStates(s)},[parts]);
 
@@ -1841,7 +1842,7 @@ function PartsPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,partStates,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,partStates,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">파트 추출 / 삭제</h2>
@@ -1865,7 +1866,7 @@ function PartsPanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: NOTATION EDITING
    ============================================================== */
-function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [hideStaff,setHideStaff]=useState({});
   const [lyrics,setLyrics]=useState(false);
   const [chords,setChords]=useState(false);
@@ -1882,16 +1883,16 @@ function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
   useEffect(()=>{
     if(files===lastOutRef.current)return;
     baselineRef.current=files.map(f=>({name:f.name,xmlDoc:cloneDoc(f.xmlDoc)}));
-  },[files]);
+  },[files,activeFile]);
 
   const parts=useMemo(()=>{
-    const src=baselineRef.current?.[0]?.xmlDoc||files[0]?.xmlDoc;
+    const src=baselineRef.current?.[activeFile]?.xmlDoc||activeDoc(files,activeFile);
     if(!src)return[];
     const pl=src.querySelector('part-list');if(!pl)return[];
     return Array.from(pl.querySelectorAll('score-part')).map(sp=>({
       id:sp.getAttribute('id'),name:sp.querySelector('part-name')?.textContent||sp.getAttribute('id')
     }));
-  },[files]);
+  },[files,activeFile]);
 
   useEffect(()=>{const s={};parts.forEach(p=>s[p.id]=false);setHideStaff(s)},[parts]);
 
@@ -1939,7 +1940,7 @@ function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,hideStaff,lyrics,chords,oneLine,slash,rmAcc,rmKey,slashPitch,slashKeep,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,hideStaff,lyrics,chords,oneLine,slash,rmAcc,rmKey,slashPitch,slashKeep,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">악보 표기 변환</h2>
@@ -1982,8 +1983,9 @@ function NotationPanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: EXPORT (이미지 / PDF)
    ============================================================== */
-function ExportPanel({files,showProgress,hideProgress}){
-  const [selIdx,setSelIdx]=useState(0);
+function ExportPanel({files,activeFile=0,showProgress,hideProgress}){
+  const [selIdx,setSelIdx]=useState(activeFile);
+  useEffect(()=>setSelIdx(activeFile),[activeFile]);
   const [format,setFormat]=useState('png');
   const [scale,setScale]=useState(1.5);
   const [bgWhite,setBgWhite]=useState(true);
@@ -1996,8 +1998,8 @@ function ExportPanel({files,showProgress,hideProgress}){
   // Detect total measures
   const totalMeasures=useMemo(()=>{
     if(!files.length)return 0;
-    return files[0].xmlDoc.querySelector('part')?.querySelectorAll('measure')?.length||0;
-  },[files]);
+    return activeDoc(files,activeFile).querySelector('part')?.querySelectorAll('measure')?.length||0;
+  },[files,activeFile]);
 
   // Load preview with OSMD
   const loadPreview=useCallback(async()=>{
@@ -2024,7 +2026,7 @@ function ExportPanel({files,showProgress,hideProgress}){
       setLog(l=>[...l,{m:'❌ 렌더링 오류: '+e.message,t:'err'}]);
     }
     setPreviewing(false);
-  },[files,selIdx]);
+  },[files,activeFile,selIdx]);
 
   // Export as PNG
   const exportPNG=useCallback(async()=>{
@@ -2156,7 +2158,7 @@ function ExportPanel({files,showProgress,hideProgress}){
       lines.push({m:'✅ 전체 다운로드 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,scale,bgWhite,showProgress,hideProgress]);
+  },[files,activeFile,scale,bgWhite,showProgress,hideProgress]);
 
   // Export SVG directly
   const exportSVG=useCallback(()=>{
@@ -2234,7 +2236,7 @@ function ExportPanel({files,showProgress,hideProgress}){
 /* ==============================================================
    PANEL: COLOR
    ============================================================== */
-function ColorPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function ColorPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [doStem,setDoStem]=useState(false);
   const [log,setLog]=useState([]);
 
@@ -2261,7 +2263,7 @@ function ColorPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,doStem,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,doStem,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">색깔 악보 만들기</h2>
@@ -2284,7 +2286,7 @@ function ColorPanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: HARMONY STACKING
    ============================================================== */
-function HarmonyPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function HarmonyPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [mode,setMode]=useState('up');
   const [chromatic,setChromatic]=useState(false);
   const [target,setTarget]=useState('all');
@@ -2339,7 +2341,7 @@ function HarmonyPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,mode,chromatic,target,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,mode,chromatic,target,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">화성 쌓기</h2>
@@ -2390,7 +2392,7 @@ const KIND_INTERVALS={
 const STEP_SEMI={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
 const PC_STEP_ALTER=[['C',0],['D',-1],['D',0],['E',-1],['E',0],['F',0],['G',-1],['G',0],['A',-1],['A',0],['B',-1],['B',0]];
 
-function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [rules,setRules]=useState([{from:'',to:''}]);
   const [replaceExisting,setReplaceExisting]=useState(false);
   const [inv,setInv]=useState(1);
@@ -2427,7 +2429,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,rules,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,rules,showProgress,hideProgress,onFilesUpdate]);
 
   const runAutoInsert=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -2462,7 +2464,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,replaceExisting,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,replaceExisting,showProgress,hideProgress,onFilesUpdate]);
 
   const runInversion=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -2499,7 +2501,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 자리바꿈 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,inv,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,inv,showProgress,hideProgress,onFilesUpdate]);
 
   const runInversionReset=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -2516,7 +2518,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
     }
     onFilesUpdate(updatedFiles,'코드 자리바꿈 원위치');
     lines.push({m:'✅ 원위치 복원 완료',t:'ok'});setLog(lines);hideProgress();
-  },[files,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">코드 도구</h2>
@@ -2560,7 +2562,7 @@ function ChordToolsPanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: NUMBER NOTATION
    ============================================================== */
-function NumberingPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function NumberingPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [mode,setMode]=useState('solfege');
   const [showOct,setShowOct]=useState(true);
   const [showSharp,setShowSharp]=useState(false);
@@ -2572,7 +2574,7 @@ function NumberingPanel({files,showProgress,hideProgress,onFilesUpdate}){
   useEffect(()=>{
     if(files===lastOutRef.current)return;
     baselineRef.current=files.map(f=>({name:f.name,xmlDoc:cloneDoc(f.xmlDoc)}));
-  },[files]);
+  },[files,activeFile]);
 
   const preview=useMemo(()=>{
     if(mode==='original')return[];
@@ -2628,7 +2630,7 @@ function NumberingPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,mode,showOct,showSharp,keepLyrics,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,mode,showOct,showSharp,keepLyrics,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">숫자 악보</h2>
@@ -2677,7 +2679,7 @@ const LYRIC_FONT_FAMILIES=[
   {id:'Comic Sans MS',label:'Comic Sans MS'},
 ];
 
-function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
+function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [size,setSize]=useState(10);
   const [applySize,setApplySize]=useState(true);
   const [bold,setBold]=useState(false);
@@ -2714,7 +2716,7 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 가사 스타일 적용 완료',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,size,applySize,bold,applyBold,italic,applyItalic,family,applyFamily,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,size,applySize,bold,applyBold,italic,applyItalic,family,applyFamily,showProgress,hideProgress,onFilesUpdate]);
 
   const runReset=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -2730,7 +2732,7 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
     }
     onFilesUpdate(updatedFiles,'가사 스타일 초기화');
     lines.push({m:'✅ 초기화 완료',t:'ok'});setLog(lines);hideProgress();
-  },[files,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,showProgress,hideProgress,onFilesUpdate]);
 
   const runColorByPitch=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -2755,7 +2757,7 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 가사 색상 적용 완료',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,showProgress,hideProgress,onFilesUpdate]);
 
   const previewStyle={
     fontSize:applySize?`${size*1.5}px`:undefined,
@@ -2826,7 +2828,7 @@ function LyricStylePanel({files,showProgress,hideProgress,onFilesUpdate}){
 /* ==============================================================
    PANEL: CHORD ANALYSIS
    ============================================================== */
-function ChordsPanel({files,showProgress,hideProgress}){
+function ChordsPanel({files,activeFile=0,showProgress,hideProgress}){
   const [log,setLog]=useState([]);
 
   const run=useCallback(async()=>{
@@ -2847,7 +2849,7 @@ function ChordsPanel({files,showProgress,hideProgress}){
       }
     }
     lines.push({m:'✅ 분석 완료',t:'ok'});setLog(lines);hideProgress();
-  },[files,showProgress,hideProgress]);
+  },[files,activeFile,showProgress,hideProgress]);
 
   const runIdentify=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -2878,7 +2880,7 @@ function ChordsPanel({files,showProgress,hideProgress}){
       lines.push({m:`총 ${grandTotal}개 · 고유 ${sorted.length}종: ${sorted.map(([k,v])=>`${k}(${v})`).join(', ')}`,t:'ok'});
     }
     lines.push({m:'✅ 코드 기호 파악 완료',t:'ok'});setLog(lines);hideProgress();
-  },[files,showProgress,hideProgress]);
+  },[files,activeFile,showProgress,hideProgress]);
 
   return <div>
     <h2 className="panel__heading">코드 분석</h2>
@@ -2947,7 +2949,7 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
     }finally{
       hideProgress();
     }
-  },[files,file,fileIndex,onFilesUpdate,showProgress,hideProgress]);
+  },[files,activeFile,file,fileIndex,onFilesUpdate,showProgress,hideProgress]);
 
   return <div>
     <h2 className="panel__heading">로마 숫자 분석</h2>
@@ -3003,7 +3005,7 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
 /* ==============================================================
    PANEL: STATISTICS
    ============================================================== */
-function StatsPanel({files,showProgress,hideProgress}){
+function StatsPanel({files,activeFile=0,showProgress,hideProgress}){
   const [basicData,setBasicData]=useState(null);
   const [composerData,setComposerData]=useState(null);
 
@@ -3028,7 +3030,7 @@ function StatsPanel({files,showProgress,hideProgress}){
     setBasicData({fileCount:files.length,totalNotes:tn,totalRests:tr,totalMeasures:tm,
       lowest:fmtNote(loN),highest:fmtNote(hiN),noteCounts:nc,rhythmCounts:rcDisplay});
     hideProgress();
-  },[files,showProgress,hideProgress]);
+  },[files,activeFile,showProgress,hideProgress]);
 
   const runComposer=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -3067,7 +3069,7 @@ function StatsPanel({files,showProgress,hideProgress}){
       avgPhrase:avgPh,stepPct:(steps/move*100).toFixed(1),leapPct:(leaps/move*100).toFixed(1),repPct:(reps/move*100).toFixed(1),
       topKeys,topTime,intervals:allIv,progressions:topProg,phraseBuckets:pBk});
     hideProgress();
-  },[files,showProgress,hideProgress]);
+  },[files,activeFile,showProgress,hideProgress]);
 
   return <div>
     <h2 className="panel__heading">통계 분석</h2>
@@ -3127,15 +3129,15 @@ function StatsPanel({files,showProgress,hideProgress}){
    ============================================================== */
 const CLEF_SYMBOLS={treble:'𝄞',bass:'𝄢',alto:'𝄡',tenor:'𝄡',neutral:'𝄥'};
 
-function ClefPanel({files,showProgress,hideProgress,onFilesUpdate}){
+function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const [targetClef,setTargetClef]=useState('treble');
   const [autoTranspose,setAutoTranspose]=useState(true);
   const [log,setLog]=useState([]);
 
   const currentClef=useMemo(()=>{
     if(!files.length)return null;
-    return getCurrentClef(files[0].xmlDoc);
-  },[files]);
+    return getCurrentClef(activeDoc(files,activeFile));
+  },[files,activeFile]);
 
   const run=useCallback(async()=>{
     if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
@@ -3193,7 +3195,7 @@ function ClefPanel({files,showProgress,hideProgress,onFilesUpdate}){
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,targetClef,autoTranspose,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,targetClef,autoTranspose,showProgress,hideProgress,onFilesUpdate]);
 
   const currentCfg=CLEF_CONFIGS.find(c=>c.id===currentClef);
 
@@ -3275,7 +3277,7 @@ function applyLyricStylesToSvg(container,xmlDoc){
 /* ==============================================================
    MENUBAR — top dropdown menu for all panels
    ============================================================== */
-function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF,files}){
+function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportPNG,onExportPDF,files,activeFile=0}){
   const [open,setOpen]=useState(null);
   const [ddPos,setDdPos]=useState({top:78,left:0});
   const navRef=useRef();
@@ -3459,7 +3461,7 @@ function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
 /* ==============================================================
    TRANSPORT BAR — bottom playback / tempo bar
    ============================================================== */
-function CursorTransportBar({files,bpm,onBpmChange,osmdRef}){
+function CursorTransportBar({files,activeFile=0,bpm,onBpmChange,osmdRef}){
   const [isPlaying,setIsPlaying]=useState(false);
   const timerRef=useRef(null);
   const playingRef=useRef(false);
@@ -3470,11 +3472,11 @@ function CursorTransportBar({files,bpm,onBpmChange,osmdRef}){
   const fileCount=files.length;
   const totalNotes=useMemo(()=>{
     let n=0;files.forEach(f=>{n+=f.xmlDoc.querySelectorAll('note:not([rest])').length});return n;
-  },[files]);
+  },[files,activeFile]);
   const totalMeasures=useMemo(()=>{
     if(!files.length)return 0;
-    return files[0].xmlDoc.querySelector('part')?.querySelectorAll('measure')?.length||0;
-  },[files]);
+    return activeDoc(files,activeFile).querySelector('part')?.querySelectorAll('measure')?.length||0;
+  },[files,activeFile]);
 
   /* ── 정지 (내부용) ── */
   const doStop=useCallback(()=>{
@@ -3485,7 +3487,7 @@ function CursorTransportBar({files,bpm,onBpmChange,osmdRef}){
   },[]);
 
   /* 파일 바뀌면 자동 정지 */
-  useEffect(()=>{doStop();},[files,doStop]);
+  useEffect(()=>{doStop();},[files,activeFile,doStop]);
 
   /* ── 한 스텝씩 커서 전진 ── */
   const tick=useCallback(()=>{
@@ -4024,7 +4026,6 @@ function App(){
     setHistory([]);
     setHistoryIndex(-1);
     setHistoryNotice({m:'히스토리를 모두 지웠습니다.',t:'warn'});
-    try{localStorage.removeItem('mxlStudioHistoryMeta')}catch(e){}
   },[]);
 
   const buildSession=useCallback((id='autosave',extra={})=>({
@@ -4103,23 +4104,17 @@ function App(){
     }
   },[shareModal]);
 
-  /* Detect tempo from first file */
+  /* Detect tempo from the active score. */
   useEffect(()=>{
     if(!files.length)return;
-    const doc=files[0].xmlDoc;
+    const doc=activeDoc(files,activeFile);
     const s=doc.querySelector('sound[tempo]');
     if(s){const t=parseFloat(s.getAttribute('tempo'));if(t>0){setBpm(t);return}}
     const pm=doc.querySelector('metronome per-minute');
     if(pm){const t=parseFloat(pm.textContent);if(t>0){setBpm(t);return}}
     setBpm(120);
-  },[files]);
+  },[files,activeFile]);
 
-  useEffect(()=>{
-    try{
-      const meta=GlobalHistoryCore.serializeHistoryMeta(history);
-      localStorage.setItem('mxlStudioHistoryMeta',JSON.stringify(meta));
-    }catch(e){}
-  },[history]);
 
   useEffect(()=>{
     if(shareLoadedRef.current||!window.ShareSessionCore||!window.location.hash)return;
@@ -4253,13 +4248,13 @@ function App(){
       pushHistory(merged,'파일 업로드');
     }
     hideProgress();
-  },[files,showProgress,hideProgress,pushHistory]);
+  },[files,activeFile,showProgress,hideProgress,pushHistory]);
 
   const removeFile=useCallback(i=>{
     const updated=files.filter((_,j)=>j!==i);
     setFiles(updated);
     pushHistory(updated,'파일 제거');
-    if(activeFile>=files.length-1)setActiveFile(Math.max(0,files.length-2));
+    setActiveFile(prev=>updated.length===0?0:i<prev?prev-1:i===prev?Math.min(i,updated.length-1):prev);
   },[activeFile,files,pushHistory]);
   const clearFiles=useCallback(()=>{
     setFiles([]);
@@ -4275,6 +4270,7 @@ function App(){
   const panelProps={files,activeFile,showProgress,hideProgress,onFilesUpdate:updateFiles};
 
   useEffect(()=>{
+    window.__mxlSetActiveFile=index=>setActiveFile(Math.max(0,Math.min(index,files.length-1)));
     window.__mxlGetState=()=>({
       files,
       activeFile,
@@ -4287,7 +4283,7 @@ function App(){
       rightPanel,
       bpm,
     });
-    return()=>{delete window.__mxlGetState};
+    return()=>{delete window.__mxlGetState;delete window.__mxlSetActiveFile};
   },[files,activeFile,history,historyIndex,restoreSession,sessionStatus,shareModal,leftPanel,rightPanel,bpm]);
 
   const exportMXL=useCallback(()=>{
