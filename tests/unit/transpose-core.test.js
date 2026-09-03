@@ -35,3 +35,31 @@ describe('TransposeCore harmony and measure numbers',()=>{
     expect(visit.mock.calls.every(([n])=>n.parentElement.getAttribute('number')!=='0')).toBe(true);
   });
 });
+
+describe('Diatonic spelling and instrument relationships',()=>{
+  const spelled=doc=>Array.from(doc.querySelectorAll('note pitch'),pitch=>pitch.querySelector('step').textContent+({'-2':'bb','-1':'b','0':'','1':'#','2':'##'})[Number(pitch.querySelector('alter')?.textContent||0)]);
+  it.each([[false,['F#','G#','A#','B','C#','D#','E#','F#']],[true,['Gb','Ab','Bb','Cb','Db','Eb','F','Gb']]])('spells C major +6 using flat preference %s',(preferFlat,expected)=>{
+    const doc=fixture('f01-basic.musicxml');core.transposeDocument(doc,6,{preferFlat});
+    expect(spelled(doc)).toEqual(expected);
+    expect(Number(doc.querySelector('fifths').textContent)).toBe(preferFlat?-6:6);
+  });
+  it('moves A minor into C minor and preserves mode and chord qualities',()=>{
+    const doc=fixture('f04-minor-harmony.musicxml');core.transposeDocument(doc,3);
+    expect(doc.querySelector('fifths').textContent).toBe('-3');expect(doc.querySelector('mode').textContent).toBe('minor');
+    expect(Array.from(doc.querySelectorAll('root-step'),n=>n.textContent)).toEqual(['C','F','G','C']);
+    expect(Array.from(doc.querySelectorAll('kind'),n=>n.textContent)).toEqual(['minor','minor','dominant','minor']);
+  });
+  it('preserves clarinet transpose while moving written D major to E major',()=>{
+    const doc=fixture('f05-transposing.musicxml');const before=doc.querySelector('transpose').outerHTML;
+    core.transposeDocument(doc,2);expect(doc.querySelector('fifths').textContent).toBe('4');expect(doc.querySelector('transpose').outerHTML).toBe(before);expect(spelled(doc)[0]).toBe('E');
+  });
+  it('moves E sharp up a minor second into F sharp and avoids needless double sharps in F sharp to G',()=>{
+    expect(core.transposePitch({step:'E',alter:1,octave:4},{diatonic:1,chromatic:1})).toEqual({step:'F',alter:1,octave:4});
+    const doc=fixture('f07-enharmonic.musicxml');core.transposeDocument(doc,1);
+    expect(spelled(doc).slice(0,7)).toEqual(['G','A','B','C','D','E','F#']);expect(spelled(doc).some(p=>p.includes('##'))).toBe(false);
+  });
+  it('supports downward octave crossings and preserves double accidentals when valid',()=>{
+    expect(core.transposePitch({step:'C',alter:0,octave:4},{diatonic:-1,chromatic:-1})).toEqual({step:'B',alter:0,octave:3});
+    expect(core.transposePitch({step:'F',alter:2,octave:4},{diatonic:1,chromatic:2})).toEqual({step:'G',alter:2,octave:4});
+  });
+});

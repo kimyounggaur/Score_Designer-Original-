@@ -74,6 +74,7 @@ const SEMI_TO_STEP = [
   {step:'A',alter:-1},{step:'A',alter:0},{step:'B',alter:-1},{step:'B',alter:0}
 ];
 const KEY_NAMES = ['C','D♭','D','E♭','E','F','F#/G♭','G','A♭','A','B♭','B'];
+const MINOR_KEY_NAMES=['Am','B♭m','Bm','Cm','C♯m','Dm','D♯m','Em','Fm','F♯m','Gm','G♯m'];
 const KEY_FIFTHS = [0,-5,2,-3,4,-1,6,1,-4,3,-2,5];
 const NOTE_COLORS = {C:'#e74c3c',D:'#f39c12',E:'#eab308',F:'#22c55e',G:'#3b82f6',A:'#6366f1',B:'#a855f7'};
 const SOLFEGE_KR = ['도','레','미','파','솔','라','시'];
@@ -670,6 +671,9 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
   const notify=useNotify();
   if(window.__mxlThrowInPanel==='transpose')throw new Error('test panel failure');
   const [mode,setMode]=useState('single');
+  const [spelling,setSpelling]=useState('auto');
+  const isMinor=activeDoc(files,activeFile)?.querySelector('key mode')?.textContent==='minor';
+  const keyNames=isMinor?MINOR_KEY_NAMES:KEY_NAMES;
   const [selKey,setSelKey]=useState(0);
   const [semi,setSemi]=useState(0);
   const [ivNum,setIvNum]=useState(3);
@@ -687,9 +691,10 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
         if(mode==='all12'){
           let previewDoc=null;
           for(let i=0;i<12;i++){
-            const doc=transposeDoc(file.xmlDoc,i,i);
+            const source=((Number(file.xmlDoc.querySelector('key fifths')?.textContent||0)*7)%12+12)%12;
+            const doc=transposeDoc(file.xmlDoc,(i-source+12)%12,i);
             if(i===selKey)previewDoc=doc;
-            lines.push({m:`✓ ${base(file)} → ${KEY_NAMES[i]} Major`,t:'ok'});
+            lines.push({m:`✓ ${base(file)} → ${keyNames[i]}`,t:'ok'});
           }
           updatedFiles.push(commitFile(file,previewDoc||transposeDoc(file.xmlDoc,0,0)));
         }else if(mode==='semitone'){
@@ -707,33 +712,25 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
           lines.push({m:`✓ ${base(file)} → ${ivDir>0?'↑':'↓'} ${qLabel} ${nLabel} (${shift>0?'+':''}${shift}반음)`,t:'ok'});
         }else{
           const fifths=parseInt(file.xmlDoc.querySelector('key fifths')?.textContent||'0');
-          const ci=KEY_FIFTHS.indexOf(fifths);const cs=ci>=0?ci:0;
+          const cs=((fifths*7)%12+12)%12;
           const s=(selKey-cs+12)%12;
           const doc=transposeDoc(file.xmlDoc,s,selKey);
           updatedFiles.push(commitFile(file,doc));
-          lines.push({m:`✓ ${base(file)} → ${KEY_NAMES[selKey]} (${s}반음)`,t:'ok'});
+          lines.push({m:`✓ ${base(file)} → ${keyNames[selKey]} (${s}반음)`,t:'ok'});
         }
       }
       onFilesUpdate(updatedFiles,'조옮김');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,mode,selKey,semi,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,mode,spelling,selKey,semi,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
 
   function transposeDoc(xmlDoc,semitones,targetKeyIdx){
     const doc=cloneDoc(xmlDoc);
-    doc.querySelectorAll('note').forEach(note=>{
-      const p=getNotePitch(note);if(!p)return;
-      const np=transposeNote(p.step,p.alter,p.octave,semitones);
-      setNotePitch(note,np.step,np.alter,np.octave);
-      let acc=note.querySelector('accidental');
-      if(acc){if(np.alter===1)acc.textContent='sharp';else if(np.alter===-1)acc.textContent='flat';else acc.remove()}
-      else if(np.alter!==0){acc=doc.createElement('accidental');acc.textContent=np.alter===1?'sharp':'flat';const pi=note.querySelector('pitch');if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);else note.appendChild(acc)}
-    });
-    if(window.TransposeCore)window.TransposeCore.transposeDocHarmonies(doc,semitones);
-    else setLog(l=>[...l,{m:'코드 심볼은 옮기지 못했습니다.',t:'warn'}]);
-    if(targetKeyIdx!==null&&targetKeyIdx!==undefined)
-      doc.querySelectorAll('key fifths').forEach(f=>f.textContent=KEY_FIFTHS[targetKeyIdx]);
+    if(!window.TransposeCore)throw new Error('조옮김 모듈을 불러오지 못했습니다.');
+    const targetFifths=targetKeyIdx==null?undefined:KEY_FIFTHS[targetKeyIdx];
+    const preferFlat=spelling==='flat'?true:spelling==='sharp'?false:targetFifths==null?undefined:targetFifths<0;
+    window.TransposeCore.transposeDocument(doc,semitones,{preferFlat,targetFifths});
     return doc;
   }
 
@@ -755,7 +752,7 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
 
     {mode==='single' && <div className="card"><div className="card__title">🎼 목표 조 선택</div>
       <div className="key-grid">
-        {KEY_NAMES.map((n,i)=><button type="button" aria-pressed={i===selKey} key={i} className={`key-grid__btn${i===selKey?' key-grid__btn--selected':''}`}
+        {keyNames.map((n,i)=><button type="button" aria-pressed={i===selKey} key={i} className={`key-grid__btn${i===selKey?' key-grid__btn--selected':''}`}
           onClick={()=>setSelKey(i)}>{n}</button>)}
       </div>
     </div>}
@@ -783,6 +780,9 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
       <div className="card__text">현재 설정: {ivDir>0?'↑':'↓'} {INTERVAL_QUALITIES.find(q=>q.id===ivQual)?.label} {INTERVAL_NUMBERS.find(n=>n.id===ivNum)?.label} = {(()=>{const s=computeIntervalSemis(ivNum,ivQual);return s===undefined?'—':`${s*ivDir>0?'+':''}${s*ivDir} 반음`})()}</div>
     </div>}
 
+    <div className="card"><div className="card__title">철자 선택</div><div className="chip-group">
+      <Chip on={spelling==='auto'} onClick={()=>setSpelling('auto')}>자동</Chip><Chip on={spelling==='sharp'} onClick={()=>setSpelling('sharp')}>♯ 우선</Chip><Chip on={spelling==='flat'} onClick={()=>setSpelling('flat')}>♭ 우선</Chip>
+    </div><p className="card__text">현재 조: {keyNames[((Number(activeDoc(files,activeFile)?.querySelector('key fifths')?.textContent||0)*7)%12+12)%12]} {isMinor?'단조':'장조'}.</p></div>
     <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 변환 실행</button></div>
     <LogPanel lines={log}/>
   </div>;
@@ -805,7 +805,7 @@ function RangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
     if(!instr){notify('악기를 선택해주세요.','warn');return}
     let low,high;
     if(instr==='custom'){low=parseNoteStr(customLow);high=parseNoteStr(customHigh);if(!low||!high){notify('올바른 음표 형식을 입력해주세요','warn');return}}
-    else{low={...range.low,alter:0};high={...range.high,alter:0}}
+    else{low={step:range.low.step,octave:range.low.oct,alter:0};high={step:range.high.step,octave:range.high.oct,alter:0}}
     const lm=noteToMidi(low.step,low.alter,low.octave),hm=noteToMidi(high.step,high.alter,high.octave);
     setLog([]);showProgress('음역대 조정 중...');await new Promise(r=>setTimeout(r,50));
     try{
@@ -887,17 +887,21 @@ function InstrumentPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
       const lines=[];const updatedFiles=[];
       for(const file of files){
         const doc=cloneDoc(file.xmlDoc);let cnt=0;
-        doc.querySelectorAll('note').forEach(note=>{
-          const p=getNotePitch(note);if(!p)return;
-          const np=transposeNote(p.step,p.alter,p.octave,shift);
-          setNotePitch(note,np.step,np.alter,np.octave);
-          let acc=note.querySelector('accidental');
-          if(acc){if(np.alter===1)acc.textContent='sharp';else if(np.alter===-1)acc.textContent='flat';else acc.remove()}
-          else if(np.alter!==0){acc=doc.createElement('accidental');acc.textContent=np.alter===1?'sharp':'flat';const pi=note.querySelector('pitch');if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);else note.appendChild(acc)}
-          cnt++;
+        if(!window.TransposeCore)throw new Error('조옮김 모듈을 불러오지 못했습니다.');
+        cnt=window.TransposeCore.transposeDocument(doc,shift).notes;
+        doc.querySelectorAll('transpose').forEach(element=>element.remove());
+        if(dir==='fromC')doc.querySelectorAll('score-partwise > part').forEach(part=>{
+          const measure=part.querySelector('measure');let attrs=measure.querySelector('attributes');
+          if(!attrs){attrs=doc.createElement('attributes');measure.insertBefore(attrs,measure.firstChild);}
+          const octaves=Math.trunc(semiSounding/12),chromatic=semiSounding-octaves*12;
+          const interval=window.TransposeCore.intervalFromSemitones(chromatic,true);
+          const transpose=doc.createElement('transpose');
+          for(const [tag,value] of [['diatonic',interval.diatonic],['chromatic',chromatic],['octave-change',octaves]]){
+            if(tag==='octave-change'&&!value)continue;
+            const element=doc.createElement(tag);element.textContent=String(value);transpose.appendChild(element);
+          }
+          attrs.appendChild(transpose);
         });
-        if(window.TransposeCore)window.TransposeCore.transposeDocHarmonies(doc,shift);
-        else lines.push({m:'코드 심볼은 옮기지 못했습니다.',t:'warn'});
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 음표 변환`,t:'ok'});
       }
@@ -905,7 +909,7 @@ function InstrumentPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,sel,shift,dir,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,sel,shift,semiSounding,dir,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">이조 악기 변환</h2>
