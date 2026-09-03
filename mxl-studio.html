@@ -1587,6 +1587,9 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
     return parts[0]?.querySelectorAll('measure')?.length||0;
   },[files,activeFile]);
 
+  const measureNumbers=Array.from(activeDoc(files,activeFile)?.querySelector('part')?.querySelectorAll('measure')||[],m=>Number(m.getAttribute('number'))).filter(Number.isFinite);
+  const firstNumber=measureNumbers[0]??1,lastNumber=measureNumbers.at(-1)??9999;
+
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     if(startMeasure>endMeasure){notify('시작 마디가 끝 마디보다 클 수 없습니다.','warn');return}
@@ -1641,8 +1644,8 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
           // 범위 외 마디 제거
           const allMeasures=Array.from(firstPart.querySelectorAll('measure'));
           allMeasures.forEach((measure,idx)=>{
-            const measureNum=idx+1;
-            if(measureNum<startMeasure||measureNum>endMeasure)measure.remove();
+            const measureNum=Number(measure.getAttribute('number'));
+            if(!Number.isFinite(measureNum)||measureNum<startMeasure||measureNum>endMeasure)measure.remove();
           });
 
           const keptMeasures=Array.from(firstPart.querySelectorAll('measure'));
@@ -1676,10 +1679,10 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
             });
           }
 
-          // 마디 번호 재지정 + 변형 + 가사/화음 제거
+          // 원래 마디 번호 유지 + 변형 + 가사/화음 제거
           const totalShift=transposeSemi+octaveShift*12;
           keptMeasures.forEach((measure,idx)=>{
-            measure.setAttribute('number',String(idx+1));
+            // Preserve the source measure number, including pickup 0.
             if(totalShift!==0){
               measure.querySelectorAll('note').forEach(note=>{
                 const p=getNotePitch(note);if(!p)return;
@@ -1754,14 +1757,14 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
       <div className="change-entry">
         <div className="change-entry__field change-entry__field--narrow">
           <span className="change-entry__micro">시작 마디</span>
-          <input className="measure-input" type="number" min={1} max={totalMeasures||9999}
-            value={startMeasure} onChange={e=>setStartMeasure(parseInt(e.target.value)||1)}/>
+          <input className="measure-input" type="number" min={firstNumber} max={lastNumber}
+            value={startMeasure} onChange={e=>setStartMeasure(e.target.value===''?firstNumber:Number(e.target.value))}/>
         </div>
         <span className="change-entry__arrow">~</span>
         <div className="change-entry__field change-entry__field--narrow">
           <span className="change-entry__micro">끝 마디</span>
-          <input className="measure-input" type="number" min={1} max={totalMeasures||9999}
-            value={endMeasure} onChange={e=>setEndMeasure(parseInt(e.target.value)||1)}/>
+          <input className="measure-input" type="number" min={firstNumber} max={lastNumber}
+            value={endMeasure} onChange={e=>setEndMeasure(e.target.value===''?firstNumber:Number(e.target.value))}/>
         </div>
       </div>
     </div>
