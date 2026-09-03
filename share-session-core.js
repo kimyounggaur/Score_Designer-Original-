@@ -89,6 +89,8 @@
       name:file?.name || '공유 악보.musicxml',
       sourceName:file?.sourceName || file?.name || '공유 악보.musicxml',
       xml:getFileXml(file),
+      ossiaMxml:typeof file?.ossiaMxml==='string'?file.ossiaMxml:undefined,
+      ossiaMeta:file?.ossiaMeta,
       savedAt:new Date().toISOString(),
     };
   }
@@ -109,6 +111,8 @@
       name:payload.name || payload.sourceName || '공유 악보.musicxml',
       sourceName:payload.sourceName || payload.name || '공유 악보.musicxml',
       xml:payload.xml || payload.xmlString || '',
+      ossiaMxml:typeof payload.ossiaMxml==='string'?payload.ossiaMxml:undefined,
+      ossiaMeta:payload.ossiaMeta,
       savedAt:payload.savedAt || null,
     };
   }

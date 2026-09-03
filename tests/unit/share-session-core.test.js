@@ -54,4 +54,15 @@ describe('ShareSessionCore', () => {
     expect(parsed.xml).toContain('id="edited"');
     expect(parsed.xml).not.toContain('안녕');
   });
+
+  it('round-trips optional ossia XML and metadata in v2', async () => {
+    const core = await loadCore();
+    const file = { name: 'ossia.xml', xml, ossiaMxml: xml, ossiaMeta: { startMeasure: 0, endMeasure: 2, label: '쉬운 연주' } };
+    const url = await core.buildShareURLv2(file, 'https://example.com/');
+    const result = await core.parseShareURLAny(url);
+    expect(result.ossiaMxml).toBe(xml);
+    expect(result.ossiaMeta).toEqual(file.ossiaMeta);
+    const legacy = await core.parseShareURLAny(core.buildShareURL({xml}, 'https://example.com/'));
+    expect(legacy.ossiaMxml).toBeUndefined();
+  });
 });
