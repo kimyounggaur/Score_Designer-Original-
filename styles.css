@@ -2319,3 +2319,15 @@ body {
 .toast { display:flex; align-items:center; gap:16px; padding:14px 16px; border-radius:10px; background:#173c61; color:white; box-shadow:0 6px 24px #0003; pointer-events:auto; line-height:1.5; }
 .toast--ok { background:#1b5e3e; }.toast--warn { background:#734e00; }.toast--err { background:#942d30; }
 .toast button { margin-left:auto; border:0; background:transparent; color:inherit; cursor:pointer; font-size:22px; }
+
+/* 파일 선택 */
+.main-score { display:flex; flex-direction:column; min-width:0; align-items:stretch; }
+.main-score > .score-empty { margin:auto; }
+.main-score > .score-container { flex:1; min-height:0; }
+.file-tabs { display:flex; flex-shrink:0; overflow-x:auto; padding:8px 12px 0; gap:4px; background:var(--bg-light,#fff); border-bottom:1px solid var(--border-light,#ddd); }
+.file-tab-wrap { display:flex; flex:0 0 auto; align-items:center; }
+.file-tab { border:0; border-bottom:3px solid transparent; padding:10px 12px; font:inherit; white-space:nowrap; background:transparent; color:var(--text-secondary,#555); cursor:pointer; }
+.file-tab--active { color:var(--accent); border-bottom-color:var(--accent); font-weight:600; }
+.file-tab__close { background:transparent; border:0; font-size:20px; padding:8px; cursor:pointer; color:#555; }
+.file-entry--active { box-shadow:inset 3px 0 var(--accent); }
+.file-entry__select { text-align:left; min-width:0; flex:1; padding:0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }

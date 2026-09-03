@@ -589,7 +589,7 @@ const GlobalHistoryCore = window.HistoryCore || {
 /* ==============================================================
    PANEL: UPLOAD
    ============================================================== */
-function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear,uploadLog}){
+function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear,uploadLog,onSelect}){
   const [dragging,setDragging]=useState(false);
   const inputRef=useRef();
 
@@ -617,12 +617,12 @@ function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear,uploadLog})
       {files.map((f,i)=>{
         const parts=f.xmlDoc.querySelectorAll('part').length;
         const notes=f.xmlDoc.querySelectorAll('note:not([rest])').length;
-        return <div className="file-entry" key={i}>
-          <div>
+        return <div className={`file-entry${i===activeFile?' file-entry--active':''}`} key={f.name}>
+          <button type="button" className="file-entry__select" aria-current={i===activeFile?'true':undefined} onClick={()=>onSelect(i)}>
             <div className="file-entry__name">{f.name}</div>
             <div className="file-entry__meta">{parts}파트 · {notes}음표</div>
-          </div>
-          <button className="file-entry__remove" onClick={()=>onRemove(i)}>✕</button>
+          </button>
+          <button type="button" aria-label={`파일 닫기: ${f.name}`} className="file-entry__remove" onClick={()=>onRemove(i)}>✕</button>
         </div>;
       })}
     </div>}
@@ -3471,7 +3471,29 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportXML,onExportPNG
   </nav>;
 }
 
-function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
+function FileTabs({files,activeFile,onSelect,onClose}){
+  const tabsRef=useRef(null);
+  useEffect(()=>{tabsRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({inline:'nearest',block:'nearest'});},[activeFile,files.length]);
+  if(files.length<2)return null;
+  const move=(event,index)=>{
+    let next;
+    if(event.key==='ArrowRight')next=(index+1)%files.length;
+    if(event.key==='ArrowLeft')next=(index-1+files.length)%files.length;
+    if(event.key==='Home')next=0;
+    if(event.key==='End')next=files.length-1;
+    if(event.key==='Delete'){event.preventDefault();onClose(index);return;}
+    if(next!==undefined){event.preventDefault();onSelect(next);tabsRef.current.querySelectorAll('[role="tab"]')[next]?.focus();}
+  };
+  return <div className="file-tabs" role="tablist" aria-label="열린 악보" ref={tabsRef}>
+    {files.map((file,index)=><div className="file-tab-wrap" role="presentation" key={file.name}>
+      <button type="button" id={`file-tab-${index}`} role="tab" aria-selected={activeFile===index} aria-controls="score-panel" tabIndex={activeFile===index?0:-1}
+        className={`file-tab${activeFile===index?' file-tab--active':''}`} onClick={()=>onSelect(index)} onKeyDown={event=>move(event,index)}>{file.name.replace(/\.(musicxml|xml|mxl)$/i,'')}</button>
+      <button type="button" className="file-tab__close" onClick={()=>onClose(index)} aria-label={`파일 닫기: ${file.name}`}>×</button>
+    </div>)}
+  </div>;
+}
+
+function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasure,isPlaying}){
   const containerRef=useRef(null);
   const ossiaRef=useRef(null);
   const scoreRenderRef=useRef(null);
@@ -3545,13 +3567,14 @@ function ScoreView({files,activeFile,onOsmdReady,playbackMeasure,isPlaying}){
   </div>;
 
   return <div className="main-score">
+    <FileTabs files={files} activeFile={activeFile} onSelect={onSelect} onClose={onClose}/>
     <div className={`score-measure-overlay${isPlaying&&playbackMeasure?' score-measure-overlay--visible':''}`}>
       <span className="score-measure-overlay__label">Measure</span>
       <span className="score-measure-overlay__value">{playbackMeasure||1}</span>
     </div>
     {renderError&&<div className="score-error" role="alert">악보를 렌더링하지 못했습니다. {renderError}<button type="button" className="btn btn--secondary" onClick={()=>setRenderAttempt(n=>n+1)}>다시 렌더</button></div>}
     {ossiaError&&<div className="ossia-inline__error" role="alert">Ossia 렌더링 실패: {ossiaError}</div>}
-    <div className="score-container" ref={containerRef}>
+    <div className="score-container" ref={containerRef} id="score-panel" role={files.length>1?'tabpanel':undefined} aria-labelledby={files.length>1?`file-tab-${activeFile}`:undefined}>
       <div className="ossia-inline" ref={ossiaRef}/>
       <div className="score-main-render" ref={scoreRenderRef}/>
     </div>
@@ -4352,7 +4375,7 @@ function App(){
   const selectRightPanel=useCallback(id=>{setRightPanel(id);setShowRight(true);},[]);
 
   const ALL_PANELS={
-    upload:<UploadPanel uploadLog={uploadLog} files={files} onFilesAdd={addFiles} onRemove={removeFile} onClear={clearFiles}/>,
+    upload:<UploadPanel activeFile={activeFile} onSelect={setActiveFile} uploadLog={uploadLog} files={files} onFilesAdd={addFiles} onRemove={removeFile} onClear={clearFiles}/>,
     transpose:<TransposePanel {...panelProps}/>,
     keychange:<KeyChangePanel {...panelProps}/>,
     capo:<CapoPanel {...panelProps}/>,
@@ -4398,7 +4421,7 @@ function App(){
       <div className="header__right">
         <button className={`header__toggle${showLeft?' header__toggle--active':''}`}
           onClick={()=>setShowLeft(!showLeft)} title="인스펙터 토글">☰</button>
-        <div className="header__badge">파일 {files.length}개</div>
+        <div className="header__badge">파일 {files.length}개{files.length>0?` · 현재: ${files[activeFile]?.name}`:''}</div>
         {sessionStatus.backend&&<div className="session-status" title={sessionStatus.error?`세션 오류: ${sessionStatus.error}`:'세션 저장 상태'}>
           저장소: {sessionStatus.usage!=null&&sessionStatus.quota!=null?`${formatBytes(sessionStatus.usage)}/${formatBytes(sessionStatus.quota)}`:'확인 중'} ({sessionStatus.backend==='idb'?'IndexedDB':'Local'})
         </div>}
@@ -4493,6 +4516,8 @@ function App(){
     <PanelErrorBoundary label="악보"><ScoreView
       files={files}
       activeFile={activeFile}
+      onSelect={setActiveFile}
+      onClose={removeFile}
       onOsmdReady={handleOsmdReady}
       playbackMeasure={playback.currentMeasure}
       isPlaying={playback.isPlaying}
