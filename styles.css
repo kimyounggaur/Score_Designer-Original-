@@ -2331,3 +2331,9 @@ body {
 .file-tab__close { background:transparent; border:0; font-size:20px; padding:8px; cursor:pointer; color:#555; }
 .file-entry--active { box-shadow:inset 3px 0 var(--accent); }
 .file-entry__select { text-align:left; min-width:0; flex:1; padding:0; border:0; background:transparent; color:inherit; font:inherit; cursor:pointer; }
+
+.inspector,.analysis { position:relative; }
+.resize-handle { position:absolute; top:0; bottom:0; width:6px; cursor:col-resize; touch-action:none; z-index:5; }
+.resize-handle--left { right:0; }.resize-handle--right { left:0; }
+.resize-handle:hover,.resize-handle:focus-visible { background:var(--accent); opacity:.65; }
+.header__badge { max-width:220px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }

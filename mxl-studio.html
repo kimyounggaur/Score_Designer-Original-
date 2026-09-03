@@ -3471,6 +3471,23 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportXML,onExportPNG
   </nav>;
 }
 
+function ResizeHandle({side}){
+  const dragRef=useRef(null);
+  const [width,setWidth]=useState(300);
+  const cssName=side==='left'?'--inspector-w':'--analysis-w';
+  const saveWidth=next=>{
+    next=Math.max(220,Math.min(520,next));setWidth(next);
+    document.documentElement.style.setProperty(cssName,`${next}px`);
+    try{const layout=JSON.parse(localStorage.getItem('mxlStudio.layout')||'{}');layout[side]=next;localStorage.setItem('mxlStudio.layout',JSON.stringify(layout));}catch(_){}
+  };
+  return <div className={`resize-handle resize-handle--${side}`} role="separator" aria-label={side==='left'?'인스펙터 너비':'도구 패널 너비'} aria-orientation="vertical" aria-valuemin="220" aria-valuemax="520" aria-valuenow={width} tabIndex={0}
+    onPointerDown={event=>{event.currentTarget.setPointerCapture(event.pointerId);dragRef.current={x:event.clientX,width:parseFloat(getComputedStyle(document.documentElement).getPropertyValue(cssName))||300};}}
+    onPointerMove={event=>{if(dragRef.current)saveWidth(dragRef.current.width+(event.clientX-dragRef.current.x)*(side==='left'?1:-1));}}
+    onPointerUp={event=>{dragRef.current=null;if(event.currentTarget.hasPointerCapture(event.pointerId))event.currentTarget.releasePointerCapture(event.pointerId);}}
+    onPointerCancel={()=>{dragRef.current=null;}}
+    onKeyDown={event=>{if(['ArrowLeft','ArrowRight'].includes(event.key)){event.preventDefault();const current=parseFloat(getComputedStyle(document.documentElement).getPropertyValue(cssName))||300;saveWidth(current+(event.key==='ArrowRight'?10:-10)*(side==='left'?1:-1));}}}/>;
+}
+
 function FileTabs({files,activeFile,onSelect,onClose}){
   const tabsRef=useRef(null);
   useEffect(()=>{tabsRef.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({inline:'nearest',block:'nearest'});},[activeFile,files.length]);
@@ -3996,6 +4013,14 @@ function App(){
     );
   },[]);
 
+  useEffect(()=>{
+    try{
+      const saved=JSON.parse(localStorage.getItem('mxlStudio.layout')||'{}');
+      for(const [side,key] of [['left','--inspector-w'],['right','--analysis-w']]){
+        if(Number.isFinite(saved[side]))document.documentElement.style.setProperty(key,`${Math.max(220,Math.min(520,saved[side]))}px`);
+      }
+    }catch(_){}
+  },[]);
   const showProgress=useCallback(msg=>setProgress({visible:true,msg}),[]);
   const hideProgress=useCallback(()=>setProgress({visible:false,msg:''}),[]);
 
@@ -4212,8 +4237,9 @@ function App(){
   useEffect(()=>{
     const handler=e=>{
       const tag=(e.target?.tagName||'').toLowerCase();
-      if(tag==='input'||tag==='textarea'||e.target?.isContentEditable)return;
+      if(tag==='input'||tag==='textarea'||tag==='select'||e.target?.isContentEditable)return;
       const key=(e.key||'').toLowerCase();
+      if((e.ctrlKey||e.metaKey)&&key==='b'){e.preventDefault();if(e.shiftKey)setShowRight(v=>!v);else setShowLeft(v=>!v);}
       if((e.ctrlKey||e.metaKey)&&key==='z'&&!e.shiftKey){e.preventDefault();undo();}
       if((e.ctrlKey||e.metaKey)&&(key==='y'||(key==='z'&&e.shiftKey))){e.preventDefault();redo();}
     };
@@ -4420,11 +4446,12 @@ function App(){
       /></PanelErrorBoundary>
       <div className="header__right">
         <button className={`header__toggle${showLeft?' header__toggle--active':''}`}
-          onClick={()=>setShowLeft(!showLeft)} title="인스펙터 토글">☰</button>
+          aria-label="인스펙터 패널 토글" aria-pressed={showLeft} onClick={()=>setShowLeft(!showLeft)} title="인스펙터 토글">☰</button>
         <div className="header__badge">파일 {files.length}개{files.length>0?` · 현재: ${files[activeFile]?.name}`:''}</div>
         {sessionStatus.backend&&<div className="session-status" title={sessionStatus.error?`세션 오류: ${sessionStatus.error}`:'세션 저장 상태'}>
           저장소: {sessionStatus.usage!=null&&sessionStatus.quota!=null?`${formatBytes(sessionStatus.usage)}/${formatBytes(sessionStatus.quota)}`:'확인 중'} ({sessionStatus.backend==='idb'?'IndexedDB':'Local'})
         </div>}
+        <button type="button" className={`header__toggle${showRight?' header__toggle--active':''}`} aria-label="도구 패널 토글" aria-pressed={showRight} onClick={()=>setShowRight(value=>!value)}>우측</button>
         <div className="header__export-group">
           <button className="header__export-btn" onClick={openShareModal} disabled={!files.length} title="압축 공유 링크 생성">공유</button>
           <button className="header__export-btn" onClick={saveSessionSlot} disabled={!files.length} title="세션 슬롯 저장">세션</button>
@@ -4470,7 +4497,7 @@ function App(){
           ? <div className="activity-bar__sep" key={item.id}/>
           : <button key={item.id}
               className={`activity-bar__btn${leftPanel===item.id?' activity-bar__btn--active':''}`}
-              onClick={()=>{setLeftPanel(item.id);if(!showLeft)setShowLeft(true)}}
+              onClick={()=>{if(leftPanel===item.id)setShowLeft(value=>!value);else{setLeftPanel(item.id);setShowLeft(true);}}}
               title={PANEL_LABELS[item.id]||item.id}>
               <ActivityIcon icon={item.icon}/>
             </button>
@@ -4484,7 +4511,7 @@ function App(){
           ? <div className="activity-bar__sep" key={item.id}/>
           : <button key={item.id}
               className={`activity-bar__btn${rightPanel===item.id?' activity-bar__btn--active':''}`}
-              onClick={()=>{setRightPanel(item.id);if(!showRight)setShowRight(true)}}
+              onClick={()=>{if(rightPanel===item.id)setShowRight(value=>!value);else{setRightPanel(item.id);setShowRight(true);}}}
               title={PANEL_LABELS[item.id]||item.id}>
               <ActivityIcon icon={item.icon}/>
             </button>
@@ -4493,6 +4520,7 @@ function App(){
 
     {/* ── INSPECTOR (left panel) ── */}
     <aside className="inspector">
+      <ResizeHandle side="left"/>
       <div className="inspector__header">
         <div className="inspector__title">🛠 인스펙터 — {PANEL_LABELS[leftPanel]||leftPanel}</div>
       </div>
@@ -4525,6 +4553,7 @@ function App(){
 
     {/* ── RIGHT PANEL (mirrors inspector for right activity bar) ── */}
     <aside className="analysis">
+      <ResizeHandle side="right"/>
       <div className="inspector__header">
         <div className="inspector__title">🧰 도구 — {PANEL_LABELS[rightPanel]||rightPanel}</div>
       </div>
