@@ -1,34 +1,40 @@
 name: Nightly Full Test
-
 on:
   schedule:
     - cron: '0 21 * * *'
   workflow_dispatch:
     inputs:
       update_snapshots:
+        description: Generate Linux visual baselines as a reviewable artifact
         type: boolean
         default: false
-
 permissions:
   contents: read
-  issues: write
-
 jobs:
   full-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - run: npm ci
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: pw-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
       - run: npx playwright install --with-deps chromium
       - run: npm test
+      - name: Generate canonical Linux screenshots
+        if: ${{ inputs.update_snapshots == true }}
+        run: npx playwright test --grep '@visual' --update-snapshots
+        env:
+          UPDATE_SNAPSHOTS: 'true'
+      - uses: actions/upload-artifact@v4
+        if: ${{ inputs.update_snapshots == true }}
+        with:
+          name: linux-visual-baselines
+          path: tests/e2e/__snapshots__/
+          if-no-files-found: error
+          retention-days: 30
       - run: npm run e2e
       - uses: actions/upload-artifact@v4
         if: always()
@@ -38,42 +44,18 @@ jobs:
             playwright-report
             test-results
           retention-days: 14
-
   prod-smoke:
+    if: ${{ vars.PROD_BASE_URL != '' }}
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e:prod
         env:
-          PROD_BASE_URL: https://kimyounggaur.github.io/Score_Designer-Original-
-
-  report-failure:
-    runs-on: ubuntu-latest
-    needs: [full-e2e, prod-smoke]
-    if: failure()
-    steps:
-      - uses: actions/github-script@v7
-        with:
-          script: |
-            const date = new Date().toISOString().slice(0, 10);
-            const title = `Nightly 테스트 실패 (${date})`;
-            const { data: open } = await github.rest.issues.listForRepo({
-              ...context.repo,
-              state: 'open',
-              labels: 'nightly-failure'
-            });
-            const body = `자동 생성: Nightly 전수 테스트가 실패했습니다.\n\n` +
-              `실행 로그: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}\n` +
-              `아티팩트(playwright-report, test-results)의 trace를 확인하세요.`;
-            const dup = open.find((issue) => issue.title === title);
-            if (dup) {
-              await github.rest.issues.createComment({ ...context.repo, issue_number: dup.number, body });
-            } else {
-              await github.rest.issues.create({ ...context.repo, title, body, labels: ['nightly-failure'] });
-            }
+          PROD_BASE_URL: ${{ vars.PROD_BASE_URL }}
