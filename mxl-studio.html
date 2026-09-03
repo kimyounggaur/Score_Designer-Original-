@@ -34,6 +34,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script crossorigin="anonymous" integrity="sha384-c6Uo4N9c3SOEigMVzP6IshUG1wQ5uMp3xeoQFiHWAQ86joWdgyajkvopySyKy/Z6" src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
 <script crossorigin="anonymous" integrity="sha384-fg0GMOE+ryaeFG8a+kaykJwFk/KI5rLyPkxfxxHjlfBbC8HkEuNcl44thRQD6MzE" src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 <script src="chord-tools-core.js"></script>
+<script src="chord-symbol-core.js?v=1"></script>
 <script src="history-core.js?v=1"></script>
 <script src="transpose-core.js?v=1"></script>
 <script src="playback-core.js?v=1"></script>
@@ -329,33 +330,8 @@ function detectChord(semiArr){
   return best||'?';
 }
 
-function parseChordSymbol(text){
-  const m=text.match(/^([A-G])([#♯b♭]?)(.*)/);if(!m)return null;
-  const rs=m[1],ra=(m[2]==='#'||m[2]==='♯')?1:(m[2]==='b'||m[2]==='♭')?-1:0,q=m[3];
-  let kind='major';
-  if(/^m7♭5|^m7b5|^ø/.test(q))kind='half-diminished';
-  else if(/^maj7|^M7/.test(q))kind='major-seventh';
-  else if(/^m7|^min7/.test(q))kind='minor-seventh';
-  else if(/^dim7/.test(q))kind='diminished-seventh';
-  else if(/^dim|^°/.test(q))kind='diminished';
-  else if(/^aug|^\+/.test(q))kind='augmented';
-  else if(/^7/.test(q))kind='dominant';
-  else if(/^m$|^m[^a]|^min|^-/.test(q))kind='minor';
-  else if(/^sus4/.test(q))kind='suspended-fourth';
-  else if(/^sus2/.test(q))kind='suspended-second';
-  return{rootStep:rs,rootAlter:ra,kind};
-}
-
-function harmonyToString(h){
-  const rs=h.querySelector('root root-step')?.textContent||'';
-  const ra=h.querySelector('root root-alter')?.textContent||'0';
-  const kind=h.querySelector('kind')?.textContent||'major';
-  let r=rs;if(ra==='1')r+='#';else if(ra==='-1')r+='♭';
-  const km={major:'',minor:'m',dominant:'7','major-seventh':'maj7','minor-seventh':'m7',
-    diminished:'dim',augmented:'aug','half-diminished':'m7♭5','diminished-seventh':'dim7',
-    'suspended-fourth':'sus4','suspended-second':'sus2'};
-  return r+(km[kind]||kind);
-}
+const parseChordSymbol=text=>window.ChordSymbolCore.parse(text);
+const harmonyToString=harmony=>window.ChordSymbolCore.toString(harmony);
 
 function noteToNumStr(step,alter,oct,keyRoot,mode,showOct,showSharp){
   if(mode==='korean'){
@@ -2406,11 +2382,7 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
           const cs=harmonyToString(h);
           valid.forEach(rule=>{if(cs===rule.from){
             const p=parseChordSymbol(rule.to);if(!p)return;
-            h.querySelector('root root-step').textContent=p.rootStep;
-            let ra=h.querySelector('root root-alter');
-            if(p.rootAlter!==0){if(!ra){ra=doc.createElement('root-alter');h.querySelector('root').appendChild(ra)}ra.textContent=p.rootAlter}
-            else if(ra)ra.remove();
-            h.querySelector('kind').textContent=p.kind;cnt++;
+            ChordSymbolCore.apply(h,p);cnt++;
           }});
         });
         updatedFiles.push(commitFile(file,doc));
@@ -2442,10 +2414,7 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
           if(window.ChordToolsCore.measureHasNoChordHarmony(meas))continue;
           if(!replaceExisting&&meas.querySelector('harmony'))continue;
           const parsed=parseChordSymbol(chord);if(!parsed)continue;
-          const harm=doc.createElement('harmony');const root=doc.createElement('root');
-          const rs=doc.createElement('root-step');rs.textContent=parsed.rootStep;root.appendChild(rs);
-          if(parsed.rootAlter!==0){const ra=doc.createElement('root-alter');ra.textContent=parsed.rootAlter;root.appendChild(ra)}
-          harm.appendChild(root);const kind=doc.createElement('kind');kind.textContent=parsed.kind;harm.appendChild(kind);
+          const harm=doc.createElement('harmony');ChordSymbolCore.apply(harm,parsed);
           const fn=meas.querySelector('note');if(fn)meas.insertBefore(harm,fn);else meas.appendChild(harm);ins++;
         }
         updatedFiles.push(commitFile(file,doc));
