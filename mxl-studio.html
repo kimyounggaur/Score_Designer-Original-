@@ -9,12 +9,30 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
-<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
-<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
-<script crossorigin src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
+<script>
+// React/Babel 실행 전에도 로드 실패 이유를 안내합니다.
+window.__mxlBootFailures=[];
+window.__mxlBootMessage=function(){
+  const status=document.getElementById('boot-status');
+  if(status)status.textContent='필수 라이브러리를 불러오지 못했습니다. 네트워크를 확인하고 새로고침하세요.';
+};
+window.addEventListener('error',function(event){
+  if(event.target && event.target.tagName==='SCRIPT'){
+    window.__mxlBootFailures.push(event.target.src);
+    window.__mxlBootMessage();
+  }
+},true);
+document.addEventListener('DOMContentLoaded',function(){
+  if(window.__mxlBootFailures.length)window.__mxlBootMessage();
+});
+setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage();},15000);
+</script>
+<script crossorigin="anonymous" integrity="sha384-tMH8h3BGESGckSAVGZ82T9n90ztNXxvdwvdM6UoR56cYcf+0iGXBliJ29D+wZ/x8" src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin="anonymous" integrity="sha384-bm7MnzvK++ykSwVJ2tynSE5TRdN+xL418osEVF2DE/L/gfWHj91J2Sphe582B1Bh" src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin="anonymous" integrity="sha384-ku9eM40vVDsFUiERorrdlHlF0LIhdfn716M7TntM72Uo98T7LWiogD3hNenPx8Q0" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script crossorigin="anonymous" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script crossorigin="anonymous" integrity="sha384-c6Uo4N9c3SOEigMVzP6IshUG1wQ5uMp3xeoQFiHWAQ86joWdgyajkvopySyKy/Z6" src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+<script crossorigin="anonymous" integrity="sha384-fg0GMOE+ryaeFG8a+kaykJwFk/KI5rLyPkxfxxHjlfBbC8HkEuNcl44thRQD6MzE" src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 <script src="chord-tools-core.js"></script>
 <script src="history-core.js?v=1"></script>
 <script src="transpose-core.js?v=1"></script>
@@ -23,7 +41,12 @@
 <script src="session-store-core.js?v=1"></script>
 </head>
 <body>
-<div id="root"></div>
+<div id="root"><div id="boot" class="boot" role="status">
+  <div class="boot__logo" aria-hidden="true">♫</div>
+  <div class="boot__title">악보 디자이너</div>
+  <div class="boot__status" id="boot-status">불러오는 중입니다.</div>
+  <noscript>이 앱은 JavaScript가 필요합니다.</noscript>
+</div></div>
 
 <!--
   ================================================================
@@ -33,6 +56,11 @@
   ================================================================
 -->
 <script type="text/babel">
+const missingLibraries=['React','ReactDOM','opensheetmusicdisplay','JSZip','HistoryCore'].filter(name=>!window[name]);
+if(missingLibraries.length){
+  document.getElementById('boot-status').textContent='필수 라이브러리('+missingLibraries.join(', ')+')를 불러오지 못했습니다. 네트워크를 확인하고 새로고침하세요.';
+  throw new Error('필수 라이브러리 로드 실패: '+missingLibraries.join(', '));
+}
 const { useState, useCallback, useRef, useEffect, useMemo } = React;
 
 /* ==============================================================
@@ -436,6 +464,20 @@ function getIntervalName(s){
 /* ==============================================================
    SHARED COMPONENTS
    ============================================================== */
+class PanelErrorBoundary extends React.Component{
+  constructor(props){super(props);this.state={error:null};}
+  static getDerivedStateFromError(error){return {error};}
+  componentDidCatch(error,info){window.__mxlLastError={label:this.props.label,message:error.message,stack:info.componentStack};}
+  render(){
+    if(this.state.error)return <section className="panel-error" role="alert">
+      <strong>{this.props.label}에서 오류가 났습니다.</strong>
+      <p>{this.props.label==='앱'?'앱을 다시 시작하려면 새로고침하세요. 자동저장된 세션은 유지됩니다.':'다시 시도하거나 다른 도구를 사용할 수 있습니다.'}</p>
+      <button type="button" className="btn btn--secondary" onClick={()=>this.setState({error:null})}>다시 시도</button>
+    </section>;
+    return this.props.children;
+  }
+}
+
 function LogPanel({lines}){
   const ref=useRef();
   useEffect(()=>{if(ref.current)ref.current.scrollTop=ref.current.scrollHeight},[lines]);
@@ -604,6 +646,7 @@ function computeIntervalSemis(num,qual){
 }
 
 function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  if(window.__mxlThrowInPanel==='transpose')throw new Error('test panel failure');
   const [mode,setMode]=useState('single');
   const [selKey,setSelKey]=useState(0);
   const [semi,setSemi]=useState(0);
@@ -3857,7 +3900,8 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
   return <div className="transport-inner">
     <div className="midi-player" style={{'--midi-progress':`${progressPct}%`}}>
       <div className="midi-player__controls">
-        <button className={`transport__btn transport__btn--play${isPlaying?' transport__btn--playing':''}`} onClick={handlePlay} title="재생">▶</button>
+        <button className={`transport__btn transport__btn--play${isPlaying?' transport__btn--playing':''}`} onClick={handlePlay} title="재생" disabled={!window.Tone}>▶</button>
+        {!window.Tone&&<span role="status">재생 라이브러리를 불러오지 못했습니다.</span>}
         <button className="transport__btn" onClick={handlePause} title="일시정지">⏸</button>
         <button className="transport__btn" onClick={handleStop} title="정지">⏹</button>
       </div>
@@ -4412,7 +4456,7 @@ function App(){
           <h1 className="header__title">악보 디자이너</h1>
         </div>
       </div>
-      <MenuBar
+      <PanelErrorBoundary label="메뉴"><MenuBar
         onSelectLeft={selectLeftPanel}
         onSelectRight={selectRightPanel}
         onExportMXL={exportMXL}
@@ -4420,7 +4464,7 @@ function App(){
         onExportPNG={exportPNG}
         onExportPDF={exportPDF}
         files={files}
-      />
+      /></PanelErrorBoundary>
       <div className="header__right">
         <button className={`header__toggle${showLeft?' header__toggle--active':''}`}
           onClick={()=>setShowLeft(!showLeft)} title="인스펙터 토글">☰</button>
@@ -4501,7 +4545,7 @@ function App(){
       </div>
       <div className="inspector__content">
         {Object.entries(ALL_PANELS).filter(([id])=>!RIGHT_PANEL_IDS.has(id)).map(([id,comp])=>
-          <div key={id} className={`panel${leftPanel===id?' panel--visible':''}`}>{comp}</div>
+          <div key={id} className={`panel${leftPanel===id?' panel--visible':''}`}><PanelErrorBoundary label={PANEL_LABELS[id]}>{comp}</PanelErrorBoundary></div>
         )}
       </div>
       <HistoryPanel
@@ -4516,13 +4560,13 @@ function App(){
     </aside>
 
     {/* ── MAIN SCORE VIEW (center) ── */}
-    <ScoreView
+    <PanelErrorBoundary label="악보"><ScoreView
       files={files}
       activeFile={activeFile}
       onOsmdReady={handleOsmdReady}
       playbackMeasure={playback.currentMeasure}
       isPlaying={playback.isPlaying}
-    />
+    /></PanelErrorBoundary>
 
     {/* ── RIGHT PANEL (mirrors inspector for right activity bar) ── */}
     <aside className="analysis">
@@ -4531,19 +4575,19 @@ function App(){
       </div>
       <div className="inspector__content">
         {Object.entries(ALL_PANELS).filter(([id])=>RIGHT_PANEL_IDS.has(id)).map(([id,comp])=>
-          <div key={id} className={`panel${rightPanel===id?' panel--visible':''}`}>{comp}</div>
+          <div key={id} className={`panel${rightPanel===id?' panel--visible':''}`}><PanelErrorBoundary label={PANEL_LABELS[id]}>{comp}</PanelErrorBoundary></div>
         )}
       </div>
     </aside>
 
     {/* ── TRANSPORT BAR (bottom) ── */}
-    <TransportBar
+    <PanelErrorBoundary label="재생"><TransportBar
       files={files}
       activeFile={activeFile}
       bpm={bpm}
       onBpmChange={setBpm}
       onPlaybackUpdate={handlePlaybackUpdate}
-    />
+    /></PanelErrorBoundary>
 
     {/* ── PROGRESS OVERLAY ── */}
     <div className={`progress-overlay${progress.visible?'':' progress-overlay--hidden'}`}>
@@ -4555,7 +4599,7 @@ function App(){
   </div>;
 }
 
-ReactDOM.render(<App/>,document.getElementById('root'));
+ReactDOM.createRoot(document.getElementById('root')).render(<PanelErrorBoundary label="앱"><App/></PanelErrorBoundary>);
 </script>
 </body>
 </html>
