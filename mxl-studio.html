@@ -302,6 +302,11 @@ function getDocBpm(xmlDoc,fallback=120){
   const fromText=parseFloat(pm?.textContent||'');
   return fromText>0?fromText:fallback;
 }
+function sessionHash(text){
+  let hash=2166136261;
+  for(let i=0;i<text.length;i++){hash^=text.charCodeAt(i);hash=Math.imul(hash,16777619);}
+  return hash>>>0;
+}
 function formatSeconds(sec){
   const s=Math.max(0,Math.floor(sec||0));
   const m=Math.floor(s/60);
@@ -4051,6 +4056,7 @@ function App(){
   const historyStateRef=useRef({history:[],index:-1});
   const [historyNotice,setHistoryNotice]=useState(null);
   const [restoreSession,setRestoreSession]=useState(null);
+  const lastSavedHashRef=useRef(null);
   const [sessionStatus,setSessionStatus]=useState({backend:'',usage:null,quota:null,savedAt:null,error:null});
   const [shareModal,setShareModal]=useState(null);
   const [sessionModalOpen,setSessionModalOpen]=useState(false);
@@ -4268,8 +4274,13 @@ function App(){
   useEffect(()=>{
     if(!files.length||!window.SessionStoreCore)return;
     const timer=setTimeout(async()=>{
-      const result=await window.SessionStoreCore.saveSession(buildSession('autosave'));
+      const session=buildSession('autosave');
+      const {savedAt,...content}=session;
+      const hash=sessionHash(JSON.stringify(content));
+      if(hash===lastSavedHashRef.current)return;
+      const result=await window.SessionStoreCore.saveSession(session);
       if(result.ok){
+        lastSavedHashRef.current=hash;
         setSessionStatus(prev=>({
           ...prev,
           backend:window.SessionStoreCore.backend(),
