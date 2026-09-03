@@ -2951,7 +2951,7 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
     <p className="panel__description">첫 조표를 기준으로 마디별 수직 음향을 로마 숫자 화성으로 해석하고 종지를 요약합니다.</p>
     <div className="btn-row">
       <button className="btn btn--primary" onClick={runAnalysis} disabled={!files.length}>
-        {keyInfo?`${keyInfo.keyName}장조 분석 시작`:'로마 숫자 분석 시작'}
+        {keyInfo?`${keyInfo.mode==='minor'?keyInfo.keyName.toLowerCase():keyInfo.keyName}${keyInfo.mode==='minor'?'단조':'장조'} 분석 시작`:'로마 숫자 분석 시작'}
       </button>
       <button className="btn btn--secondary" onClick={insertIntoScore} disabled={!files.length}>
         악보에 삽입
@@ -2978,7 +2978,7 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
 
     {analysis&&<div className="roman-table-wrap">
       <table className="roman-table">
-        <thead><tr><th>마디번호</th><th>박자</th><th>코드명</th><th>로마숫자</th><th>종지여부</th></tr></thead>
+        <thead><tr><th>마디번호</th><th>박자</th><th>코드명</th><th>로마숫자</th><th>전위</th><th>종지여부</th></tr></thead>
         <tbody>
           {analysis.rows.map((row,index)=>
             <tr key={`${row.measure}-${row.beat}-${index}`}>
@@ -2986,6 +2986,7 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
               <td>{row.beat}</td>
               <td>{row.chordName}</td>
               <td className="roman-table__numeral">{row.roman}</td>
+              <td>{row.figure||'기본위치'}</td>
               <td>{row.cadence||'-'}</td>
             </tr>
           )}

@@ -9,9 +9,11 @@
     4:[4,6,8,9,11,1,3],5:[5,7,9,10,0,2,4],6:[6,8,10,11,1,3,5],7:[7,9,11,0,2,4,6],
     8:[8,10,0,1,3,5,7],9:[9,11,1,2,4,6,8],10:[10,0,2,3,5,7,9],11:[11,1,3,4,6,8,10]
   };
+  const DIATONIC_SCALES_MINOR={natural:[0,2,3,5,7,8,10],harmonic:[0,2,3,5,7,8,11]};
   const PC_NAMES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
   const ROMAN = ['Ⅰ','Ⅱ','Ⅲ','Ⅳ','Ⅴ','Ⅵ','Ⅶ'];
   const QUALITY_PATTERNS = [
+    {intervals:[0,3,6,9], quality:'dim7', suffix:'°7'},
     {intervals:[0,4,7,10], quality:'7', suffix:'7'},
     {intervals:[0,4,7,11], quality:'M7', suffix:'M7'},
     {intervals:[0,3,7,10], quality:'m7', suffix:'m7'},
@@ -48,14 +50,11 @@
   }
 
   function getKeyInfo(xmlDoc){
-    const fifths=parseInt(getDescText(toArray(xmlDoc?.getElementsByTagName('*')).find(n=>n.localName==='key')||xmlDoc,'fifths','0'),10);
-    const tonicSemi=KEY_FIFTHS.indexOf(Number.isNaN(fifths)?0:fifths);
-    const resolved=tonicSemi>=0?tonicSemi:0;
-    return {
-      fifths:Number.isNaN(fifths)?0:fifths,
-      tonicSemi:resolved,
-      keyName:KEY_NAMES[resolved]||'C',
-    };
+    const key=xmlDoc?.querySelector('key');
+    const fifths=parseInt(xmlText(key,'fifths','0'),10)||0;
+    const mode=xmlText(key,'mode','major')==='minor'?'minor':'major';
+    const tonicSemi=normSemi(fifths*7+(mode==='minor'?9:0));
+    return {fifths,tonicSemi,mode,keyName:KEY_NAMES[tonicSemi]||'C'};
   }
 
   function sameSet(a,b){
@@ -104,60 +103,59 @@
     };
   }
 
-  function romanForChord(chord,tonicSemi){
-    if(!chord)return {roman:'?', rootRoman:'?', degree:null};
-    const scale=DIATONIC_SCALES[tonicSemi]||DIATONIC_SCALES[0];
-    const degreeIndex=scale.indexOf(normSemi(chord.rootSemi));
-    if(degreeIndex<0)return {roman:'?', rootRoman:'?', degree:null};
-    const rootRoman=ROMAN[degreeIndex];
-    const suffixByQuality={M:'',m:'m',dim:'°',aug:'+',7:'7',M7:'M7',m7:'m7','ø7':'ø7',unknown:'?'};
-    const suffix=suffixByQuality[chord.quality]??'';
-    return {roman:rootRoman+suffix, rootRoman, degree:degreeIndex+1};
-  }
-
-  function formatBeat(start,divisions){
-    const beat=(start/Math.max(1,divisions))+1;
-    return Number.isInteger(beat)?String(beat):String(Math.round(beat*100)/100);
+  function romanForChord(chord,tonicSemi,mode='major',bass){
+    if(!chord)return {roman:'?',rootRoman:'?',degree:null,inversion:0};
+    const relative=normSemi(chord.rootSemi-tonicSemi);
+    let degreeIndex=(mode==='minor'?DIATONIC_SCALES_MINOR.natural:DIATONIC_SCALES[0]).indexOf(relative);
+    if(mode==='minor'&&relative===11)degreeIndex=6;
+    if(degreeIndex<0)return {roman:'?',rootRoman:'?',degree:null,inversion:0};
+    const pattern=QUALITY_PATTERNS.find(p=>p.quality===chord.quality);
+    const bassInterval=normSemi((bass??chord.rootSemi)-chord.rootSemi);
+    const inversion=Math.max(0,pattern?.intervals.indexOf(bassInterval)??0);
+    const seventh=pattern?.intervals.length===4;
+    const figure=seventh?['7','6/5','4/3','4/2'][inversion]:['','6','6/4'][inversion];
+    const ascii=['I','II','III','IV','V','VI','VII'][degreeIndex];
+    const lower=['m','m7','dim','dim7','ø7'].includes(chord.quality);
+    const rootRoman=mode==='minor'?(lower?ascii.toLowerCase():ascii):ROMAN[degreeIndex];
+    let roman;
+    if(mode==='major'&&inversion===0){roman=rootRoman+({M:'',m:'m',dim:'°',dim7:'°7',aug:'+',7:'7',M7:'M7',m7:'m7','ø7':'ø7',unknown:'?'}[chord.quality]??'');}
+    else {
+      const root=mode==='major'?(lower?ascii.toLowerCase():ascii):rootRoman;
+      const quality=['dim','dim7'].includes(chord.quality)?'°':chord.quality==='ø7'?'ø':chord.quality==='M7'?'maj':chord.quality==='aug'?'+':'';
+      roman=root+quality+(figure||'');
+    }
+    return {roman,rootRoman,degree:degreeIndex+1,inversion,figure:figure||'기본위치'};
   }
 
   function collectMeasureBeats(parts,measureIndex){
-    const beatMap=new Map();
-    let displayDivisions=1;
+    const notes=[],rests=[],starts=new Set();let phraseAfter=false;
     parts.forEach(part=>{
-      const measure=xmlChildren(part,'measure')[measureIndex];
-      if(!measure)return;
-      const attr=xmlChild(measure,'attributes');
-      const divisions=parseFloat(xmlText(attr,'divisions',''))||displayDivisions||1;
-      displayDivisions=divisions;
-      let cursor=0;
-      let lastStart=0;
-      xmlChildren(measure).forEach(node=>{
-        if(node.localName==='backup'){
-          cursor=Math.max(0,cursor-(parseFloat(xmlText(node,'duration','0'))||0));
-          return;
-        }
-        if(node.localName==='forward'){
-          cursor+=parseFloat(xmlText(node,'duration','0'))||0;
-          return;
-        }
-        if(node.localName!=='note')return;
-        const isChord=!!xmlChild(node,'chord');
-        const duration=parseFloat(xmlText(node,'duration','0'))||0;
-        const start=isChord?lastStart:cursor;
-        if(!isChord)lastStart=start;
-        if(!xmlChild(node,'rest')){
-          const midi=getPitchMidi(node);
-          if(midi!==null){
-            if(!beatMap.has(start))beatMap.set(start,new Set());
-            beatMap.get(start).add(normSemi(midi));
-          }
-        }
-        if(!isChord)cursor+=duration;
-      });
+      const measures=xmlChildren(part,'measure'),measure=measures[measureIndex];if(!measure)return;
+      let divisions=1;
+      for(let i=0;i<measureIndex;i++)for(const attr of xmlChildren(measures[i],'attributes'))divisions=Number(xmlText(attr,'divisions'))||divisions;
+      let cursor=0,lastStart=0;
+      for(const node of xmlChildren(measure)){
+        if(node.localName==='attributes'){divisions=Number(xmlText(node,'divisions'))||divisions;continue;}
+        const duration=(Number(xmlText(node,'duration','0'))||0)/divisions;
+        if(node.localName==='backup'){cursor=Math.max(0,cursor-duration);continue;}
+        if(node.localName==='forward'){cursor+=duration;continue;}
+        if(node.localName!=='note')continue;
+        const chord=!!xmlChild(node,'chord'),start=chord?lastStart:cursor;
+        if(xmlChild(node,'rest'))rests.push(start);
+        else{const midi=getPitchMidi(node);if(midi!==null&&!xmlChild(node,'grace')){notes.push({midi,start,end:start+duration});starts.add(start);}}
+        if(!chord){lastStart=start;cursor+=duration;}
+      }
+      const next=measures[measureIndex+1];
+      // Conservative phrase boundary: an explicit rest after the last onset,
+      // a new system/phrase slur in the next measure, or the end of the piece.
+      phraseAfter ||= !next||!!next.querySelector('print[new-system="yes"],note:first-of-type slur[type="start"]');
     });
-    return [...beatMap.entries()]
-      .sort((a,b)=>a[0]-b[0])
-      .map(([start,pitchClasses])=>({start, beat:formatBeat(start,displayDivisions), pitchClasses}));
+    const sorted=[...starts].sort((a,b)=>a-b);
+    return sorted.map((start,index)=>{
+      const sounding=notes.filter(note=>note.start<=start&&note.end>start);
+      const bass=Math.min(...sounding.map(note=>note.midi));
+      return {start,beat:String(Math.round((start+1)*100)/100),pitchClasses:new Set(sounding.map(note=>normSemi(note.midi))),bass: normSemi(bass),phraseEnd:index===sorted.length-1&&(phraseAfter||rests.some(rest=>rest>start))};
+    });
   }
 
   function measureNumber(measure,index){
@@ -167,11 +165,11 @@
   }
 
   function detectCadence(prev,current){
-    if(!prev||!current)return null;
-    if(prev.rootRoman==='Ⅴ'&&current.rootRoman==='Ⅰ')return '완전종지 (PAC)';
-    if(prev.rootRoman==='Ⅳ'&&current.rootRoman==='Ⅰ')return '변격종지 (PC)';
-    if(prev.rootRoman==='Ⅴ'&&current.rootRoman==='Ⅵ')return '위종지 (DC)';
-    if(current.rootRoman==='Ⅴ')return '반종지 (HC)';
+    if(!current)return null;
+    if(prev?.degree===5&&current.degree===1)return '완전종지 (PAC)';
+    if(prev?.degree===4&&current.degree===1)return '변격종지 (PC)';
+    if(prev?.degree===5&&current.degree===6)return '위종지 (DC)';
+    if(current.degree===5&&['M','7'].includes(current.quality)&&current.phraseEnd)return '반종지 (HC)';
     return null;
   }
 
@@ -198,7 +196,7 @@
       const number=measureNumber(firstMeasures[i],i);
       collectMeasureBeats(parts,i).forEach(beatInfo=>{
         const chord=identifyChord(beatInfo.pitchClasses);
-        const roman=romanForChord(chord,key.tonicSemi);
+        const roman=romanForChord(chord,key.tonicSemi,key.mode,beatInfo.bass);
         rows.push({
           measure:number,
           beat:beatInfo.beat,
@@ -207,27 +205,28 @@
           rootRoman:roman.rootRoman,
           degree:roman.degree,
           quality:chord?.quality||'unknown',
+          rootSemi:chord?.rootSemi,pitchClasses:chord?.pitchClasses||[],inversion:roman.inversion,figure:roman.figure,phraseEnd:beatInfo.phraseEnd,
         });
       });
     }
-    const measureRows=[];
-    const seenMeasures=new Set();
-    rows.forEach(row=>{
-      if(seenMeasures.has(row.measure))return;
-      seenMeasures.add(row.measure);
-      measureRows.push(row);
+    rows.forEach((row,index)=>{
+      const next=rows[index+1];
+      const scales=key.mode==='minor'?Object.values(DIATONIC_SCALES_MINOR):[DIATONIC_SCALES[0]];
+      const diatonic=scales.some(scale=>row.pitchClasses.every(pc=>scale.includes(normSemi(pc-key.tonicSemi))));
+      if(!diatonic&&['M','7'].includes(row.quality)){
+        if(next?.degree&&normSemi(row.rootSemi-next.rootSemi)===7){
+          const target=['I','II','III','IV','V','VI','VII'][next.degree-1];
+          row.secondaryOf=['m','m7','dim','ø7'].includes(next.quality)?target.toLowerCase():target;
+          row.roman='V'+(row.quality==='7'?'7':'')+'/'+row.secondaryOf;
+        }else row.roman='?';
+      }
     });
-    const cadenceCounts=CADENCE_TYPES.reduce((acc,type)=>({...acc,[type]:0}),{});
-    const cadences=[];
-    for(let i=1;i<measureRows.length;i++){
-      const label=detectCadence(measureRows[i-1],measureRows[i]);
-      if(!label)continue;
-      const cadence={measure:measureRows[i].measure, from:measureRows[i-1].roman, to:measureRows[i].roman, label};
-      cadences.push(cadence);
-      cadenceCounts[label]=(cadenceCounts[label]||0)+1;
-      const target=rows.find(row=>row.measure===measureRows[i].measure);
-      if(target)target.cadence=label;
-    }
+    const cadenceCounts=CADENCE_TYPES.reduce((acc,type)=>({...acc,[type]:0}),{}),cadences=[];
+    rows.forEach((row,index)=>{
+      const label=detectCadence(rows[index-1],row);if(!label)return;
+      cadences.push({measure:row.measure,from:rows[index-1]?.roman||'',to:row.roman,label});
+      cadenceCounts[label]++;row.cadence=label;
+    });
     return {
       ...key,
       rows,
@@ -277,5 +276,7 @@
     insertRomanNumerals,
     getKeyInfo,
     identifyChord,
+    collectMeasureBeats,
+    DIATONIC_SCALES_MINOR,
   };
 })(window);
