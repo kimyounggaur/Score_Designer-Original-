@@ -1846,8 +1846,8 @@ function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpda
   const lastOutRef=useRef(null);
 
   useEffect(()=>{
-    if(files===lastOutRef.current)return;
-    baselineRef.current=files.map(f=>({name:f.name,xmlDoc:cloneDoc(f.xmlDoc)}));
+    if(files===lastOutRef.current||files.length===lastOutRef.current?.length&&files.every((file,index)=>file.xmlDoc===lastOutRef.current[index].xmlDoc))return;
+    baselineRef.current=files;
   },[files,activeFile]);
 
   const parts=useMemo(()=>{
@@ -1867,7 +1867,7 @@ function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpda
     setLog([]);showProgress('표기 변환 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
-      const baseline=baselineRef.current||files.map(f=>({name:f.name,xmlDoc:cloneDoc(f.xmlDoc)}));
+      const baseline=baselineRef.current||files;
       if(!baselineRef.current)baselineRef.current=baseline;
       for(let fi=0;fi<files.length;fi++){
         const file=files[fi];const baseDoc=baseline[fi]?.xmlDoc||file.xmlDoc;
@@ -1948,7 +1948,7 @@ function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpda
 /* ==============================================================
    PANEL: EXPORT (이미지 / PDF)
    ============================================================== */
-function ExportPanel({files,activeFile=0,onSelectActiveFile,showProgress,hideProgress}){
+function ExportPanel({files,activeFile=0,onSelectActiveFile,showProgress,hideProgress,isActive=true}){
   const notify=useNotify();
   const [selIdx,setSelIdx]=useState(activeFile);
   useEffect(()=>setSelIdx(activeFile),[activeFile]);
@@ -1961,6 +1961,12 @@ function ExportPanel({files,activeFile=0,onSelectActiveFile,showProgress,hidePro
   const previewRef=useRef(null);
   const osmdRef=useRef(null);
 
+  const previewGeneration=useRef(0);
+  useEffect(()=>{
+    if(!isActive){previewGeneration.current++;if(previewRef.current)previewRef.current.innerHTML='';osmdRef.current=null;setPreviewReady(false);setPreviewing(false);}
+    return()=>{previewGeneration.current++;if(previewRef.current)previewRef.current.innerHTML='';osmdRef.current=null;};
+  },[isActive]);
+
   // Detect total measures
   const totalMeasures=useMemo(()=>{
     if(!files.length)return 0;
@@ -1971,6 +1977,7 @@ function ExportPanel({files,activeFile=0,onSelectActiveFile,showProgress,hidePro
   const loadPreview=useCallback(async()=>{
     if(!files.length||!previewRef.current)return;
     const file=files[selIdx]||files[0];
+    const generation=++previewGeneration.current;
     setPreviewing(true);setPreviewReady(false);
     try{
       previewRef.current.innerHTML='';
@@ -1985,6 +1992,7 @@ function ExportPanel({files,activeFile=0,onSelectActiveFile,showProgress,hidePro
       osmdRef.current=osmd;
       const xmlStr=new XMLSerializer().serializeToString(file.xmlDoc);
       await osmd.load(xmlStr);
+      if(generation!==previewGeneration.current)return;
       osmd.render();
       setPreviewReady(true);
     }catch(e){
@@ -2512,8 +2520,8 @@ function NumberingPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
   const lastOutRef=useRef(null);
 
   useEffect(()=>{
-    if(files===lastOutRef.current)return;
-    baselineRef.current=files.map(f=>({name:f.name,xmlDoc:cloneDoc(f.xmlDoc)}));
+    if(files===lastOutRef.current||files.length===lastOutRef.current?.length&&files.every((file,index)=>file.xmlDoc===lastOutRef.current[index].xmlDoc))return;
+    baselineRef.current=files;
   },[files,activeFile]);
 
   const preview=useMemo(()=>{
@@ -2527,7 +2535,7 @@ function NumberingPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
     setLog([]);showProgress(mode==='original'?'기존 가사 복원 중...':'숫자 악보 생성 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
-      const baseline=baselineRef.current||files.map(f=>({name:f.name,xmlDoc:cloneDoc(f.xmlDoc)}));
+      const baseline=baselineRef.current||files;
       if(!baselineRef.current)baselineRef.current=baseline;
       for(let fi=0;fi<files.length;fi++){
         const file=files[fi];
@@ -2581,6 +2589,7 @@ function NumberingPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
         <Chip on={mode==='fixed'} onClick={()=>setMode('fixed')}>고정 도법 (C=1)</Chip>
         <Chip on={mode==='movable'} onClick={()=>setMode('movable')}>이동 도법</Chip>
         <Chip on={mode==='korean'} onClick={()=>setMode('korean')}>한국어 계이름</Chip>
+        <Chip on={mode==='original'} onClick={()=>setMode('original')}>기존 가사 복원</Chip>
       </div>
     </div>
     <div className="card"><div className="card__title">⚙️ 옵션</div>
@@ -4026,6 +4035,7 @@ function App(){
   useEffect(()=>()=>{toastTimers.current.forEach(timer=>clearTimeout(timer));},[]);
 
   const [leftPanel,setLeftPanel]=useState('upload');
+  const [mountedPanels,setMountedPanels]=useState(()=>new Set(['upload','chords']));
   const [rightPanel,setRightPanel]=useState('chords');
   const [files,setFiles]=useState([]);
   const [uploadLog,setUploadLog]=useState([]);
@@ -4436,29 +4446,9 @@ function App(){
     setDrawer({open:true,side,view:'panel'});
   };
   const drawerHeader=<div className="drawer-panel-header"><button type="button" onClick={()=>setDrawer(value=>({...value,view:'list'}))}>← 목록</button><button type="button" onClick={closeDrawer} aria-label="도구 닫기">닫기</button></div>;
-  const ALL_PANELS={
-    upload:<UploadPanel activeFile={activeFile} onSelect={setActiveFile} uploadLog={uploadLog} files={files} onFilesAdd={addFiles} onRemove={removeFile} onClear={clearFiles}/>,
-    transpose:<TransposePanel {...panelProps}/>,
-    keychange:<KeyChangePanel {...panelProps}/>,
-    capo:<CapoPanel {...panelProps}/>,
-    range:<RangePanel {...panelProps}/>,
-    instrument:<InstrumentPanel {...panelProps}/>,
-    tempo:<TempoPanel {...panelProps}/>,
-    tempochange:<TempoChangePanel {...panelProps}/>,
-    ossia:<OssiaPanel {...panelProps}/>,
-    clef:<ClefPanel {...panelProps}/>,
-    parts:<PartsPanel {...panelProps}/>,
-    notation:<NotationPanel {...panelProps}/>,
-    export:<ExportPanel {...panelProps}/>,
-    color:<ColorPanel {...panelProps}/>,
-    harmony:<HarmonyPanel {...panelProps}/>,
-    chordtools:<ChordToolsPanel {...panelProps}/>,
-    numbering:<NumberingPanel {...panelProps}/>,
-    lyricstyle:<LyricStylePanel {...panelProps}/>,
-    chords:<ChordsPanel {...panelProps}/>,
-    roman:<RomanAnalysisPanel {...panelProps}/>,
-    stats:<StatsPanel {...panelProps}/>,
-  };
+  useEffect(()=>{setMountedPanels(previous=>previous.has(leftPanel)&&previous.has(rightPanel)?previous:new Set([...previous,leftPanel,rightPanel]));},[leftPanel,rightPanel]);
+  const ALL_PANELS={upload:UploadPanel,transpose:TransposePanel,keychange:KeyChangePanel,capo:CapoPanel,range:RangePanel,instrument:InstrumentPanel,tempo:TempoPanel,tempochange:TempoChangePanel,ossia:OssiaPanel,clef:ClefPanel,parts:PartsPanel,notation:NotationPanel,export:ExportPanel,color:ColorPanel,harmony:HarmonyPanel,chordtools:ChordToolsPanel,numbering:NumberingPanel,lyricstyle:LyricStylePanel,chords:ChordsPanel,roman:RomanAnalysisPanel,stats:StatsPanel};
+  const panelFor=(id,Component)=><Component {...(id==='upload'?{activeFile,onSelect:setActiveFile,uploadLog,files,onFilesAdd:addFiles,onRemove:removeFile,onClear:clearFiles}:panelProps)} isActive={id===leftPanel||id===rightPanel}/>;
 
   const rootClass=`app-root${!showLeft?' app-root--left-closed':''}${!showRight?' app-root--right-closed':''}${isMobile&&drawer.open?' app-root--drawer-open':''}`;
 
@@ -4577,8 +4567,8 @@ function App(){
         <div className="inspector__title">🛠 인스펙터 — {PANEL_LABELS[leftPanel]||leftPanel}</div>
       </div>
       <div className="inspector__content">
-        {Object.entries(ALL_PANELS).filter(([id])=>!RIGHT_PANEL_IDS.has(id)).map(([id,comp])=>
-          <div key={id} className={`panel${leftPanel===id?' panel--visible':''}`}><PanelErrorBoundary label={PANEL_LABELS[id]}>{comp}</PanelErrorBoundary></div>
+        {Object.entries(ALL_PANELS).filter(([id])=>!RIGHT_PANEL_IDS.has(id)&&mountedPanels.has(id)).map(([id,comp])=>
+          <div key={id} className={`panel${leftPanel===id?' panel--visible':''}`}><PanelErrorBoundary label={PANEL_LABELS[id]}>{panelFor(id,comp)}</PanelErrorBoundary></div>
         )}
       </div>
       <HistoryPanel
@@ -4611,8 +4601,8 @@ function App(){
         <div className="inspector__title">🧰 도구 — {PANEL_LABELS[rightPanel]||rightPanel}</div>
       </div>
       <div className="inspector__content">
-        {Object.entries(ALL_PANELS).filter(([id])=>RIGHT_PANEL_IDS.has(id)).map(([id,comp])=>
-          <div key={id} className={`panel${rightPanel===id?' panel--visible':''}`}><PanelErrorBoundary label={PANEL_LABELS[id]}>{comp}</PanelErrorBoundary></div>
+        {Object.entries(ALL_PANELS).filter(([id])=>RIGHT_PANEL_IDS.has(id)&&mountedPanels.has(id)).map(([id,comp])=>
+          <div key={id} className={`panel${rightPanel===id?' panel--visible':''}`}><PanelErrorBoundary label={PANEL_LABELS[id]}>{panelFor(id,comp)}</PanelErrorBoundary></div>
         )}
       </div>
     </aside>
