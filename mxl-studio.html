@@ -521,8 +521,8 @@ function HistoryPanel({history,historyIndex,onUndo,onRedo,onJump,onClear,notice}
         <div className="history-panel__meta">{history.length} / 50</div>
       </div>
       <div className="history-panel__actions">
-        <button className="history-panel__btn" onClick={onUndo} disabled={!canUndo} title="Undo">↩</button>
-        <button className="history-panel__btn" onClick={onRedo} disabled={!canRedo} title="Redo">↪</button>
+        <button className="history-panel__btn" onClick={onUndo} disabled={!canUndo} title="Undo" aria-label="실행 취소">↩</button>
+        <button className="history-panel__btn" onClick={onRedo} disabled={!canRedo} title="Redo" aria-label="다시 실행">↪</button>
       </div>
     </div>
     <div className="history-panel__list">
@@ -561,11 +561,11 @@ function BarChart({data,barColor,labelWidth}){
 }
 
 function Chip({on,onClick,children}){
-  return <div className={`chip${on?' chip--on':''}`} onClick={onClick}>{children}</div>;
+  return <button type="button" className={`chip${on?' chip--on':''}`} aria-pressed={!!on} onClick={onClick}>{children}</button>;
 }
 
-function Toggle({on,onClick}){
-  return <div className={`toggle${on?' toggle--on':''}`} onClick={onClick}/>;
+function Toggle({on,onClick,label}){
+  return <button type="button" role="switch" aria-checked={!!on} aria-label={label} className={`toggle${on?' toggle--on':''}`} onClick={onClick}/>;
 }
 
 const GlobalHistoryCore = window.HistoryCore || {
@@ -609,7 +609,7 @@ function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear,uploadLog,o
     <h2 className="panel__heading">파일 업로드</h2>
     <p className="panel__description">MusicXML(.mxl, .xml, .musicxml) 파일을 업로드하세요. 여러 파일을 동시에 가능합니다.</p>
 
-    <div className={`upload-zone${dragging?' upload-zone--dragging':''}`}
+    <button type="button" aria-label="MusicXML 파일 업로드" className={`upload-zone${dragging?' upload-zone--dragging':''}`}
       onClick={()=>inputRef.current.click()}
       onDragOver={e=>{e.preventDefault();setDragging(true)}}
       onDragLeave={()=>setDragging(false)}
@@ -617,9 +617,10 @@ function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear,uploadLog,o
       <div className="upload-zone__icon">📁</div>
       <div className="upload-zone__title">파일을 여기에 드래그하거나 클릭하세요</div>
       <div className="upload-zone__subtitle">.mxl, .xml, .musicxml 파일 지원</div>
-      <input ref={inputRef} className="upload-zone__input" type="file" multiple accept=".mxl,.xml,.musicxml"
+
+    </button>
+      <input ref={inputRef} className="upload-zone__input" type="file" aria-label="악보 파일 선택" multiple accept=".mxl,.xml,.musicxml"
         onChange={e=>{onFilesAdd(Array.from(e.target.files));e.target.value='';}}/>
-    </div>
 
     {files.length>0 && <div className="file-list">
       {files.map((f,i)=>{
@@ -754,8 +755,8 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
 
     {mode==='single' && <div className="card"><div className="card__title">🎼 목표 조 선택</div>
       <div className="key-grid">
-        {KEY_NAMES.map((n,i)=><div key={i} className={`key-grid__btn${i===selKey?' key-grid__btn--selected':''}`}
-          onClick={()=>setSelKey(i)}>{n}</div>)}
+        {KEY_NAMES.map((n,i)=><button type="button" aria-pressed={i===selKey} key={i} className={`key-grid__btn${i===selKey?' key-grid__btn--selected':''}`}
+          onClick={()=>setSelKey(i)}>{n}</button>)}
       </div>
     </div>}
 
@@ -1435,10 +1436,10 @@ function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
       <div className="card__title">🎹 프렛 빠른 선택</div>
       <div className="key-grid">
         {[1,2,3,4,5,6,7,8,9,10,11,12].map(f=>
-          <div key={f} className={`key-grid__btn${capos[capos.length-1]?.fret===f?' key-grid__btn--selected':''}`}
+          <button type="button" aria-pressed={capos[capos.length-1]?.fret===f} key={f} className={`key-grid__btn${capos[capos.length-1]?.fret===f?' key-grid__btn--selected':''}`}
             onClick={()=>{if(capos.length)updateCapo(capos.length-1,'fret',f)}}>
             {f}F
-          </div>
+          </button>
         )}
       </div>
     </div>
@@ -1635,12 +1636,12 @@ function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesU
       <div className="card__text">마지막 항목의 BPM을 프리셋으로 설정합니다.</div>
       <div className="tempo-presets">
         {TEMPO_PRESETS.map(p=>
-          <div key={p.name} className="tempo-preset" onClick={()=>{
+          <button type="button" key={p.name} className="tempo-preset" onClick={()=>{
             if(changes.length)updateChange(changes.length-1,'bpm',p.bpm);
           }}>
             <div className="tempo-preset__name">{p.name}</div>
             <div className="tempo-preset__range">{p.bpm} BPM</div>
-          </div>
+          </button>
         )}
       </div>
     </div>
@@ -1940,7 +1941,7 @@ function PartsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
       <div className="parts-list">{parts.map(p=>
         <div className="parts-list__item" key={p.id}>
           <div><div className="parts-list__name">{p.name}</div><div className="parts-list__id">{p.id}</div></div>
-          <Toggle on={partStates[p.id]} onClick={()=>toggle(p.id)}/>
+          <Toggle label={`${p.name} 파트 유지`} on={partStates[p.id]} onClick={()=>toggle(p.id)}/>
         </div>
       )}</div>}
     </div>
@@ -2041,19 +2042,19 @@ function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpda
           <div><div className="parts-list__name">{p.name}</div>
             <div className="parts-list__id">{p.id} — <span className={hideStaff[p.id]?'parts-list__status--hidden':'parts-list__status--visible'}>{hideStaff[p.id]?'숨김':'표시'}</span></div>
           </div>
-          <Toggle on={hideStaff[p.id]} onClick={()=>setHideStaff(s=>({...s,[p.id]:!s[p.id]}))}/>
+          <Toggle label={`${p.name} 보표 숨기기`} on={hideStaff[p.id]} onClick={()=>setHideStaff(s=>({...s,[p.id]:!s[p.id]}))}/>
         </div>
       )}</div>}
     </div>
-    <div className="card"><div className="toggle-row"><div className="card__title">🔇 가사 숨기기</div><Toggle on={lyrics} onClick={()=>setLyrics(!lyrics)}/></div></div>
-    <div className="card"><div className="toggle-row"><div className="card__title">🔇 코드 심볼 숨기기</div><Toggle on={chords} onClick={()=>setChords(!chords)}/></div></div>
-    <div className="card"><div className="toggle-row"><div className="card__title">📏 1줄 보표 변환</div><Toggle on={oneLine} onClick={()=>setOneLine(!oneLine)}/></div>
+    <div className="card"><div className="toggle-row"><div className="card__title">🔇 가사 숨기기</div><Toggle label="가사 숨기기" on={lyrics} onClick={()=>setLyrics(!lyrics)}/></div></div>
+    <div className="card"><div className="toggle-row"><div className="card__title">🔇 코드 심볼 숨기기</div><Toggle label="코드 심볼 숨기기" on={chords} onClick={()=>setChords(!chords)}/></div></div>
+    <div className="card"><div className="toggle-row"><div className="card__title">📏 1줄 보표 변환</div><Toggle label="1줄 보표 변환" on={oneLine} onClick={()=>setOneLine(!oneLine)}/></div>
       {oneLine && <div className="chip-group section-gap">
         <Chip on={rmAcc} onClick={()=>setRmAcc(!rmAcc)}>임시표 제거</Chip>
         <Chip on={rmKey} onClick={()=>setRmKey(!rmKey)}>조표 초기화</Chip>
       </div>}
     </div>
-    <div className="card"><div className="toggle-row"><div className="card__title">⧸ 슬래시 음표 변환</div><Toggle on={slash} onClick={()=>setSlash(!slash)}/></div>
+    <div className="card"><div className="toggle-row"><div className="card__title">⧸ 슬래시 음표 변환</div><Toggle label="슬래시 음표 변환" on={slash} onClick={()=>setSlash(!slash)}/></div>
       {slash && <><div className="chip-group section-gap">
         <Chip on={slashPitch} onClick={()=>setSlashPitch(!slashPitch)}>음높이 B4 통일</Chip>
         <Chip on={slashKeep} onClick={()=>setSlashKeep(!slashKeep)}>코드 심볼 유지</Chip>
@@ -3308,7 +3309,7 @@ function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
     <div className="card">
       <div className="toggle-row">
         <div className="card__title">🔀 음역대 자동 조옮김</div>
-        <Toggle on={autoTranspose} onClick={()=>setAutoTranspose(v=>!v)}/>
+        <Toggle label="음자리표에 맞게 옥타브 자동 이동" on={autoTranspose} onClick={()=>setAutoTranspose(v=>!v)}/>
       </div>
       {autoTranspose&&targetClef!=='neutral'&&(
         <div className="card__text">모든 음표를 새 음자리표 중심 음역대로 옥타브 단위 자동 이동합니다.</div>
@@ -4612,7 +4613,7 @@ function App(){
           : <button key={item.id}
               className={`activity-bar__btn${leftPanel===item.id?' activity-bar__btn--active':''}`}
               onClick={()=>{if(leftPanel===item.id)setShowLeft(value=>!value);else{setLeftPanel(item.id);setShowLeft(true);}}}
-              title={PANEL_LABELS[item.id]||item.id}>
+              aria-label={PANEL_LABELS[item.id]||item.id} aria-pressed={RIGHT_PANEL_IDS.has(item.id)?showRight&&rightPanel===item.id:showLeft&&leftPanel===item.id} title={PANEL_LABELS[item.id]||item.id}>
               <ActivityIcon icon={item.icon}/>
             </button>
       )}
@@ -4626,7 +4627,7 @@ function App(){
           : <button key={item.id}
               className={`activity-bar__btn${rightPanel===item.id?' activity-bar__btn--active':''}`}
               onClick={()=>{if(rightPanel===item.id)setShowRight(value=>!value);else{setRightPanel(item.id);setShowRight(true);}}}
-              title={PANEL_LABELS[item.id]||item.id}>
+              aria-label={PANEL_LABELS[item.id]||item.id} aria-pressed={RIGHT_PANEL_IDS.has(item.id)?showRight&&rightPanel===item.id:showLeft&&leftPanel===item.id} title={PANEL_LABELS[item.id]||item.id}>
               <ActivityIcon icon={item.icon}/>
             </button>
       )}

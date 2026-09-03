@@ -2361,3 +2361,8 @@ body {
   .main-score,.score-container { display:block!important; height:auto!important; overflow:visible!important; padding:0!important; background:#fff!important; }
   .score-main-render svg,.ossia-inline svg { max-width:100%; height:auto; break-inside:avoid; }
 }
+
+/* 네이티브 버튼 의미를 갖는 기존 선택 컨트롤 */
+.chip,.toggle,.key-grid__btn,.tempo-preset { appearance:none; font:inherit; }
+.toggle { border:0; padding:0; flex-shrink:0; }
+.upload-zone { width:100%; text-align:center; color:inherit; font:inherit; }
