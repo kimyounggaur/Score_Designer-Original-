@@ -472,6 +472,9 @@ function getIntervalName(s){
 /* ==============================================================
    SHARED COMPONENTS
    ============================================================== */
+const NotifyContext=React.createContext(()=>{});
+function useNotify(){return React.useContext(NotifyContext);}
+
 class PanelErrorBoundary extends React.Component{
   constructor(props){super(props);this.state={error:null};}
   static getDerivedStateFromError(error){return {error};}
@@ -655,6 +658,7 @@ function computeIntervalSemis(num,qual){
 }
 
 function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   if(window.__mxlThrowInPanel==='transpose')throw new Error('test panel failure');
   const [mode,setMode]=useState('single');
   const [selKey,setSelKey]=useState(0);
@@ -665,7 +669,7 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
   const [log,setLog]=useState([]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('조옮김 처리 중...');
     await new Promise(r=>setTimeout(r,50));
     try{
@@ -779,6 +783,7 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
    PANEL: RANGE
    ============================================================== */
 function RangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [instr,setInstr]=useState('');
   const [customLow,setCustomLow]=useState('C4');
   const [customHigh,setCustomHigh]=useState('C6');
@@ -787,10 +792,10 @@ function RangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
   const range=INSTRUMENT_RANGES[instr];
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
-    if(!instr){alert('악기를 선택해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    if(!instr){notify('악기를 선택해주세요.','warn');return}
     let low,high;
-    if(instr==='custom'){low=parseNoteStr(customLow);high=parseNoteStr(customHigh);if(!low||!high){alert('올바른 음표 형식을 입력해주세요');return}}
+    if(instr==='custom'){low=parseNoteStr(customLow);high=parseNoteStr(customHigh);if(!low||!high){notify('올바른 음표 형식을 입력해주세요','warn');return}}
     else{low={...range.low,alter:0};high={...range.high,alter:0}}
     const lm=noteToMidi(low.step,low.alter,low.octave),hm=noteToMidi(high.step,high.alter,high.octave);
     setLog([]);showProgress('음역대 조정 중...');await new Promise(r=>setTimeout(r,50));
@@ -845,6 +850,7 @@ function RangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
    PANEL: TRANSPOSING INSTRUMENT
    ============================================================== */
 function InstrumentPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [dir,setDir]=useState('toC');
   const [sel,setSel]=useState('');
   const [customSemi,setCustomSemi]=useState(-2);
@@ -865,8 +871,8 @@ function InstrumentPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
   },[sel,shift]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
-    if(!sel){alert('악기를 선택해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    if(!sel){notify('악기를 선택해주세요.','warn');return}
     setLog([]);showProgress('이조 변환 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -945,6 +951,7 @@ function InstrumentPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
    PANEL: TEMPO
    ============================================================== */
 function TempoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [bpm,setBpm]=useState(120);
   const [origBpm,setOrigBpm]=useState(120);
   const [detectMsg,setDetectMsg]=useState('파일을 업로드하면 원본 템포가 표시됩니다.');
@@ -969,7 +976,7 @@ function TempoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
   const ratioClass=bpm<origBpm?'tempo-ratio-bar__value--slower':bpm>origBpm?'tempo-ratio-bar__value--faster':'tempo-ratio-bar__value--same';
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('템포 변경 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const rat=bpm/origBpm;const updatedFiles=[];
@@ -1053,6 +1060,7 @@ function TempoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
    PANEL: KEY CHANGE (마디별 조바꿈)
    ============================================================== */
 function KeyChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [changes,setChanges]=useState([{measure:1,key:0}]);
   const [log,setLog]=useState([]);
 
@@ -1088,8 +1096,8 @@ function KeyChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
   },[changes,totalMeasures,files]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
-    if(!changes.length){alert('조바꿈 지점을 추가해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    if(!changes.length){notify('조바꿈 지점을 추가해주세요.','warn');return}
     setLog([]);showProgress('마디별 조바꿈 처리 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -1225,6 +1233,7 @@ function KeyChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
    PANEL: CAPO
    ============================================================== */
 function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [capos,setCapos]=useState([{measure:1,fret:2}]);
   const [log,setLog]=useState([]);
 
@@ -1275,8 +1284,8 @@ function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
   },[capos]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
-    if(!capos.length){alert('카포 설정을 추가해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    if(!capos.length){notify('카포 설정을 추가해주세요.','warn');return}
     setLog([]);showProgress('카포 적용 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -1465,6 +1474,7 @@ function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
    PANEL: TEMPO CHANGE (마디별 템포)
    ============================================================== */
 function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [changes,setChanges]=useState([{measure:1,bpm:120}]);
   const [log,setLog]=useState([]);
 
@@ -1505,8 +1515,8 @@ function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesU
   },[changes,totalMeasures,origBpm]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
-    if(!changes.length){alert('템포 변경 지점을 추가해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    if(!changes.length){notify('템포 변경 지점을 추가해주세요.','warn');return}
     setLog([]);showProgress('마디별 템포 변경 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -1658,6 +1668,7 @@ function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesU
    PANEL: OSSIA
    ============================================================== */
 function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [startMeasure,setStartMeasure]=useState(1);
   const [endMeasure,setEndMeasure]=useState(1);
   const [transposeSemi,setTransposeSemi]=useState(0);
@@ -1672,8 +1683,8 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
   },[files,activeFile]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
-    if(startMeasure>endMeasure){alert('시작 마디가 끝 마디보다 클 수 없습니다.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    if(startMeasure>endMeasure){notify('시작 마디가 끝 마디보다 클 수 없습니다.','warn');return}
     setLog([]);showProgress('Ossia 오버레이 생성 중...');
     await new Promise(r=>setTimeout(r,50));
 
@@ -1936,6 +1947,7 @@ function PartsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
    PANEL: NOTATION EDITING
    ============================================================== */
 function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [hideStaff,setHideStaff]=useState({});
   const [lyrics,setLyrics]=useState(false);
   const [chords,setChords]=useState(false);
@@ -1966,7 +1978,7 @@ function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpda
   useEffect(()=>{const s={};parts.forEach(p=>s[p.id]=false);setHideStaff(s)},[parts]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     const hIds=Object.entries(hideStaff).filter(([_,v])=>v).map(([k])=>k);
     setLog([]);showProgress('표기 변환 중...');await new Promise(r=>setTimeout(r,50));
     try{
@@ -2053,6 +2065,7 @@ function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpda
    PANEL: EXPORT (이미지 / PDF)
    ============================================================== */
 function ExportPanel({files,activeFile=0,showProgress,hideProgress}){
+  const notify=useNotify();
   const [selIdx,setSelIdx]=useState(activeFile);
   useEffect(()=>setSelIdx(activeFile),[activeFile]);
   const [format,setFormat]=useState('png');
@@ -2099,7 +2112,7 @@ function ExportPanel({files,activeFile=0,showProgress,hideProgress}){
 
   // Export as PNG
   const exportPNG=useCallback(async()=>{
-    if(!previewRef.current||!previewReady){alert('먼저 미리보기를 실행해주세요.');return}
+    if(!previewRef.current||!previewReady){notify('먼저 미리보기를 실행해주세요.','warn');return}
     setLog([]);showProgress('PNG 생성 중...');await new Promise(r=>setTimeout(r,100));
     try{
       const svgEl=previewRef.current.querySelector('svg');
@@ -2142,7 +2155,7 @@ function ExportPanel({files,activeFile=0,showProgress,hideProgress}){
 
   // Export as PDF
   const exportPDF=useCallback(async()=>{
-    if(!previewRef.current||!previewReady){alert('먼저 미리보기를 실행해주세요.');return}
+    if(!previewRef.current||!previewReady){notify('먼저 미리보기를 실행해주세요.','warn');return}
     setLog([]);showProgress('PDF 생성 중...');await new Promise(r=>setTimeout(r,100));
     try{
       const svgEl=previewRef.current.querySelector('svg');
@@ -2172,7 +2185,7 @@ function ExportPanel({files,activeFile=0,showProgress,hideProgress}){
 
   // Export all files as PNG zip
   const exportAllPNG=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('전체 파일 PNG 변환 중...');
     try{
       const zip=new JSZip();const lines=[];
@@ -2231,7 +2244,7 @@ function ExportPanel({files,activeFile=0,showProgress,hideProgress}){
 
   // Export SVG directly
   const exportSVG=useCallback(()=>{
-    if(!previewRef.current||!previewReady){alert('먼저 미리보기를 실행해주세요.');return}
+    if(!previewRef.current||!previewReady){notify('먼저 미리보기를 실행해주세요.','warn');return}
     const svgEl=previewRef.current.querySelector('svg');
     if(!svgEl)return;
     const svgData=new XMLSerializer().serializeToString(svgEl);
@@ -2306,11 +2319,12 @@ function ExportPanel({files,activeFile=0,showProgress,hideProgress}){
    PANEL: COLOR
    ============================================================== */
 function ColorPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [doStem,setDoStem]=useState(false);
   const [log,setLog]=useState([]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('색깔 악보 생성 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -2356,6 +2370,7 @@ function ColorPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
    PANEL: HARMONY STACKING
    ============================================================== */
 function HarmonyPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [mode,setMode]=useState('up');
   const [chromatic,setChromatic]=useState(false);
   const [target,setTarget]=useState('all');
@@ -2374,7 +2389,7 @@ function HarmonyPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdat
   },[mode,chromatic]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('화성 쌓기 중...');await new Promise(r=>setTimeout(r,50));
     const doUp=mode==='up'||mode==='both',doDown=mode==='down'||mode==='both';
     try{
@@ -2462,6 +2477,7 @@ const STEP_SEMI={C:0,D:2,E:4,F:5,G:7,A:9,B:11};
 const PC_STEP_ALTER=[['C',0],['D',-1],['D',0],['E',-1],['E',0],['F',0],['G',-1],['G',0],['A',-1],['A',0],['B',-1],['B',0]];
 
 function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [rules,setRules]=useState([{from:'',to:''}]);
   const [replaceExisting,setReplaceExisting]=useState(false);
   const [inv,setInv]=useState(1);
@@ -2472,9 +2488,9 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
   const updateRule=useCallback((i,field,val)=>setRules(r=>r.map((x,j)=>j===i?{...x,[field]:val}:x)),[]);
 
   const runReplace=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     const valid=rules.filter(r=>r.from.trim()&&r.to.trim());
-    if(!valid.length){alert('변경 규칙을 입력해주세요.');return}
+    if(!valid.length){notify('변경 규칙을 입력해주세요.','warn');return}
     setLog([]);showProgress('코드 변경 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -2501,7 +2517,7 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
   },[files,activeFile,rules,showProgress,hideProgress,onFilesUpdate]);
 
   const runAutoInsert=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('코드 분석 & 삽입 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -2536,7 +2552,7 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
   },[files,activeFile,replaceExisting,showProgress,hideProgress,onFilesUpdate]);
 
   const runInversion=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress(`${inv}st/nd/rd inversion 적용 중...`);await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -2573,7 +2589,7 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
   },[files,activeFile,inv,showProgress,hideProgress,onFilesUpdate]);
 
   const runInversionReset=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('원위치 복원 중...');await new Promise(r=>setTimeout(r,50));
     const lines=[];const updatedFiles=[];
     for(const file of files){
@@ -2632,6 +2648,7 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
    PANEL: NUMBER NOTATION
    ============================================================== */
 function NumberingPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [mode,setMode]=useState('solfege');
   const [showOct,setShowOct]=useState(true);
   const [showSharp,setShowSharp]=useState(false);
@@ -2652,7 +2669,7 @@ function NumberingPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
   },[mode,showOct,showSharp]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress(mode==='original'?'기존 가사 복원 중...':'숫자 악보 생성 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -2749,6 +2766,7 @@ const LYRIC_FONT_FAMILIES=[
 ];
 
 function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [size,setSize]=useState(10);
   const [applySize,setApplySize]=useState(true);
   const [bold,setBold]=useState(false);
@@ -2760,7 +2778,7 @@ function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
   const [log,setLog]=useState([]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('가사 스타일 적용 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -2788,7 +2806,7 @@ function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
   },[files,activeFile,size,applySize,bold,applyBold,italic,applyItalic,family,applyFamily,showProgress,hideProgress,onFilesUpdate]);
 
   const runReset=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('가사 스타일 초기화 중...');await new Promise(r=>setTimeout(r,50));
     const lines=[];const updatedFiles=[];
     for(const file of files){
@@ -2804,7 +2822,7 @@ function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
   },[files,activeFile,showProgress,hideProgress,onFilesUpdate]);
 
   const runColorByPitch=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('계이름 색상 적용 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
@@ -2898,10 +2916,11 @@ function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
    PANEL: CHORD ANALYSIS
    ============================================================== */
 function ChordsPanel({files,activeFile=0,showProgress,hideProgress}){
+  const notify=useNotify();
   const [log,setLog]=useState([]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('코드 분석 중...');await new Promise(r=>setTimeout(r,50));
     const lines=[];
     for(const file of files){
@@ -2921,7 +2940,7 @@ function ChordsPanel({files,activeFile=0,showProgress,hideProgress}){
   },[files,activeFile,showProgress,hideProgress]);
 
   const runIdentify=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('코드 기호 파악 중...');await new Promise(r=>setTimeout(r,50));
     const lines=[];let grandTotal=0;const grandTally={};
     for(const file of files){
@@ -2966,6 +2985,7 @@ function ChordsPanel({files,activeFile=0,showProgress,hideProgress}){
    PANEL: ROMAN NUMERAL ANALYSIS
    ============================================================== */
 function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [analysis,setAnalysis]=useState(null);
   const [log,setLog]=useState([]);
   const fileIndex=files[activeFile]?activeFile:0;
@@ -2978,8 +2998,8 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
   },[file]);
 
   const runAnalysis=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드하세요.');return}
-    if(!window.RomanAnalysis){alert('로마 숫자 분석 모듈을 불러오지 못했습니다.');return}
+    if(!files.length){notify('먼저 파일을 업로드하세요.','warn');return}
+    if(!window.RomanAnalysis){notify('로마 숫자 분석 모듈을 불러오지 못했습니다.','err');return}
     setLog([]);
     showProgress('로마 숫자 분석 중...');
     await new Promise(r=>setTimeout(r,50));
@@ -3000,8 +3020,8 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
   },[files.length,file,showProgress,hideProgress]);
 
   const insertIntoScore=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드하세요.');return}
-    if(!window.RomanAnalysis){alert('로마 숫자 분석 모듈을 불러오지 못했습니다.');return}
+    if(!files.length){notify('먼저 파일을 업로드하세요.','warn');return}
+    if(!window.RomanAnalysis){notify('로마 숫자 분석 모듈을 불러오지 못했습니다.','err');return}
     showProgress('로마 숫자를 악보에 삽입 중...');
     await new Promise(r=>setTimeout(r,50));
     try{
@@ -3075,11 +3095,12 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
    PANEL: STATISTICS
    ============================================================== */
 function StatsPanel({files,activeFile=0,showProgress,hideProgress}){
+  const notify=useNotify();
   const [basicData,setBasicData]=useState(null);
   const [composerData,setComposerData]=useState(null);
 
   const runBasic=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     showProgress('통계 분석 중...');await new Promise(r=>setTimeout(r,50));
     const nc={C:0,D:0,E:0,F:0,G:0,A:0,B:0};const rc={};
     let tn=0,tr=0,tm=0,lo=127,hi=0;
@@ -3102,7 +3123,7 @@ function StatsPanel({files,activeFile=0,showProgress,hideProgress}){
   },[files,activeFile,showProgress,hideProgress]);
 
   const runComposer=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     showProgress('작곡 스타일 분석 중...');await new Promise(r=>setTimeout(r,50));
     const allIv={},allProg={},phrases=[];
     let tn=0,tm=0,steps=0,leaps=0,reps=0;
@@ -3199,6 +3220,7 @@ function StatsPanel({files,activeFile=0,showProgress,hideProgress}){
 const CLEF_SYMBOLS={treble:'𝄞',bass:'𝄢',alto:'𝄡',tenor:'𝄡',neutral:'𝄥'};
 
 function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+  const notify=useNotify();
   const [targetClef,setTargetClef]=useState('treble');
   const [autoTranspose,setAutoTranspose]=useState(true);
   const [log,setLog]=useState([]);
@@ -3209,7 +3231,7 @@ function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
   },[files,activeFile]);
 
   const run=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('음자리표 변환 중...');
     await new Promise(r=>setTimeout(r,50));
     try{
@@ -3563,6 +3585,7 @@ function createMidiSynth(instrument){
 }
 
 function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
+  const notify=useNotify();
   const [isPlaying,setIsPlaying]=useState(false);
   const [positionSec,setPositionSec]=useState(0);
   const [instrument,setInstrument]=useState('piano');
@@ -3674,9 +3697,9 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate}){
 
   const handlePlay=useCallback(async()=>{
     if(isPlaying)return;
-    if(!file){alert('먼저 파일을 업로드해주세요.');return;}
-    if(!window.Tone){alert('Tone.js가 아직 로드되지 않았습니다.');return;}
-    if(!playableEvents.length){alert('재생할 음표가 없습니다.');return;}
+    if(!file){notify('먼저 파일을 업로드해주세요.','warn');return;}
+    if(!window.Tone){notify('Tone.js가 아직 로드되지 않았습니다.','warn');return;}
+    if(!playableEvents.length){notify('재생할 음표가 없습니다.','warn');return;}
     await Tone.start();
     if(!schedulePlayback())return;
     const basePosition=positionSec>=(playbackData.totalDuration||0)-0.01?0:positionSec;
@@ -3903,6 +3926,26 @@ const PANEL_LABELS={
 };
 
 function App(){
+  const [toasts,setToasts]=useState([]);
+  const toastTimers=useRef(new Map());
+  const toastCounter=useRef(0);
+  const lastToast=useRef(null);
+  const dismissToast=useCallback(id=>{
+    clearTimeout(toastTimers.current.get(id));toastTimers.current.delete(id);
+    setToasts(list=>list.filter(toast=>toast.id!==id));
+  },[]);
+  const notify=useCallback((message,type='info',{duration=3500}={})=>{
+    message=String(message);
+    if(!/[.!?。]$/.test(message))message+='.';
+    const now=Date.now();
+    if(lastToast.current?.message===message&&now-lastToast.current.time<500)return;
+    lastToast.current={message,time:now};
+    const id=++toastCounter.current;
+    setToasts(list=>[...list,{id,message,type}].slice(-4));
+    if(duration>0)toastTimers.current.set(id,setTimeout(()=>dismissToast(id),duration));
+  },[dismissToast]);
+  useEffect(()=>()=>{toastTimers.current.forEach(timer=>clearTimeout(timer));},[]);
+
   const [leftPanel,setLeftPanel]=useState('upload');
   const [rightPanel,setRightPanel]=useState('chords');
   const [files,setFiles]=useState([]);
@@ -4000,8 +4043,9 @@ function App(){
   },[restoreSession,pushHistory]);
 
   const saveSessionSlot=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
-    if(!window.SessionStoreCore){alert('세션 저장소를 사용할 수 없습니다.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    if(!window.SessionStoreCore){notify('세션 저장소를 사용할 수 없습니다.','err');return}
+    // TODO(P3-4): 세션 모달로 대체합니다.
     const name=window.prompt('저장할 세션 이름을 입력하세요.','악보 세션');
     if(name===null)return;
     const result=await window.SessionStoreCore.saveSession(
@@ -4013,20 +4057,20 @@ function App(){
       refreshStorageUsage();
     }else{
       setSessionStatus(prev=>({...prev,error:result.reason||'저장 실패'}));
-      alert(result.reason==='too-large'?'세션이 너무 커서 저장하지 못했습니다.':'세션 저장에 실패했습니다.');
+      notify(result.reason==='too-large'?'세션이 너무 커서 저장하지 못했습니다.':'세션 저장에 실패했습니다.','err');
     }
   },[files.length,buildSession,refreshStorageUsage]);
 
   const openShareModal=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
-    if(!window.ShareSessionCore){alert('공유 기능을 사용할 수 없습니다.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    if(!window.ShareSessionCore){notify('공유 기능을 사용할 수 없습니다.','err');return}
     showProgress('공유 링크 생성 중...');
     try{
       const file=files[activeFile]||files[0];
       const info=await window.ShareSessionCore.buildShareURLv2Info(file,window.location.href.split('#')[0]);
       setShareModal({...info,copied:false});
     }catch(error){
-      alert(error?.message||'공유 링크 생성에 실패했습니다.');
+      notify(error?.message||'공유 링크 생성에 실패했습니다.','err');
     }finally{
       hideProgress();
     }
@@ -4237,7 +4281,7 @@ function App(){
   },[files,activeFile,history,historyIndex,restoreSession,sessionStatus,shareModal,leftPanel,rightPanel,bpm]);
 
   const exportXML=useCallback(()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     const file=files[activeFile]||files[0];
     const xmlStr=new XMLSerializer().serializeToString(file.xmlDoc);
     const blob=new Blob([xmlStr],{type:'text/xml'});
@@ -4255,9 +4299,9 @@ function App(){
   },[files,activeFile,exportXML]);
 
   const exportPNG=useCallback(async()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     const svgEl=document.querySelector('.score-main-render svg');
-    if(!svgEl){alert('악보가 렌더링되지 않았습니다.');return}
+    if(!svgEl){notify('악보가 렌더링되지 않았습니다.','warn');return}
     showProgress('PNG 생성 중...');
     try{
       const svgRect=svgEl.getBoundingClientRect();
@@ -4285,20 +4329,20 @@ function App(){
       };
       img.onerror=()=>{URL.revokeObjectURL(url);hideProgress()};
       img.src=url;
-    }catch(e){alert(e.message);hideProgress()}
+    }catch(e){notify(e.message,'err');hideProgress()}
   },[files,activeFile,showProgress,hideProgress]);
 
   const exportPDF=useCallback(()=>{
-    if(!files.length){alert('먼저 파일을 업로드 해주세요.');return}
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     const svgEl=document.querySelector('.score-main-render svg');
-    if(!svgEl){alert('악보가 렌더링되지 않았습니다.');return}
+    if(!svgEl){notify('악보가 렌더링되지 않았습니다.','warn');return}
     const fn=(files[activeFile]||files[0]).name.replace(/\.(mxl|xml|musicxml)$/i,'');
     const svgClone=svgEl.cloneNode(true);
     const svgRect=svgEl.getBoundingClientRect();
     svgClone.setAttribute('width',svgRect.width);svgClone.setAttribute('height',svgRect.height);
     const svgData=new XMLSerializer().serializeToString(svgClone);
     const win=window.open('','_blank');
-    if(!win){alert('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.');return}
+    if(!win){notify('팝업이 차단되었습니다. 팝업 허용 후 다시 시도해주세요.','err',{duration:8000});return}
     win.document.write(`<!DOCTYPE html><html><head><title>${fn}</title><style>@page{margin:10mm}body{margin:0;padding:0;background:#fff}svg{max-width:100%;height:auto}</style></head><body>${svgData}</body></html>`);
     win.document.close();
     setTimeout(()=>win.print(),800);
@@ -4333,7 +4377,7 @@ function App(){
 
   const rootClass=`app-root${!showLeft?' app-root--left-closed':''}${!showRight?' app-root--right-closed':''}`;
 
-  return <div className={rootClass}>
+  return <NotifyContext.Provider value={notify}><div className={rootClass}>
     {/* ── HEADER (메뉴바 포함) ── */}
     <header className="header">
       <div className="header__left">
@@ -4482,7 +4526,12 @@ function App(){
         <div className="progress-message">{progress.msg}</div>
       </div>
     </div>
-  </div>;
+    <div className="toast-stack" role="status" aria-live="polite" aria-atomic="false">
+      {toasts.map(toast=><div className={`toast toast--${toast.type}`} key={toast.id} role={toast.type==='err'?'alert':'status'} aria-live={toast.type==='err'?'assertive':'polite'}>
+        <span>{toast.message}</span><button type="button" onClick={()=>dismissToast(toast.id)} aria-label="알림 닫기">×</button>
+      </div>)}
+    </div>
+  </div></NotifyContext.Provider>;
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<PanelErrorBoundary label="앱"><App/></PanelErrorBoundary>);
