@@ -6,7 +6,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export const fixturesDir = path.resolve(__dirname, '../fixtures');
 
 export async function openApp(page) {
-  await page.goto('mxl-studio.html');
+  await page.goto('mxl-studio.html', { waitUntil: 'domcontentloaded' });
   await page.waitForLoadState('domcontentloaded');
   await expect(page.locator('.app-root .main-score')).toBeVisible({ timeout: 30_000 });
 }

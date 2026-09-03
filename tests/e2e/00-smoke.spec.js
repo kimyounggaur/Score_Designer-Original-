@@ -132,7 +132,7 @@ test.describe('MXL Studio smoke', () => {
     expect(new URL(shareURL).hash).toMatch(/^#v2\./);
 
     const sharedPage = await context.newPage();
-    await sharedPage.goto(shareURL);
+    await sharedPage.goto(shareURL, { waitUntil: 'domcontentloaded' });
     await sharedPage.waitForLoadState('domcontentloaded');
     await expect(sharedPage.locator('.file-entry__name')).toContainText('f01-basic.musicxml', { timeout: 20_000 });
     await expect.poll(() => getPitchAt(sharedPage, { measure: 1, noteIdx: 0 })).toEqual({
