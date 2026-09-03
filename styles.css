@@ -21,7 +21,7 @@
   --text-secondary: #6e6e73;
   --text-muted: #63636a;
   --text-inverse: #ffffff;
-  --accent: #007aff;
+  --accent: #0050a4;
   --accent-hover: #0056b3;
   --accent-light: rgba(0, 122, 255, 0.1);
   --accent-glow: rgba(0, 122, 255, 0.15);
@@ -35,7 +35,7 @@
   --note-d: #ff9500;
   --note-e: #ffcc00;
   --note-f: #34c759;
-  --note-g: #007aff;
+  --note-g: #0050a4;
   --note-a: #5856d6;
   --note-b: #af52de;
   --radius-sm: 8px;
@@ -144,7 +144,7 @@ body {
 .header__icon {
   width: 28px;
   height: 28px;
-  background: linear-gradient(135deg, #007aff, #5856d6);
+  background: linear-gradient(135deg, #0050a4, #5856d6);
   border-radius: 6px;
   display: flex;
   align-items: center;
@@ -1956,7 +1956,7 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
-.export-preview:empty { display: none; }
+.export-preview:empty { min-height: 0; padding-block: 0; border-color: transparent; }
 .export-preview svg { max-width: 100%; height: auto; }
 
 .export-settings__row {

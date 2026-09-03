@@ -3160,7 +3160,7 @@ function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
 
         const shiftStr=semiShift!==0?` (${semiShift>0?'+':''}${semiShift}반음 이동)`:'';
         lines.push({m:`✓ ${file.name} → ${cfg.label}${shiftStr}`,t:'ok'});
-        returncommitFile(file,doc);
+        return commitFile(file,doc);
       });
       onFilesUpdate(updatedFiles,'음자리표 변환');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);

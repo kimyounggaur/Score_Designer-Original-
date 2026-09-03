@@ -1,6 +1,7 @@
 import { test,expect } from '@playwright/test';
 import { openApp } from './helpers.js';
-test('@ux toggles both sidebars and restores saved width',async({page})=>{
+test('@ux toggles both sidebars and restores saved width',async({page},testInfo)=>{
+  test.skip(testInfo.project.name==='mobile','Desktop sidebar widths are replaced by the mobile drawer.');
   await openApp(page);
   const root=page.locator('.app-root');
   await page.getByRole('button',{name:'도구 패널 토글'}).click();

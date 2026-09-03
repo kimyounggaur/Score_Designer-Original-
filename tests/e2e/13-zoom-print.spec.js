@@ -1,5 +1,5 @@
 import { test,expect } from '@playwright/test';
-import { openApp,uploadFixture } from './helpers.js';
+import { openPanel,openHeaderAction,openApp,uploadFixture } from './helpers.js';
 test('@ux zooms without reloading XML and prints only the score',async({page})=>{
   await openApp(page);await uploadFixture(page);await expect(page.locator('.score-main-render svg').first()).toBeVisible();
   await page.getByRole('button',{name:'악보 확대',exact:true}).click();await page.getByRole('button',{name:'악보 확대',exact:true}).click();

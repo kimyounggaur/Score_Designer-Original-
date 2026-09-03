@@ -1,33 +1,33 @@
 import { test,expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import { openApp,uploadFixture,getPitchAt,fixturesDir } from './helpers.js';
+import { openPanel,openHeaderAction,openApp,uploadFixture,getPitchAt,fixturesDir } from './helpers.js';
 test('@ux saves restores exports renames and deletes a session',async({page})=>{
   await openApp(page);await uploadFixture(page);
   const trigger=page.getByRole('button',{name:'세션',exact:true});
-  await trigger.click();const modal=page.getByRole('dialog',{name:'세션 관리'});
+  await openHeaderAction(page,'세션');const modal=page.getByRole('dialog',{name:'세션 관리'});
   await modal.getByLabel('세션 이름',{exact:true}).fill('테스트 세션');
   await modal.getByRole('button',{name:'저장',exact:true}).click();
   const row=modal.locator('tr').filter({hasText:'테스트 세션'});
   await expect(row).toHaveCount(1);
-  await page.keyboard.press('Escape');await expect(trigger).toBeFocused();
-  await page.getByTitle('조옮김',{exact:true}).click();await page.getByText('반음 단위 이동',{exact:true}).click();
+  await page.keyboard.press('Escape');if(!await page.locator('.mobile-tools').isVisible())await expect(trigger).toBeFocused();
+  await openPanel(page,'transpose');await page.getByText('반음 단위 이동',{exact:true}).click();
   await page.locator('.inspector .panel--visible input[type="number"]').fill('2');
   await page.getByRole('button',{name:/변환 실행/}).click();
   await expect.poll(()=>getPitchAt(page)).toEqual({step:'D',alter:'0',octave:'4'});
-  await trigger.click();await row.getByRole('button',{name:'불러오기'}).click();
+  await openHeaderAction(page,'세션');await row.getByRole('button',{name:'불러오기'}).click();
   await expect(modal).toContainText('현재 작업을 덮어씁니다');
   await modal.getByRole('button',{name:'확인',exact:true}).click();
   await expect.poll(()=>getPitchAt(page)).toEqual({step:'C',alter:'0',octave:'4'});
-  await trigger.click();const event=page.waitForEvent('download');await row.getByRole('button',{name:'JSON',exact:true}).click();
+  await openHeaderAction(page,'세션');const event=page.waitForEvent('download');await row.getByRole('button',{name:'JSON',exact:true}).click();
   expect((await event).suggestedFilename()).toMatch(/\.json$/);
   await row.getByRole('button',{name:'이름 변경'}).click();await modal.getByLabel('변경할 세션 이름').fill('변경 세션');await modal.getByRole('button',{name:'이름 저장'}).click();
   const renamed=modal.locator('tr').filter({hasText:'변경 세션'});await expect(renamed).toHaveCount(1);
   await renamed.getByRole('button',{name:'삭제',exact:true}).click();await modal.getByRole('button',{name:'확인',exact:true}).click();
-  await expect(renamed).toHaveCount(0);await page.keyboard.press('Escape');await expect(trigger).toBeFocused();
+  await expect(renamed).toHaveCount(0);await page.keyboard.press('Escape');if(!await page.locator('.mobile-tools').isVisible())await expect(trigger).toBeFocused();
 });
 test('@ux rejects invalid session JSON and keeps the current score',async({page})=>{
-  await openApp(page);await uploadFixture(page);await page.getByRole('button',{name:'세션',exact:true}).click();
+  await openApp(page);await uploadFixture(page);await openHeaderAction(page,'세션');
   await page.getByLabel('세션 JSON 가져오기').setInputFiles({name:'invalid.json',mimeType:'application/json',buffer:Buffer.from('{"version":42,"files":[]}')});
   await expect(page.locator('.toast--err')).toContainText('세션 JSON 형식');
   expect(await getPitchAt(page)).toEqual({step:'C',alter:'0',octave:'4'});
@@ -35,7 +35,7 @@ test('@ux rejects invalid session JSON and keeps the current score',async({page}
 test('@ux imports JSON files and restores the selected score after confirmation',async({page})=>{
   await openApp(page);await uploadFixture(page);
   const files=await Promise.all(['f01-basic.musicxml','f02-two-parts.musicxml'].map(async name=>({name,sourceName:name,xml:await readFile(path.join(fixturesDir,name),'utf8')})));
-  await page.getByRole('button',{name:'세션',exact:true}).click();
+  await openHeaderAction(page,'세션');
   await page.getByLabel('세션 JSON 가져오기').setInputFiles({name:'valid.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify({version:1,files,activeFile:1}))});
   await page.getByRole('dialog',{name:'세션 관리'}).getByRole('button',{name:'확인',exact:true}).click();
   await expect.poll(()=>page.evaluate(()=>{const s=window.__mxlGetState();return [s.files.length,s.activeFile,s.files[s.activeFile].name]})).toEqual([2,1,'f02-two-parts.musicxml']);

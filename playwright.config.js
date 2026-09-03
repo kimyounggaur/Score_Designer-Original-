@@ -9,6 +9,7 @@ const baseURL = process.env.PROD_BASE_URL
 
 export default defineConfig({
   testDir: './tests/e2e',
+  snapshotPathTemplate: '{testDir}/__snapshots__/{projectName}/{testFilePath}/{arg}{ext}',
   timeout: 45_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
@@ -34,6 +35,7 @@ export default defineConfig({
         timeout: 120_000,
       },
   projects: [
+    {name:'mobile',use:{...devices['Pixel 5']},grep:/@ux/},
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
