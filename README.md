@@ -36,7 +36,7 @@ npm run serve
 
 2026-09-03 Windows Chrome: 단위 **84개 통과**, 전체 브라우저 **80개 통과 / 4개 제외**, **5.5분**. 제외 항목은 모바일의 데스크톱 너비 검사 1개와 Linux 기준 시각 이미지 3개입니다. axe 네 장면 serious/critical 0.
 
-2026-10-09 MuseScore 변환 추가: 단위 **118개 통과**, `@musescore` 브라우저 7개 통과. MuseScore가 내보낸 MusicXML 46쌍과 음표·길이·붙임줄 334/334마디 일치, 실제 MuseScore 파일 11개 열기 확인(상세는 `context-notes.md`).
+2026-10-09 MuseScore 변환 추가: 단위 **150개 통과**, `@musescore` 브라우저 7개 통과. MuseScore가 내보낸 MusicXML 46쌍(3.x·4.x 파일)과 음표·길이·붙임줄 334/334마디 일치(1.x·2.x·5.00은 합성 시험과 코퍼스 무오류 변환으로 확인), 실제 MuseScore 파일 11개 열기 확인(상세는 `context-notes.md`).
 
 테스트 태그: `@smoke @fixtures @panels @ux @a11y @robustness @perf @visual @musescore`. 자세한 방법과 제외 조건은 [테스트 가이드](README-TESTING.md), 실측은 [검증 보고서](docs/verification-report.md)에 있습니다.
 
