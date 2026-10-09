@@ -40,6 +40,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="roman-analysis-core.js"></script>
 <script src="share-session-core.js?v=1"></script>
 <script src="session-store-core.js?v=1"></script>
+<script src="mscz-core.js?v=1"></script>
 </head>
 <body>
 <div id="root"><div id="boot" class="boot" role="status">
@@ -492,19 +493,19 @@ function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear,uploadLog,o
 
   return <div>
     <h2 className="panel__heading">파일 업로드</h2>
-    <p className="panel__description">MusicXML(.mxl, .xml, .musicxml) 파일을 업로드하세요. 여러 파일을 동시에 가능합니다.</p>
+    <p className="panel__description">MusicXML(.mxl, .xml, .musicxml) 또는 MuseScore(.mscz, .mscx) 파일을 업로드하세요. MuseScore 파일은 브라우저에서 MusicXML로 변환됩니다. 여러 파일을 동시에 가능합니다.</p>
 
-    <button type="button" aria-label="MusicXML 파일 업로드" className={`upload-zone${dragging?' upload-zone--dragging':''}`}
+    <button type="button" aria-label="MusicXML 또는 MuseScore 파일 업로드" className={`upload-zone${dragging?' upload-zone--dragging':''}`}
       onClick={()=>inputRef.current.click()}
       onDragOver={e=>{e.preventDefault();setDragging(true)}}
       onDragLeave={()=>setDragging(false)}
       onDrop={handleDrop}>
       <div className="upload-zone__icon">📁</div>
       <div className="upload-zone__title">파일을 여기에 드래그하거나 클릭하세요</div>
-      <div className="upload-zone__subtitle">.mxl, .xml, .musicxml 파일 지원</div>
+      <div className="upload-zone__subtitle">.mxl, .xml, .musicxml, .mscz, .mscx 파일 지원</div>
 
     </button>
-      <input ref={inputRef} className="upload-zone__input" type="file" aria-label="악보 파일 선택" multiple accept=".mxl,.xml,.musicxml"
+      <input ref={inputRef} className="upload-zone__input" type="file" aria-label="악보 파일 선택" multiple accept=".mxl,.xml,.musicxml,.mscz,.mscx"
         onChange={e=>{onFilesAdd(Array.from(e.target.files));e.target.value='';}}/>
 
     {files.length>0 && <div className="file-list">
@@ -4349,9 +4350,17 @@ function App(){
           if(files.length+newFiles.length>=MAX_FILES){lines.push({m:'파일은 최대 30개까지 열 수 있습니다.',t:'warn'});break;}
           if(file.size>MAX_FILE_BYTES)throw new Error('20MB를 넘는 파일은 열 수 없습니다.');
           const ext=file.name.split('.').pop().toLowerCase();
-          if(!['mxl','xml','musicxml'].includes(ext))throw new Error(ext==='pdf'?'PDF는 직접 불러올 수 없습니다. MusicXML로 내보낸 뒤 업로드하세요.':'지원하지 않는 파일 형식입니다. MusicXML 파일을 업로드하세요.');
-          let xmlString;
-          if(ext==='mxl'){
+          const fromMuseScore=ext==='mscz'||ext==='mscx';
+          if(!['mxl','xml','musicxml'].includes(ext)&&!fromMuseScore)throw new Error(ext==='pdf'?'PDF는 직접 불러올 수 없습니다. MusicXML로 내보낸 뒤 업로드하세요.':'지원하지 않는 파일 형식입니다. MusicXML 또는 MuseScore(.mscz) 파일을 업로드하세요.');
+          let xmlString;const conversionLines=[];
+          if(fromMuseScore){
+            if(!window.MsczCore)throw new Error('MuseScore 변환 모듈을 불러오지 못했습니다. MuseScore에서 MusicXML로 내보낸 뒤 업로드하세요.');
+            const options={JSZip:window.JSZip,maxBytes:MAX_FILE_BYTES,title:file.name.replace(/\.(mscz|mscx)$/i,'')};
+            const converted=ext==='mscz'?await window.MsczCore.convertMscz(file,options):window.MsczCore.convertMscx(await file.text(),options);
+            xmlString=converted.xmlString;
+            conversionLines.push({m:`${file.name}: MuseScore 악보를 MusicXML로 변환했습니다. (${converted.stats.parts}파트 · ${converted.stats.measures}마디)`,t:'info'});
+            for(const warning of converted.warnings)conversionLines.push({m:`${file.name}: ${warning}`,t:'warn'});
+          }else if(ext==='mxl'){
             if(!window.JSZip)throw new Error('MXL 압축 라이브러리를 불러오지 못했습니다.');
             const zip=await JSZip.loadAsync(file);let xmlFile=null;
             const container=zip.file('META-INF/container.xml');
@@ -4370,9 +4379,11 @@ function App(){
           const xmlDoc=new DOMParser().parseFromString(xmlString,'text/xml');
           if(xmlDoc.querySelector('parsererror'))throw new Error('XML 파싱 오류입니다. 파일을 확인하세요.');
           if(xmlDoc.documentElement.localName!=='score-partwise'||!xmlDoc.querySelector('part'))throw new Error('지원하는 MusicXML 악보가 아닙니다.');
-          const name=uniqueFileName(file.name,used);
+          const wanted=fromMuseScore?window.MsczCore.musicXmlFileName(file.name):file.name;
+          const name=uniqueFileName(wanted,used);
+          lines.push(...conversionLines);
           newFiles.push({name,sourceName:file.name,xmlDoc,xmlString});
-          if(name!==file.name)lines.push({m:`중복 이름을 ${name}(으)로 변경했습니다.`,t:'info'});
+          if(name!==wanted)lines.push({m:`중복 이름을 ${name}(으)로 변경했습니다.`,t:'info'});
         }catch(error){lines.push({m:`${file.name}: ${error.message}`,t:'err'});}
       }
       if(newFiles.length){const merged=[...files,...newFiles];setFiles(merged);pushHistory(merged,'파일 업로드');}
