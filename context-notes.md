@@ -130,3 +130,21 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 
 ## 2026-09-03 · P8-2
 두 이전 프롬프트 문서에 스냅샷 경고와 완료 상태표를 추가했습니다. README·테스트 가이드·검증 보고서에 8개 코어, 21개 패널, 태그, 실측, 문서 관계, 배포 주소와 Linux 기준 이미지 대기를 기록했습니다. 사용자 확인 저장소는 kimyounggaur/Score_Designer-Original-, Pages는 https://kimyounggaur.github.io/Score_Designer-Original-/mxl-studio.html 입니다.
+
+## 2026-10-09 · P9-4 MuseScore 브라우저 변환
+- 발단: 뮤즈스코어 파일이 올라가지 않는 원인 조사. 업로드가 .mxl/.xml/.musicxml 세 곳(input accept, addFiles 확장자 검사, score-partwise 검사)에서 막혀 있었고 변환 코드는 현재 앱과 `git log -S mscz` 이력에도 없었습니다. 사용자가 서버 변환 대신 "브라우저 변환"을 선택해 구현했습니다.
+- 구조: `mscz-core.js`(`window.MsczCore`)가 convertMscx/convertMscz/extractMscx를 제공하고 JSZip은 옵션으로 주입합니다(기본 window.JSZip). 앱은 `addFiles`에서 변환한 xmlString을 기존 검증(20MB·XML 파싱·score-partwise)에 그대로 통과시키고, name은 `<원본>.musicxml`, sourceName은 원본 파일명으로 둡니다. 변환기가 로드되지 않으면 MuseScore 파일만 안내와 함께 거부하며 부팅 필수 라이브러리 목록에는 넣지 않았습니다.
+- 자율 결정(되돌리기 쉬운 범위): jszip 3.10.1을 devDependency로 추가(앱 CDN과 같은 버전, lock은 추가분만). 설명서 HTML은 PDF·SVG와 한 묶음이라 이번에 고치지 않았습니다. 보이지 않는 음표는 `print-object="no"`로 표시합니다(MuseScore 자체 내보내기는 표시하지 않으므로 의도적 차이).
+- 실제 파일로 확인한 형식 규칙
+  - pitch·tpc는 실음, tpc2가 기보 철자입니다. 이조 악기는 기보음=pitch−transposeChromatic, 옥타브 기호(8va 등) 아래의 pitch는 기보 위치라 ±12/24/36을 더해 실음으로 환산합니다.
+  - 조표: 4.x는 concertKey+actualKey, 3.x 이하는 accidental(콘서트 피치 모드면 실음이라 이조 간격만큼 이동).
+  - 2.x 이하: 보이스는 `<voice>`가 아니라 요소의 `<track>`(오선×4+보이스)과 절대 `<tick>`, 잇단음표는 id 참조, 붙임줄은 `<Tie id>`/`<endSpanner>`, 옥타브·헤어핀·볼타는 id+`<endSpanner>`. 1.x는 `<Score>` 래퍼가 없고 박자표가 nom1/den입니다.
+  - 4.6 이후: 파트 안 `<Staff>`에 id가 없어 악보 전체 순서로 연결하고, `<multiMeasureRest>` 마디는 레이아웃용 합성 마디라 건너뜁니다. 5.00: 붙임줄은 끝 음의 `<Tie>`에 startElement/endElement(eid), 옥타브·헤어핀·슬러·볼타는 Score 직속 `<SpannerMap>`(절대 틱 또는 요소 eid)에 저장됩니다.
+  - Chord의 `<duration>`은 실제 길이(두 음 트레몰로), durationType이 중복되면 마지막 값이 우선, 오선별 박자 비율(stretch)은 길이를 바꾸지 않고 `<location>` 간격만 기보 단위로 환산하며 오선별 `<time number>`를 냅니다.
+  - 마디 번호는 못갖춘마디만 0(implicit)이고 나머지는 1부터 숫자로 이어 갑니다(MuseScore의 X1 방식은 숫자 번호를 가정하는 패널과 충돌할 수 있어 쓰지 않음).
+- 검증 1, 정답 대조(MuseScore 저장소 musicxml 테스트의 입력 `.mscx`와 MuseScore 자체 내보내기 `_ref.xml` 46쌍): 음표·쉼표·길이·붙임줄을 마디 단위로 비교해 **334/334 마디 일치**. 속성 비교에서 남은 1건은 기호 박자(e/π)입니다. 반대 방향(외부 앱이 만든 XML 90쌍과 MuseScore가 가져와 저장한 `_ref.mscx`)은 66쌍 일치, 14쌍은 partwise가 아니라 제외, 나머지는 원본 XML의 반올림 오차·숨겨진 오선처럼 가져오기 쪽 특성입니다.
+- 검증 2, 코퍼스(MuseScore 저장소의 .mscx 2,352개, 형식 1.x~5.00): 2,351개 변환(1개는 원본 XML이 깨진 시험 파일), 출력은 모두 파싱 가능. 마디 길이 일관성 검사에서 30,762마디 중 과충전 73개이며 대부분 단위 시험용 인위 파일(트레몰로·분할 경계·반올림)입니다. 변형 퍼징 1,500회에서 비정상 예외·지연 0, 12회는 "파트 없음" 등 명확한 메시지로 거부했습니다. 이 파일들은 GPL이라 저장소에 넣지 않았습니다.
+- 검증 3, 실제 앱: 실제 MuseScore 파일 11개(2.x 4개·3.x 3개·4.6 1개·5.00 3개)를 올려 OSMD 렌더와 콘솔 오류 0 확인. 압축 해제 4.3MB(990마디, 음표 약 2만 개)는 변환 2.6초, OSMD 렌더 약 120초입니다(렌더 시간은 OSMD 몫).
+- 검증 4, 자동 테스트: 단위 **118개 통과**(신규 34개), 브라우저 `@musescore` 7개 통과(그중 1개는 `@smoke`로 CI·배포 후 검증에 포함). 브라우저 회귀(desktop chromium, @visual 제외)는 기존 73개 중 72개와 신규 7개가 통과해 합계 79개 통과입니다. 나머지 1개(12-session-modal, 세션 JSON 내려받기 파일명이 "download")는 변경 전 HEAD에서도 같은 값으로 실패해 이 환경(Chromium 빌드)의 문제로 확인했습니다.
+- 환경 메모: 이 세션은 cdnjs·jsdelivr가 네트워크 정책으로 막혀 있어 저장소 밖 임시 사본에 npm의 동일 버전 라이브러리(SRI 해시 6개가 HTML과 일치)를 두고 Playwright를 돌렸습니다. 저장소 설정은 바꾸지 않았습니다.
+- 알려진 한계: 타브(일반 오선으로)·타악기(음 위치 근사)·사용자 정의 조표(조표 없음)·페달/글리산도/텍스트 선·보표 배치와 꾸밈·파트 악보(Excerpts)는 옮기지 않습니다. 1.x의 구간 요소(최상위 절대 틱)는 읽지 않고, 오선별 박자 비율이 있는 일부 보이스 위치는 MuseScore와 다를 수 있습니다. 4.x·5.00은 MuseScore 저장소의 시험·템플릿 파일로 검증했으며 실제 MuseScore 4 앱이 저장한 .mscz로는 확인하지 못했습니다(2.x·3.x는 공식 데모 .mscz로 확인). 개발판(5.00) 형식은 정식 배포 전에 바뀔 수 있습니다.

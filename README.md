@@ -1,6 +1,6 @@
 # 악보 디자이너 MXL Studio09
 
-MusicXML/MXL 악보의 조옮김·분석·재생·세션 저장을 지원하는 React 18 UMD 단일 HTML 앱입니다. 21개 패널과 8개 순수 코어를 사용합니다. 현대 Chrome/Edge 등 ES2020 지원 브라우저가 기준이며, Babel은 JSX 변환만 수행합니다.
+MusicXML/MXL 악보(와 MuseScore `.mscz`·`.mscx` 파일)의 조옮김·분석·재생·세션 저장을 지원하는 React 18 UMD 단일 HTML 앱입니다. 21개 패널과 9개 순수 코어를 사용합니다. 현대 Chrome/Edge 등 ES2020 지원 브라우저가 기준이며, Babel은 JSX 변환만 수행합니다.
 
 ## 시작
 
@@ -24,10 +24,11 @@ npm run serve
 | `history-core.js` | XML 문자열 기록, 복원·분기·50개 제한 |
 | `share-session-core.js` | 현재 XML·Ossia 직렬화와 압축 공유 링크 |
 | `session-store-core.js` | IndexedDB·localStorage 세션 저장과 목록 |
-| `tests/fixtures`, `tests/unit`, `tests/e2e` | 픽스처 9개, 단위·브라우저 회귀 |
+| `mscz-core.js` | MuseScore(.mscz/.mscx) → MusicXML 브라우저 변환 (형식 1.x~5.00) |
+| `tests/fixtures`, `tests/unit`, `tests/e2e` | 픽스처 10개(MuseScore 포함), 단위·브라우저 회귀 |
 | `manual`, `MXL-Studio-사용자설명서`, `MXL-Studio-퀵스타트-사용자설명서` | 설명서 HTML 정본과 PDF·SVG 배포본 |
 | `MXL-Studio-업데이트-문서` | 최근 변경 안내와 2026년 9월 릴리스 노트 |
-| `scripts` | HTML → PDF → SVG 재생성 도구 |
+| `scripts` | HTML → PDF → SVG 재생성 도구, MuseScore 픽스처(.mscz) 생성 |
 | `.github/workflows` | CI·Nightly·Pages 배포·배포 후 검증 |
 | `checklist.md`, `context-notes.md`, `docs` | 단계별 작업·검증·문서 점검 기록 |
 
@@ -35,7 +36,17 @@ npm run serve
 
 2026-09-03 Windows Chrome: 단위 **84개 통과**, 전체 브라우저 **80개 통과 / 4개 제외**, **5.5분**. 제외 항목은 모바일의 데스크톱 너비 검사 1개와 Linux 기준 시각 이미지 3개입니다. axe 네 장면 serious/critical 0.
 
-테스트 태그: `@smoke @fixtures @panels @ux @a11y @robustness @perf @visual`. 자세한 방법과 제외 조건은 [테스트 가이드](README-TESTING.md), 실측은 [검증 보고서](docs/verification-report.md)에 있습니다.
+2026-10-09 MuseScore 변환 추가: 단위 **118개 통과**, `@musescore` 브라우저 7개 통과. MuseScore가 내보낸 MusicXML 46쌍과 음표·길이·붙임줄 334/334마디 일치, 실제 MuseScore 파일 11개 열기 확인(상세는 `context-notes.md`).
+
+테스트 태그: `@smoke @fixtures @panels @ux @a11y @robustness @perf @visual @musescore`. 자세한 방법과 제외 조건은 [테스트 가이드](README-TESTING.md), 실측은 [검증 보고서](docs/verification-report.md)에 있습니다.
+
+## MuseScore 파일 열기
+
+업로드 패널에 `.mscz`(압축) 또는 `.mscx`(XML) 파일을 올리면 브라우저에서 MusicXML로 변환해 `<파일명>.musicxml`로 엽니다. 서버나 MuseScore 설치가 필요 없고, 원본 파일명은 `sourceName`에 남습니다. MuseScore 1.x·2.x·3.x·4.x와 현재 개발판(5.00) 형식을 읽습니다.
+
+- 옮기는 것: 음높이(이조 악기는 기보음·기보 조표와 `<transpose>`), 리듬·점음표·잇단음표, 쉼표, 붙임줄·슬러, 여러 보이스·오선, 못갖춘마디, 반복·볼타·마디선, 조표·박자·음자리표, 템포·셈여림·헤어핀·옥타브 기호, 코드 심볼, 가사, 장식음·아티큘레이션·트레몰로, 마디 반복 기호.
+- 근사하거나 옮기지 않는 것: 타브 악보(일반 오선으로), 타악기(음 위치만 근사), 사용자 정의 조표(조표 없음), 페달·글리산도·텍스트 선 같은 선 요소, 보표 배치·꾸밈 설정, 파트 악보(Excerpts). 이런 경우 업로드 로그에 안내가 표시됩니다.
+- 변환기가 로드되지 않으면 MuseScore 파일만 거부되고 안내가 나옵니다. MuseScore에서 *파일 → 내보내기 → MusicXML*로 저장한 파일은 그대로 열립니다.
 
 ## 사용자 문서
 

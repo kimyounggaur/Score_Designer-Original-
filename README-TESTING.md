@@ -17,16 +17,17 @@ Vitest는 Windows 한글·공백 경로의 forks 문제를 피하려고 threads 
 
 | 태그 | 파일/영역 | 검사 |
 |---|---|---|
-| @smoke | 00, 02 | 시작·업로드·Ossia·조옮김·자동복원·편집 후 공유 |
+| @smoke | 00, 02, 23 | 시작·업로드·Ossia·조옮김·자동복원·편집 후 공유·MuseScore 변환 업로드 |
 | @fixtures | 01 | f01-f09 렌더링 |
 | @panels | 03-06, 17-19, 21, panels/01-21 | 활성 파일·MXL 왕복·Ossia·재생·커서·각 패널 결과·기록 |
 | @ux | 09-13, 16 | 알림·탭·레이아웃·세션·줌·인쇄·모바일 드로어 |
 | @a11y | 14-15, a11y/axe | 키보드 버튼·메뉴, axe 네 장면 |
-| @robustness | 07-08 | CDN·패널 오류, 파일 형식·중복·크기 제한 |
+| @robustness | 07-08, 23 | CDN·패널 오류, 파일 형식·중복·크기 제한, 변환기 로드 실패 |
 | @perf | 20, 22 | 초기 패널 수·가사 복원·자동저장 중복·지연 오디오 |
 | @visual | visual/score | f01, f04, f09 악보 스크린샷 |
+| @musescore | 23 | MuseScore .mscz/.mscx 업로드·변환·렌더·중복 이름·손상 파일·변환기 로드 실패 |
 
-`tests/unit`의 8개 코어 테스트 파일은 transpose, playback, chord-symbol, chord-tools, roman-analysis, history, share-session, session-store를 검증합니다. 기존 `history-core.test.html`, `chord-tools-core.test.html`, `roman-analysis.test.html`도 보존합니다.
+`tests/unit`의 9개 코어 테스트 파일은 transpose, playback, chord-symbol, chord-tools, roman-analysis, history, share-session, session-store, mscz를 검증합니다. `mscz-core.test.js`는 직접 작성한 `f10-musescore.mscx/.mscz`와 형식 버전별(1.x·2.x·3.x·4.x·5.00) 합성 입력을 쓰며, `.mscz` 픽스처는 `node scripts/build-mscz-fixture.mjs`로 다시 만듭니다. 기존 `history-core.test.html`, `chord-tools-core.test.html`, `roman-analysis.test.html`도 보존합니다.
 
 | 픽스처 | 내용 |
 |---|---|
