@@ -4352,14 +4352,14 @@ function App(){
           const ext=file.name.split('.').pop().toLowerCase();
           const fromMuseScore=ext==='mscz'||ext==='mscx';
           if(!['mxl','xml','musicxml'].includes(ext)&&!fromMuseScore)throw new Error(ext==='pdf'?'PDF는 직접 불러올 수 없습니다. MusicXML로 내보낸 뒤 업로드하세요.':'지원하지 않는 파일 형식입니다. MusicXML 또는 MuseScore(.mscz) 파일을 업로드하세요.');
-          let xmlString;
+          let xmlString;const conversionLines=[];
           if(fromMuseScore){
             if(!window.MsczCore)throw new Error('MuseScore 변환 모듈을 불러오지 못했습니다. MuseScore에서 MusicXML로 내보낸 뒤 업로드하세요.');
             const options={JSZip:window.JSZip,maxBytes:MAX_FILE_BYTES,title:file.name.replace(/\.(mscz|mscx)$/i,'')};
             const converted=ext==='mscz'?await window.MsczCore.convertMscz(file,options):window.MsczCore.convertMscx(await file.text(),options);
             xmlString=converted.xmlString;
-            lines.push({m:`${file.name}: MuseScore 악보를 MusicXML로 변환했습니다. (${converted.stats.parts}파트 · ${converted.stats.measures}마디)`,t:'info'});
-            for(const warning of converted.warnings)lines.push({m:`${file.name}: ${warning}`,t:'warn'});
+            conversionLines.push({m:`${file.name}: MuseScore 악보를 MusicXML로 변환했습니다. (${converted.stats.parts}파트 · ${converted.stats.measures}마디)`,t:'info'});
+            for(const warning of converted.warnings)conversionLines.push({m:`${file.name}: ${warning}`,t:'warn'});
           }else if(ext==='mxl'){
             if(!window.JSZip)throw new Error('MXL 압축 라이브러리를 불러오지 못했습니다.');
             const zip=await JSZip.loadAsync(file);let xmlFile=null;
@@ -4381,6 +4381,7 @@ function App(){
           if(xmlDoc.documentElement.localName!=='score-partwise'||!xmlDoc.querySelector('part'))throw new Error('지원하는 MusicXML 악보가 아닙니다.');
           const wanted=fromMuseScore?window.MsczCore.musicXmlFileName(file.name):file.name;
           const name=uniqueFileName(wanted,used);
+          lines.push(...conversionLines);
           newFiles.push({name,sourceName:file.name,xmlDoc,xmlString});
           if(name!==wanted)lines.push({m:`중복 이름을 ${name}(으)로 변경했습니다.`,t:'info'});
         }catch(error){lines.push({m:`${file.name}: ${error.message}`,t:'err'});}

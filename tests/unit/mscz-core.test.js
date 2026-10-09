@@ -277,9 +277,10 @@ describe('MsczCore 형식 버전 호환', () => {
     const { doc } = convert(xml);
     expect(doc.querySelector('key fifths').textContent).toBe('3');
     expect(summarize(doc)[0]).toEqual(['A4/' + doc.querySelector('note duration').textContent]);
-    // actualKey가 없으면 실음 조표를 이조 간격만큼 옮깁니다(E♭ 알토 색소폰, C → A 장조).
+    // actualKey가 없으면 MuseScore는 보이는 조표와 concertKey가 같다는 뜻으로 저장합니다. 콘서트 피치 모드에서만 이조 간격만큼 옮깁니다(E♭ 알토 색소폰, C → A 장조).
     const noActual = wrap(`<Measure><voice><KeySig><concertKey>0</concertKey></KeySig>${rest('whole')}</voice></Measure>`, { version: '4.60', instrument: sax });
-    expect(convert(noActual).doc.querySelector('key fifths').textContent).toBe('3');
+    expect(convert(noActual).doc.querySelector('key fifths').textContent).toBe('0');
+    expect(convert(noActual.replace('<Division>', '<Style><concertPitch>1</concertPitch></Style><Division>')).doc.querySelector('key fifths').textContent).toBe('3');
   });
 
   it('3.x 콘서트 피치 모드에서는 accidental을 실음 조표로 보고 옮깁니다', () => {
@@ -380,7 +381,7 @@ describe('MsczCore .mscz 압축과 오류', () => {
     const withScore = await makeZip({ 'a.mscx': fixture('f10-musescore.mscx') });
     delete window.JSZip;
     await expect(core.convertMscz(withScore, {})).rejects.toThrow('압축 라이브러리');
-    await expect(core.convertMscz(withScore, { JSZip, maxBytes: 10 })).rejects.toThrow('20MB');
+    await expect(core.convertMscz(withScore, { JSZip, maxBytes: 10 })).rejects.toThrow('넘습니다');
   });
 
   it('MuseScore가 아닌 XML과 깨진 XML을 거부합니다', () => {
