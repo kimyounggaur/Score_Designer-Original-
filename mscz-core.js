@@ -27,7 +27,7 @@
   const textOf=(parent,name)=>{const c=el(parent,name);return c?richText(c):'';};
   const lastTxt=(parent,name)=>{const all=els(parent,name);return all.length?all[all.length-1].textContent:null;};
   /* ---------- XML 출력 도우미 ---------- */
-  const CONTROL=/[\u0000-\u0008\u000B\u000C\u000E-\u001F￾￿]/g;
+  const CONTROL=/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
   const esc=value=>String(value).replace(CONTROL,'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   function tag(name,attrs,body){
     let a='';if(attrs)for(const key of Object.keys(attrs))if(attrs[key]!=null&&attrs[key]!==false)a+=` ${key}="${esc(attrs[key])}"`;
@@ -668,7 +668,7 @@
 
   /* ---------- 공개 API ---------- */
   function parseXml(text){
-    const doc=new DOMParser().parseFromString(String(text).replace(/^﻿/,''),'text/xml');
+    const doc=new DOMParser().parseFromString(String(text).replace(/^\uFEFF/,''),'text/xml');
     if(doc.getElementsByTagName('parsererror').length)throw new Error('MuseScore XML 파싱 오류입니다. 파일을 확인하세요.');
     return doc;
   }
