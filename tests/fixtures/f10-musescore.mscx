@@ -1,0 +1,280 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- 직접 작성한 MuseScore 3.x 형식 픽스처: 못갖춘마디·반복·붙임줄·슬러·잇단음표·둘째 보이스·가사·코드·이조 악기(B♭ 클라리넷)를 담습니다. -->
+<museScore version="3.01">
+  <Score>
+    <Division>480</Division>
+    <Style>
+      <Spatium>1.76389</Spatium>
+    </Style>
+    <metaTag name="composer">Test Composer</metaTag>
+    <metaTag name="workTitle">MuseScore Fixture</metaTag>
+    <Part>
+      <Staff id="1">
+        <StaffType group="pitched">
+          <name>stdNormal</name>
+        </StaffType>
+      </Staff>
+      <Staff id="2">
+        <StaffType group="pitched">
+          <name>stdNormal</name>
+        </StaffType>
+        <defaultClef>F</defaultClef>
+      </Staff>
+      <trackName>Piano</trackName>
+      <Instrument id="piano">
+        <longName>Piano</longName>
+        <shortName>Pno.</shortName>
+        <trackName>Piano</trackName>
+        <Channel>
+          <program value="0"/>
+        </Channel>
+      </Instrument>
+    </Part>
+    <Part>
+      <Staff id="3">
+        <StaffType group="pitched">
+          <name>stdNormal</name>
+        </StaffType>
+      </Staff>
+      <trackName>Clarinet in B♭</trackName>
+      <Instrument id="bb-clarinet">
+        <longName>Clarinet in B♭</longName>
+        <shortName>Cl.</shortName>
+        <trackName>Clarinet in B♭</trackName>
+        <transposeDiatonic>-1</transposeDiatonic>
+        <transposeChromatic>-2</transposeChromatic>
+        <Channel>
+          <program value="71"/>
+        </Channel>
+      </Instrument>
+    </Part>
+    <Staff id="1">
+      <VBox>
+        <height>10</height>
+        <Text>
+          <style>title</style>
+          <text>MuseScore Fixture</text>
+        </Text>
+      </VBox>
+      <Measure len="1/4">
+        <irregular>1</irregular>
+        <voice>
+          <KeySig>
+            <accidental>2</accidental>
+          </KeySig>
+          <TimeSig>
+            <sigN>4</sigN>
+            <sigD>4</sigD>
+          </TimeSig>
+          <Tempo>
+            <tempo>1.66667</tempo>
+            <followText>1</followText>
+            <text><sym>metNoteQuarterUp</sym> = 100</text>
+          </Tempo>
+          <Dynamic>
+            <subtype>mf</subtype>
+          </Dynamic>
+          <Chord>
+            <durationType>quarter</durationType>
+            <Lyrics>
+              <syllabic>single</syllabic>
+              <text>la</text>
+            </Lyrics>
+            <Note>
+              <pitch>66</pitch>
+              <tpc>20</tpc>
+            </Note>
+          </Chord>
+        </voice>
+      </Measure>
+      <Measure>
+        <startRepeat/>
+        <voice>
+          <Chord>
+            <durationType>quarter</durationType>
+            <Spanner type="Slur">
+              <Slur/>
+              <next>
+                <location>
+                  <fractions>1/4</fractions>
+                </location>
+              </next>
+            </Spanner>
+            <Note>
+              <Spanner type="Tie">
+                <Tie/>
+                <next>
+                  <location>
+                    <fractions>1/4</fractions>
+                  </location>
+                </next>
+              </Spanner>
+              <pitch>74</pitch>
+              <tpc>16</tpc>
+            </Note>
+          </Chord>
+          <Chord>
+            <durationType>quarter</durationType>
+            <Spanner type="Slur">
+              <prev>
+                <location>
+                  <fractions>-1/4</fractions>
+                </location>
+              </prev>
+            </Spanner>
+            <Note>
+              <Spanner type="Tie">
+                <prev>
+                  <location>
+                    <fractions>-1/4</fractions>
+                  </location>
+                </prev>
+              </Spanner>
+              <pitch>74</pitch>
+              <tpc>16</tpc>
+            </Note>
+          </Chord>
+          <Tuplet>
+            <normalNotes>2</normalNotes>
+            <actualNotes>3</actualNotes>
+            <baseNote>eighth</baseNote>
+            <Number>
+              <style>Tuplet</style>
+              <text>3</text>
+            </Number>
+          </Tuplet>
+          <Chord>
+            <durationType>eighth</durationType>
+            <Note>
+              <pitch>69</pitch>
+              <tpc>17</tpc>
+            </Note>
+          </Chord>
+          <Chord>
+            <durationType>eighth</durationType>
+            <Note>
+              <pitch>71</pitch>
+              <tpc>19</tpc>
+            </Note>
+          </Chord>
+          <Chord>
+            <durationType>eighth</durationType>
+            <Note>
+              <pitch>73</pitch>
+              <tpc>21</tpc>
+            </Note>
+          </Chord>
+          <endTuplet/>
+          <Rest>
+            <durationType>quarter</durationType>
+          </Rest>
+        </voice>
+        <voice>
+          <Chord>
+            <durationType>half</durationType>
+            <Note>
+              <pitch>62</pitch>
+              <tpc>16</tpc>
+            </Note>
+          </Chord>
+          <Chord>
+            <durationType>half</durationType>
+            <Note>
+              <pitch>64</pitch>
+              <tpc>18</tpc>
+            </Note>
+          </Chord>
+        </voice>
+      </Measure>
+      <Measure>
+        <endRepeat>2</endRepeat>
+        <voice>
+          <Harmony>
+            <root>16</root>
+            <name>m7</name>
+          </Harmony>
+          <Chord>
+            <durationType>whole</durationType>
+            <Note>
+              <pitch>74</pitch>
+              <tpc>16</tpc>
+            </Note>
+          </Chord>
+        </voice>
+      </Measure>
+    </Staff>
+    <Staff id="2">
+      <Measure len="1/4">
+        <irregular>1</irregular>
+        <voice>
+          <Rest>
+            <durationType>quarter</durationType>
+          </Rest>
+        </voice>
+      </Measure>
+      <Measure>
+        <voice>
+          <Chord>
+            <durationType>whole</durationType>
+            <Note>
+              <pitch>54</pitch>
+              <tpc>20</tpc>
+            </Note>
+          </Chord>
+        </voice>
+      </Measure>
+      <Measure>
+        <voice>
+          <Chord>
+            <durationType>whole</durationType>
+            <Note>
+              <pitch>50</pitch>
+              <tpc>16</tpc>
+            </Note>
+          </Chord>
+        </voice>
+      </Measure>
+    </Staff>
+    <Staff id="3">
+      <Measure len="1/4">
+        <irregular>1</irregular>
+        <voice>
+          <KeySig>
+            <accidental>4</accidental>
+          </KeySig>
+          <TimeSig>
+            <sigN>4</sigN>
+            <sigD>4</sigD>
+          </TimeSig>
+          <Rest>
+            <durationType>quarter</durationType>
+          </Rest>
+        </voice>
+      </Measure>
+      <Measure>
+        <voice>
+          <Chord>
+            <durationType>whole</durationType>
+            <Note>
+              <pitch>62</pitch>
+              <tpc>16</tpc>
+              <tpc2>18</tpc2>
+            </Note>
+          </Chord>
+        </voice>
+      </Measure>
+      <Measure>
+        <voice>
+          <Chord>
+            <durationType>whole</durationType>
+            <Note>
+              <pitch>66</pitch>
+              <tpc>20</tpc>
+              <tpc2>22</tpc2>
+            </Note>
+          </Chord>
+        </voice>
+      </Measure>
+    </Staff>
+  </Score>
+</museScore>
