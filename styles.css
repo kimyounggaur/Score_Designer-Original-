@@ -2410,3 +2410,10 @@ body {
   .score-zoom { right:8px; bottom:8px; }.score-zoom button { padding:8px; }
 }
 :root .score-main-render img[id^="cursorImg"] { filter: hue-rotate(65deg); pointer-events: none; z-index: 2 !important; }
+
+/* 변환 적용 대상 토글 (열린 파일 전체 / 현재 파일) */
+.scope-toggle { display:flex; align-items:center; gap:4px; margin-top:8px; flex-wrap:wrap; }
+.scope-toggle__label { font-size:11px; font-weight:600; color:var(--text-muted); margin-right:2px; }
+.scope-toggle__btn { appearance:none; font:inherit; font-size:12px; line-height:1.2; padding:5px 10px; border-radius:999px; border:1px solid var(--border-default); background:var(--bg-primary); color:var(--text-secondary); cursor:pointer; }
+.scope-toggle__btn:hover { background:var(--bg-hover); }
+.scope-toggle__btn--on { background:var(--accent); border-color:var(--accent); color:var(--text-inverse); }

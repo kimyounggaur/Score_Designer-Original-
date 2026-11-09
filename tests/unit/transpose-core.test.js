@@ -58,8 +58,65 @@ describe('Diatonic spelling and instrument relationships',()=>{
     const doc=fixture('f07-enharmonic.musicxml');core.transposeDocument(doc,1);
     expect(spelled(doc).slice(0,7)).toEqual(['G','A','B','C','D','E','F#']);expect(spelled(doc).some(p=>p.includes('##'))).toBe(false);
   });
+  it('exports key tonic and key-relative interval helpers',()=>{
+    expect(core.keyTonic(6,'major')).toEqual({step:'F',alter:1,pc:6});
+    expect(core.keyTonic(-1,'minor')).toEqual({step:'D',alter:0,pc:2});
+    expect(core.keyInterval(0,1,7,'major')).toEqual({diatonic:4,chromatic:7});
+    expect(core.keyInterval(6,4,-2,'major')).toEqual({diatonic:-1,chromatic:-2});
+    expect(core.transposePitch({step:'E',alter:1,octave:5},core.keyInterval(6,4,-2,'major'))).toEqual({step:'D',alter:1,octave:5});
+  });
   it('supports downward octave crossings and preserves double accidentals when valid',()=>{
     expect(core.transposePitch({step:'C',alter:0,octave:4},{diatonic:-1,chromatic:-1})).toEqual({step:'B',alter:0,octave:3});
     expect(core.transposePitch({step:'F',alter:2,octave:4},{diatonic:1,chromatic:2})).toEqual({step:'G',alter:2,octave:4});
+  });
+});
+
+describe('TransposeCore.transposePartRange',()=>{
+  const part=(doc,index=0)=>doc.querySelectorAll('score-partwise > part')[index];
+  const spelled=element=>Array.from(element.querySelectorAll('note pitch'),pitch=>pitch.querySelector('step').textContent+({'-2':'bb','-1':'b','0':'','1':'#','2':'##'})[Number(pitch.querySelector('alter')?.textContent||0)]+pitch.querySelector('octave').textContent);
+  it('moves F sharp major down to E major with key-relative spelling',()=>{
+    const doc=fixture('f07-enharmonic.musicxml');
+    const result=core.transposePartRange(part(doc),1,2,-2,{startFifths:6,startMode:'major',targetFifths:4});
+    expect(spelled(doc)).toEqual(['E4','F#4','G#4','A4','B4','C#5','D#5','A#5']);
+    expect(doc.querySelector('key fifths').textContent).toBe('4');
+    expect(result).toMatchObject({notes:8,keys:1,measures:2,startFifths:6,targetFifths:4,insertedKey:false});
+  });
+  it('inserts a key at a range start without one and leaves earlier measures alone',()=>{
+    const doc=fixture('f02-two-parts.musicxml');const p1=part(doc);
+    const result=core.transposePartRange(p1,3,4,-5,{startFifths:0,targetFifths:1});
+    expect(result.insertedKey).toBe(true);
+    const m3=p1.querySelector('measure[number="3"]');
+    expect(Array.from(m3.children,c=>c.localName)[0]).toBe('attributes');
+    expect(m3.querySelector('attributes key fifths').textContent).toBe('1');
+    expect(spelled(m3)).toEqual(['G3','A3','B3','D4']);
+    expect(spelled(p1.querySelector('measure[number="2"]'))).toEqual(['C4','D4','E4','G4']);
+    expect(spelled(part(doc,1))[0]).toBe('C5');
+  });
+  it('restores the original key display when a later segment does not move',()=>{
+    const doc=fixture('f02-two-parts.musicxml');const p1=part(doc);
+    core.transposePartRange(p1,1,2,2,{startFifths:0,targetFifths:2});
+    const second=core.transposePartRange(p1,3,4,0,{startFifths:0,targetFifths:0});
+    expect(second.insertedKey).toBe(true);
+    expect(p1.querySelector('measure[number="3"] key fifths').textContent).toBe('0');
+    expect(spelled(p1.querySelector('measure[number="1"]'))).toEqual(['D4','E4','F#4','A4']);
+    expect(spelled(p1.querySelector('measure[number="3"]'))).toEqual(['C4','D4','E4','G4']);
+  });
+  it('keeps an internal modulation by shifting it with the same interval',()=>{
+    const doc=fixture('f10-keychange-clef.musicxml');
+    const result=core.transposePartRange(part(doc),1,4,2,{startFifths:0,targetFifths:2});
+    expect(Array.from(doc.querySelectorAll('key fifths'),k=>k.textContent)).toEqual(['2','5']);
+    expect(spelled(doc)).toEqual(['D4','E4','F#3','G#3']);
+    expect(result.keys).toBe(2);
+  });
+  it('transposes chord roots and bass notes in the range',()=>{
+    const doc=fixture('f11-chords-inversion.musicxml');const p1=part(doc);
+    const result=core.transposePartRange(p1,4,4,-2,{startFifths:0,targetFifths:-2});
+    const m4=p1.querySelector('measure[number="4"]');
+    expect(m4.querySelector('root-step').textContent+m4.querySelector('root-alter').textContent).toBe('B-1');
+    expect(m4.querySelector('bass-step').textContent).toBe('D');
+    expect(m4.querySelector('bass-alter')).toBeNull();
+    expect(spelled(m4)).toEqual(['Bb3']);
+    expect(result).toMatchObject({harmonies:1,measures:1,insertedKey:true});
+    expect(p1.querySelector('measure[number="1"] root-step').textContent).toBe('E');
   });
 });

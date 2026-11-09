@@ -31,3 +31,18 @@ f09에서 12회 조옮김한 13개 기록의 고유 UTF-16 문자열 추정치�
 기준 설계의 Phase 0~8 로컬 구현과 문서 동기화를 마쳤습니다. 선택 Phase 9의 주석·청음·난이도·운지·QR·AI·클라우드 기능과 D.C./D.S./Fine/코다 재생 이동은 현재 범위에 포함되지 않습니다.
 
 GitHub Pages 대상은 `https://kimyounggaur.github.io/Score_Designer-Original-/mxl-studio.html`입니다. 푸시 후 Pages 배포와 Linux CI를 실행하고, Linux 기준 이미지 3장을 반영해야 P7-2의 두 번째 완료 조건이 충족됩니다.
+
+## 2026-11-09 Studio10 Phase A 재검증
+
+환경: Linux, Node.js 22.23.4, Google Chrome for Testing 153 (헤드리스). 작업 환경에서 외부 CDN 접속이 막혀 React·OSMD·Tone·JSZip 등 같은 버전·같은 바이트의 라이브러리 파일을 로컬 HTTPS 미러로 제공했습니다(SRI 일치 확인).
+
+| 구분 | 결과 |
+|---|---|
+| Vitest 단위 테스트 | 10개 파일, 142개 통과 (pitch-core·measure-core 추가) |
+| Playwright 전체 | 111개 중 107개 통과(chromium 100, mobile 7), 4개 제외, 6.1분 |
+| 접근성 | 빈 화면·악보·공유 모달·세션 모달에서 axe serious/critical 0 |
+| 변환 정확도 | 음역대·음자리표·마디별 조바꿈·특정 조·카포·화성 쌓기·자리바꿈·Ossia의 철자·방향·마디 번호 E2E, 적용 대상 토글, 12개 조 ZIP |
+
+제외 4개는 이전과 같습니다(모바일의 데스크톱 패널 폭 검사 1개, Linux 기준 이미지가 없는 시각 회귀 3개).
+
+설명서 10쪽과 퀵스타트 4쪽 PDF를 `npm run docs:build`로 다시 만들고 전 페이지를 이미지로 렌더해 잘림·겹침·빈 페이지가 없음을 확인했습니다. Linux에는 Malgun Gothic이 없어 한글은 Noto Sans CJK로 표시됩니다. 내용이 바뀌지 않은 업데이트 안내 PDF·SVG는 다시 만들지 않았습니다. 설명서 화면 이미지는 Studio09 화면 그대로입니다.

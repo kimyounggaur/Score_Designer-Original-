@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { openApp, uploadFixture } from './helpers.js';
 
-for (const file of ['f01-basic.musicxml', 'f02-two-parts.musicxml', 'f03-pickup.musicxml', 'f04-minor-harmony.musicxml', 'f05-transposing.musicxml', 'f06-lyrics-ties.musicxml', 'f07-enharmonic.musicxml', 'f08-repeats-tempo.musicxml', 'f09-real.mxl']) {
+for (const file of ['f01-basic.musicxml', 'f02-two-parts.musicxml', 'f03-pickup.musicxml', 'f04-minor-harmony.musicxml', 'f05-transposing.musicxml', 'f06-lyrics-ties.musicxml', 'f07-enharmonic.musicxml', 'f08-repeats-tempo.musicxml', 'f09-real.mxl', 'f10-keychange-clef.musicxml', 'f11-chords-inversion.musicxml', 'f12-piano-voices.musicxml']) {
   test(`@fixtures renders ${file}`, async ({ page }) => {
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));

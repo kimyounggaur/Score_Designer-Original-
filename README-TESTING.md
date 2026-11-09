@@ -18,15 +18,15 @@ Vitest는 Windows 한글·공백 경로의 forks 문제를 피하려고 threads 
 | 태그 | 파일/영역 | 검사 |
 |---|---|---|
 | @smoke | 00, 02 | 시작·업로드·Ossia·조옮김·자동복원·편집 후 공유 |
-| @fixtures | 01 | f01-f09 렌더링 |
-| @panels | 03-06, 17-19, 21, panels/01-21 | 활성 파일·MXL 왕복·Ossia·재생·커서·각 패널 결과·기록 |
+| @fixtures | 01 | f01-f12 렌더링 |
+| @panels | 03-06, 17-19, 21, 23, panels/01-21 | 활성 파일·MXL 왕복·Ossia·재생·커서·각 패널 결과·기록·적용 대상(전체/현재 파일)·12개 조 ZIP |
 | @ux | 09-13, 16 | 알림·탭·레이아웃·세션·줌·인쇄·모바일 드로어 |
 | @a11y | 14-15, a11y/axe | 키보드 버튼·메뉴, axe 네 장면 |
 | @robustness | 07-08 | CDN·패널 오류, 파일 형식·중복·크기 제한 |
 | @perf | 20, 22 | 초기 패널 수·가사 복원·자동저장 중복·지연 오디오 |
 | @visual | visual/score | f01, f04, f09 악보 스크린샷 |
 
-`tests/unit`의 8개 코어 테스트 파일은 transpose, playback, chord-symbol, chord-tools, roman-analysis, history, share-session, session-store를 검증합니다. 기존 `history-core.test.html`, `chord-tools-core.test.html`, `roman-analysis.test.html`도 보존합니다.
+`tests/unit`의 10개 코어 테스트 파일은 transpose, pitch, measure, playback, chord-symbol, chord-tools, roman-analysis, history, share-session, session-store를 검증합니다. 기존 `history-core.test.html`, `chord-tools-core.test.html`, `roman-analysis.test.html`도 보존합니다.
 
 | 픽스처 | 내용 |
 |---|---|
@@ -39,8 +39,13 @@ Vitest는 Windows 한글·공백 경로의 forks 문제를 피하려고 threads 
 | f07-enharmonic.musicxml | F♯장조 E♯와 변화음 B♯ |
 | f08-repeats-tempo.musicxml | 반복 확장 6마디, 100→60 BPM |
 | f09-real.mxl | 기존 실제 악보의 압축 MXL |
+| f10-keychange-clef.musicxml | Cello 4마디. 3마디에서 조표 0→3♯, 음자리표 G→F 변경 (Ossia·조옮김 구간) |
+| f11-chords-inversion.musicxml | C장조 4마디 코드 E, B7, A♭m(임시표 ♭), C/E (자리바꿈·코드 조옮김) |
+| f12-piano-voices.musicxml | 피아노 2보표·2성부, divisions 6, 셋잇단음·beam (화성 쌓기 속성 복사) |
 
 2026-09-03 결과: 단위 84개 통과. 전체 E2E는 84개 중 80개 통과, 4개 제외, 5.5분. `chromium` 전체와 `mobile` Pixel 5의 @ux를 실행했습니다. 모바일에서는 데스크톱 패널 너비 검사를 제외합니다.
+
+2026-11-09 결과(Phase A, Linux 헤드리스 Chrome): 단위 142개 통과. 전체 E2E는 111개 중 107개 통과(chromium 100, mobile 7), 4개 제외(Linux 기준 이미지가 없는 시각 검사 3개, 모바일 데스크톱 너비 검사 1개), 6.1분. 작업 환경에서 외부 CDN 접속이 막혀 같은 버전·같은 바이트의 라이브러리 파일을 로컬 미러로 제공해 실행했습니다.
 
 ## 스냅샷 정책
 

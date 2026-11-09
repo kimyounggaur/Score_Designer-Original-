@@ -130,3 +130,120 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 
 ## 2026-09-03 · P8-2
 두 이전 프롬프트 문서에 스냅샷 경고와 완료 상태표를 추가했습니다. README·테스트 가이드·검증 보고서에 8개 코어, 21개 패널, 태그, 실측, 문서 관계, 배포 주소와 Linux 기준 이미지 대기를 기록했습니다. 사용자 확인 저장소는 kimyounggaur/Score_Designer-Original-, Pages는 https://kimyounggaur.github.io/Score_Designer-Original-/mxl-studio.html 입니다.
+
+## 2026-11-09 · Phase A 시작 (Studio10)
+- 근거: 2026-11-09 심층 분석의 P0-1~P0-5, P0-7~P0-9, P1-11, P1-12, P2-4. 사용자 확정 사항은 all12 모드 존치와 변환 기본 범위 '열린 파일 전체' 유지입니다.
+- 작업 환경: Linux 샌드박스, Node 22, Chrome for Testing 153. CDN(cdnjs·jsdelivr) 차단 환경이라 npm에서 받은 동일 바이트 파일(SRI 6개 일치 확인)을 로컬 HTTPS 미러로 제공하고 `--host-resolver-rules`로 연결해 E2E를 실행했습니다. 저장소 설정은 바꾸지 않았습니다.
+- 기준선: 단위 84개 통과, E2E 80 통과 / 4 skip. 처음에는 12-session-modal의 JSON 다운로드 파일명이 `download`로 나와 2개가 실패했는데, 원인은 샌드박스에 UTF-8 로캘이 없어 Chrome이 한글 파일명을 버리는 것이었습니다(`LANG=C.UTF-8`에서 정상). 앱 결함이 아닙니다.
+
+## 2026-11-09 · A-1
+- `pitch-core.js`(PitchCore): readPitch, pitchToMidi, addInterval, shiftOctave, shiftNoteOctave, nearestShift, keySignatureAlter, accidentalName, insertNoteChild, alterInEffect, syncAccidental, diatonicThird, chromaticThird, CHORD_TONES, bassForInversion.
+- `measure-core.js`(MeasureCore): measureNumber, firstPart, measuresByNumber({map,duplicates}), measureNumbers, keyFifthsAt, modeAt, effectiveAttributes, insertAttributesChild, leadingAttributes, segments.
+- transpose-core에 keyTonic·keyInterval export 추가(기존 시그니처 불변). HTML에 두 코어를 로드하고 부팅 검사(missingLibraries)에 포함했습니다. Pages 배포는 `/*-core.js` 패턴이라 별도 수정이 필요 없습니다.
+- 프롬프트 문서의 기대값 2건을 정정했습니다. F♯장조(fifths 6)에서 B는 제자리음이므로 keySignatureAlter(6,'B')=0이고, `keyInterval(0,7,7)`은 목표 조와 반음 수가 모순이어서 `keyInterval(0,1,7)`(C→G)로 바꿨습니다.
+- syncAccidental은 같은 마디·같은 보표의 앞선 음표 변화표까지 고려합니다. 다성부에서 backup 이후 시간 역전은 문서 순서로 근사합니다. cautionary·editorial·parentheses 임시표는 지우지 않습니다.
+- 픽스처 f10-keychange-clef.musicxml(3마디 3♯·F음자리표)을 A-10 예정보다 먼저 추가하고 @fixtures 렌더 목록에 넣었습니다.
+- 검증: 단위 137개 통과(10파일), @smoke·@fixtures·@robustness 23개 통과.
+
+## 2026-11-09 · A-2
+- RangePanel: `PitchCore.shiftNoteOctave`로 `<octave>`만 바꿉니다. 로그는 "N개 음표 이동, M개 범위 밖 유지"(기존 수치는 옥타브 이동 횟수였음). 최저음>최고음이면 경고 후 중단.
+- ClefPanel: 대상 파트(select)·보표(staves≥2일 때 칩) 선택 추가. 평균 높이는 대상 파트·보표 음표만으로 계산하고 옥타브만 이동합니다. 기존 `<clef>`만 바꾸며, 이전처럼 모든 `<attributes>`에 clef를 새로 만들지 않습니다(조표만 바뀌는 attributes에 불필요한 음자리표 변경이 생기던 문제). 대상 보표에 clef가 없으면 첫 마디 attributes에 스키마 순서로 만듭니다. 바꾼 clef의 `clef-octave-change`는 제거합니다.
+- 픽스처 f12-piano-voices.musicxml(2단 보표, voice 1·5, 셋잇단, 명시 sharp) 추가. E2E 헬퍼 `getPitches(page,{measure,part})` 추가('F#/4' 형식).
+- 검증: 04-range 2개(f07 소프라노 리코더: 4음 +1옥타브, 철자·임시표 불변), 09-clef 3개(f01 기존, f02 P1만, f12 2번 보표만), @fixtures 11개, 단위 137개, 스모크 7개 통과.
+
+## 2026-11-09 · A-3
+- transpose-core에 `transposePartRange(partEl, from, to, semitones, {startFifths, startMode, targetFifths, preferFlat, ensureKey})` 추가. 한 파트의 번호 구간을 조표 기준 음정(keyInterval)으로 옮기고, 구간 안의 기존 조바꿈은 같은 반음 수로 옮겨 상대 관계를 유지합니다. 시작 마디에 key가 없고 그 앞에 표기된 조표가 목표와 다르면 key(fifths·mode)를 스키마 순서로 삽입합니다. 이동량 0인 구간도 앞 구간이 바꾼 조표를 원래대로 되돌리기 위해 key를 넣습니다. 단위 테스트 5개.
+- KeyChangePanel: 방향 칩(가까운 쪽/위로/아래로, 기본 가까운 쪽), 단조 악보면 "Dm minor" 등 단조 이름 표시, 마디 입력은 실제 마디 번호 범위로 제한, 미리보기 구간을 MeasureCore.segments로 계산. 이동량은 첫 파트(기준)의 원래 조→목표 조로 정하고 모든 파트에 같은 반음 수를 적용합니다. 조표가 다른 파트(이조 악기)는 keyFifthsAfter로 자기 목표 조표를 계산합니다.
+- TransposePanel '특정 조로 변환'에 같은 방향 칩 추가(`PitchCore.nearestShift`). 나머지 모드는 그대로입니다.
+- 기대값 수정: panels/02-keychange의 기존 테스트는 C→G에서 G4를 기대했는데 이는 항상 상행하던 버그를 전제로 했습니다. 가까운 쪽(-5반음) 결과 G3로 바꿨습니다.
+- 검증: 02-keychange 4개(f02 기존, f07→E 가까운 쪽 철자·♭ 없음, f07 위로 E5, f04→Dm 단조·코드 Dm Gm A7 Dm), 01-transpose 4개(f04→Bm 기존, f01→B 가까운 쪽 B3/위로 B4/아래로 B3), 03-transpose-harmony, 14-a11y-controls, 단위 142개, 스모크 7개 통과.
+
+## 2026-11-09 · A-4
+- CapoPanel: 지점을 MeasureCore.segments로 구간화하고 구간마다 원본 대비 -프렛을 `transposePartRange`로 적용합니다(이전에는 앞 구간 이동량이 누적되어 2지점 카포의 둘째 구간이 -6반음, 조표는 -4로 어긋남). 코드 root·bass와 조표를 함께 옮기며 `fifthsUpBySemi` 표와 root 전용 코드 처리 코드를 삭제했습니다.
+- 결과 조표는 `keyFifthsAfter(원래 조, -프렛)`의 기본 표(DEFAULT_FIFTHS)를 씁니다. 프롬프트의 preferFlat=true는 F♯/G♭·B/C♭ 같은 모호한 경우에 C♭장조를 고르는 문제가 있어 따르지 않았습니다. C장조 기준 결과는 동일합니다(2프렛 B♭, 4프렛 A♭).
+- "Capo N Fret" 표기는 구간 시작 마디(번호 기준)에 하나만 두고, 다시 실행하면 기존 표기를 교체합니다. 결과 조 표시는 실제 조표 계산과 같은 함수로 보여 주고 단조 악보는 단조 이름을 씁니다.
+- TempoChangePanel: `measures[n-1]` 인덱스 대신 `measuresByNumber`로 마디를 찾습니다(못갖춘마디 0 지정 가능). 파트가 없는 파일이 결과 배열에서 빠지던 문제(`continue`)도 함께 고쳤습니다. 없는 마디 번호는 경고 줄을 남깁니다. 미리보기 구간 계산을 MeasureCore.segments로 통일.
+- 픽스처 f11-chords-inversion.musicxml(E, B7, A♭m, C/E) 추가.
+- 검증: 03-capo 4개(f04 기존, f02 2지점: 1~2마디 -2·3~4마디 -4·조표 일치, f11: D A7 G♭m B♭/D, 재실행 시 표기 교체), 07-tempochange 2개(f03 1마디 지정 시 0마디 불변), 단위 142개, 스모크 7개 통과.
+
+## 2026-11-09 · A-5
+- HarmonyPanel: 마디를 따라 현재 조표(attributes key)를 추적하고 `PitchCore.diatonicThird`(조성 기반: 음이름 두 칸 + 조표 변화표) 또는 `chromaticThird`(항상 장3도, 음이름 두 칸 철자)로 3도 음을 만듭니다. f07(F♯장조)에서 A♯·E♯·D♯가 그대로 철자됩니다.
+- 새 화음 음표 `buildChordNote`: chord, pitch, duration, tie, voice, type, dot, time-modification, stem, staff를 원음에서 복제하고, 붙임줄(notations > tied)만 따로 옮깁니다. 셋잇단 괄호·슬러·아티큘레이션·가사·beam은 원음에만 둡니다. 임시표는 `PitchCore.syncAccidental`로 같은 마디·보표 문맥에서 필요할 때만 붙입니다. grace·cue·unpitched·rest·기존 chord 음은 건너뜁니다.
+- 다이어토닉 모드에서 조표에 없는 음(예: C장조의 F♯)도 음이름 3도와 조표 변화표로 정합니다(F♯→A). 이전 코드는 이런 음에 장3도(F♯→A♯)를 썼습니다. 단조는 자연단음계 기준이며 화성단음계 옵션은 범위 밖입니다.
+- `getDiaThirdAbove/Below` 삭제(다른 호출처 없음). `getKeyRoot`·`DIATONIC_SCALES`는 숫자 악보 패널이 쓰므로 유지.
+- 검증: 14-harmony 5개(f01 기존, f07 철자 8개·임시표 없음, f12 voice·staff·셋잇단 복사와 렌더 오류 없음, f04 자연단음계 G, f06 붙임줄 유지와 재생 이벤트 결합), 단위 142개, 스모크 7개 통과.
+
+## 2026-11-09 · A-6
+- ChordToolsPanel.runInversion: 베이스 음을 `PitchCore.bassForInversion(근음, kind, n)`으로 계산합니다. 근음 철자에서 구성음 음정(음이름 간격+반음)을 더하므로 E 1st → G♯, B7 1st → D♯, A♭m 1st → C♭이 됩니다(이전: ♭ 전용 표 때문에 A♭, E♭). 지원하지 않는 kind(none·other 등)나 구성음이 모자란 자리바꿈은 건너뜁니다.
+- `KIND_INTERVALS`·`STEP_SEMI`·`PC_STEP_ALTER` 삭제(다른 호출처 없음). PitchCore.CHORD_TONES는 MusicXML 정식 이름 `major-minor`와 기존 표기 `minor-major`를 모두 받습니다.
+- 검증: 15-chordtools 3개(f04 기존 일괄 변경, f11 1st: E/G# B7/D# A♭m/C♭ C/E와 root·kind·inversion·bass 순서, f11 3rd: B7/A만 적용·3개 생략), 단위 142개, 스모크 7개 통과.
+
+## 2026-11-09 · A-7
+- OssiaPanel: 범위 밖 마디를 지우기 전에 `MeasureCore.effectiveAttributes(첫 파트, 시작 마디)`로 그 시점의 divisions·key·time·staves·clef(보표별)·staff-details·transpose를 구하고, 첫 남은 마디의 attributes에 빠진 요소만 스키마 순서로 보충합니다(이전: 1마디 attributes만 복사해 3마디에서 바뀐 조표·음자리표가 무시됨).
+- 조옮김은 `TransposeCore.transposePartRange`로 Ossia 조표까지 함께 옮기고, 옥타브 이동은 `PitchCore.shiftNoteOctave`로 철자를 유지합니다. 직접 임시표를 고치던 코드와 내부 헬퍼(directChild·cloneEl)를 삭제했습니다.
+- mxl-studio.html의 MIDI 기반 `transposeNote`는 마지막 호출처가 사라져 정의를 삭제했습니다.
+- 테스트 기대값 정정: f07 Ossia +1반음에서 B♯은 F♯장조의 ♯4이므로 G장조의 ♯4인 C♯이 맞습니다(처음 작성한 C는 오류).
+- 검증: 08-ossia 3개(f01 기존, f10 4마디: divisions 1·3♯·F음자리표, f07 +1반음 -1옥타브: G장조 철자·조표 1), 05-ossia-persist, 19-ossia-pickup, 단위 142개, 스모크 7개 통과.
+
+## 2026-11-09 · A-8
+- 사용자 확정 사항대로 기본 범위는 '열린 파일 전체'를 유지하고 '현재 파일' 옵션을 더했습니다. App 상태 `scope`('all'|'active')를 localStorage `mxlStudio.scope`에 보존하고, 파일이 두 개 이상일 때 인스펙터·도구 패널 머리에 `ScopeToggle`(aria-pressed 버튼 2개)을 보여 줍니다.
+- 유틸 `targetFiles`·`mergeTargets`·`scopeLabel`·`scopeLogLine` 추가. 변환·분석 패널 18개의 파일 루프를 `targetFiles(files,activeFile,scope)`로 바꾸고, 결과는 `mergeTargets`로 원래 자리에 넣습니다. 로그 첫 줄은 "대상: 열린 파일 N개" 또는 "대상: 현재 파일(이름)", 히스토리 라벨은 파일이 둘 이상일 때 "· 전체 N개"/"· 현재 파일"을 붙입니다. 로마 숫자 분석은 원래 현재 파일만 다루므로 그대로이고, 이미지/PDF의 '전체 파일 PNG'도 의미상 전체를 유지합니다. Ossia 제거도 범위를 따릅니다.
+- 참조 동일성: `commitFile`이 만든 객체를 WeakSet에 기록하고 `App.updateFiles`는 이미 커밋된 파일을 다시 직렬화하지 않습니다. 대상이 아닌 파일은 같은 객체로 남고(E2E로 확인), 매 변환마다 모든 파일을 다시 직렬화하던 비용도 사라졌습니다.
+- 정렬 보장을 위해 숫자 악보 '기존 가사 복원'에서 원본이 없을 때 결과 배열에 파일을 넣지 않고 넘어가던 경로를 고쳤습니다(이전에는 해당 파일이 목록에서 사라질 수 있었음).
+- styles.css에 `.scope-toggle` 추가, 캐시 키를 `styles.css?v=phase-a-20261109`로 갱신.
+- 검증: 새 E2E 23-scope 2개(기본 전체 적용·현재 파일만 적용 시 다른 파일 객체·xmlString 불변·라벨·로그·localStorage 복원, 파일 1개면 토글 숨김), 전체 E2E 106 통과 / 4 skip, 단위 142개 통과.
+
+## 2026-11-09 · A-9
+- TransposePanel '12개 장조 모두': 대상 파일(`targetFiles`)마다 12개 조를 `transposeDoc(file.xmlDoc, PitchCore.nearestShift(원래 조, i, 'nearest'), i)`로 만들고 `{파일명}/{파일명}_{조 이름}.mxl` 경로로 ZIP에 넣어 `transposed_12keys.zip`으로 내려받습니다. 원래 조와 같은 조도 포함해 파일당 12개로 고정합니다. 열린 악보는 바꾸지 않으므로 `onFilesUpdate`·히스토리를 호출하지 않습니다(이전: 12번 변환 후 마지막 결과 하나만 커밋해 로그와 결과가 달랐음).
+- 유틸 `buildMxlBlobFromDoc(doc)` 추가, `buildMxlBlob(file)`은 이를 호출합니다(시그니처 유지). 파일명 안전 처리 `safeKeyName`('/'→'-', '♭'→'b', '♯'→'#')과 `safeFileStem` 추가. 예: `f01-basic/f01-basic_Db.mxl`, `f01-basic_F#-Gb.mxl`.
+- 결정: 조 이름 표는 프롬프트의 '활성 파일이 단조면' 대신 **파일마다** 자기 첫 조표의 mode로 고릅니다. 범위가 '전체'일 때 장조·단조 파일이 섞여도 각 파일의 이름이 맞게 붙습니다.
+- 패널 설명을 "12개 조로 변환한 .mxl을 ZIP으로 내려받습니다. 열린 악보는 바뀌지 않습니다."로 바꾸고, 결과 로그는 조마다 한 줄과 `✅ N개 파일 × 12조 = M개 .mxl` 요약을 남깁니다. JSZip이 없으면 오류 로그로 안내합니다.
+- 같이 고친 기존 버그: 음정 이동에서 음정을 해석하지 못하면 결과 배열에 파일을 넣지 않아 목록에서 빠질 수 있던 경로를 원본 유지로 바꿨습니다.
+- 매뉴얼(manual/·MXL-Studio-사용자설명서/ 두 사본)과 퀵스타트: 적용 대상 토글, 조옮김 방향·12개 장조 ZIP, 마디별 조바꿈 방향·단조 이름, 카포 구간별 원래 악보 기준, 음역대 옥타브 이동·철자 유지, 음자리표 파트·보표, 화성 쌓기 철자·속성 이어받기, 코드 자리바꿈 베이스 철자, Ossia attributes 이어받기 문구와 갱신일(2026-11-09). PDF·SVG 재생성은 A-10.
+- 검증: 01-transpose 5개(새 all12: ZIP 엔트리 12개, 각 엔트리 `META-INF/container.xml`+`score.xml`·파싱 성공·rootfile, 조표 12종, Db는 fifths −5·첫 음 D♭, 실행 전후 xmlString·xmlDoc 직렬화·history 길이 불변), 14-a11y-controls, 06-export-mxl, 단위 142개 통과.
+
+## 2026-11-09 · A-10
+- 코드 수정 없이 검증·기록만 했습니다(테스트 1건을 픽스처로 옮긴 것 제외).
+- `grep -n "transposeNote\|midiToNote\|PC_STEP_ALTER\|fifthsUpBySemi\|measures\[" mxl-studio.html` 결과: 195행 `midiToNote` 정의, 825행 InstrumentPanel 미리보기(표 표시), 2948·2988행 StatsPanel 최저음·최고음 표기. 모두 표시 목적이며 `transposeNote`·`PC_STEP_ALTER`·`fifthsUpBySemi`·`measures[` 인덱스 접근은 0건입니다.
+- 테스트 안 합성 XML 정리: Phase A에서 만든 합성 악보는 모두 픽스처(f10·f11·f12)로 두었고, transpose-core 단위 테스트에 문자열로 있던 C/E 한 마디 악보는 f11의 4마디(C/E)를 쓰도록 바꿨습니다. measure-core 단위 테스트의 음표 없는 구조 조각(중복·비숫자 마디 번호, 보표별 clef 누적)은 악보가 아니라 파서 경계 사례라 테스트 안에 그대로 두었습니다.
+- 전체 검증: 단위 142개 통과(10파일). E2E 111개 중 107개 통과(chromium 100, mobile 7), 4개 제외(시각 3·모바일 너비 1), 6.1분. Studio09 기준(80 통과/4 제외) 이상입니다. axe 네 장면 serious/critical 0.
+- 문서: README 검증 현황 표·코어 10개·픽스처 12개·설계 문서 4번, README-TESTING 픽스처 표(f10·f11·f12)·태그 범위·결과, docs/verification-report.md에 Phase A 재검증 절 추가.
+- `npm run docs:build`: PyMuPDF 1.28.2(`scripts/requirements-docs.txt`)를 설치해 실행했습니다. 설명서 10쪽·퀵스타트 4쪽 PDF·SVG를 재생성하고 전 페이지를 이미지로 확인했습니다. Linux에 Malgun Gothic이 없어 한글은 Noto Sans CJK로 들어갑니다(Windows에서 다시 생성하면 원래 글꼴). 내용이 그대로인 업데이트 안내 PDF·SVG는 글꼴만 바뀌는 변경이라 되돌렸습니다.
+
+## Phase A 요약
+기준 문서 `MXL-Studio10-PhaseA-변환정확도-바이브코딩-프롬프트.md`, 브랜치 `phase-a/transform-accuracy`, 커밋 A-1~A-10.
+
+### 1.1 표 항목과 검증
+| ID | 해결 | 검증 |
+|---|---|---|
+| P0-1 | 적용 대상 토글(기본 전체·현재 파일), 로그·히스토리 라벨에 대상 표기 | e2e 23-scope 2개 |
+| P0-2 | 카포 구간마다 원본 대비 −프렛, 조표 일치, 코드 root·bass 이조 | panels/03-capo 3개 |
+| P0-3 | 음역대·음자리표 옥타브 이동은 `<octave>`만 변경 | panels/04-range, panels/09-clef, 단위 shiftNoteOctave |
+| P0-4 | 조바꿈·특정 조: 가까운 쪽 기본, 위로/아래로, 조표 기준 철자, 단조 | panels/02-keychange 3개, panels/01-transpose 3개, 단위 transposePartRange·nearestShift |
+| P0-5 | all12 → 파일마다 .mxl 12개 ZIP, 열린 악보 불변 | panels/01-transpose all12 |
+| P0-7 | 자리바꿈 베이스를 근음 철자에서 계산(E/G♯, B7/D♯, A♭m/C♭) | panels/15-chordtools 2개, 단위 bassForInversion |
+| P0-8 | 화성 쌓기 조표 기준 철자, voice·staff·time-modification 등 복사 | panels/14-harmony 4개, 단위 diatonicThird·syncAccidental |
+| P0-9 | Ossia 시작 마디의 유효 attributes 보충 | panels/08-ossia 2개, 단위 effectiveAttributes |
+| P1-11 | 카포·마디별 템포를 마디 number 기준으로 통일(못갖춘마디 0) | panels/07-tempochange, panels/03-capo, 단위 measuresByNumber·segments |
+| P1-12 | 음자리표 파트·보표 선택 | panels/09-clef 2개 |
+| P2-4 | MIDI 기반 음표 계산 제거, 패널 안 중복 표 삭제 | A-10 grep, 단위 pitch-core·measure-core |
+
+### 제거된 함수·표 (mxl-studio.html)
+`transposeNote`(MIDI 기반 조옮김), `getDiaThirdAbove`·`getDiaThirdBelow`, `KIND_INTERVALS`, `STEP_SEMI`, `PC_STEP_ALTER`, 카포의 `fifthsUpBySemi`, OssiaPanel 내부 `directChild`·`cloneEl`. 대신 PitchCore·MeasureCore·TransposeCore.transposePartRange를 씁니다.
+
+### 바뀐 기대값
+- panels/02-keychange 기존 테스트: C→G 3마디 첫 음 G4 → **G3**(항상 상행하던 동작이 기대값이었음, 가까운 쪽 −5반음).
+- 프롬프트 문서 정정: `keySignatureAlter(6,'B')` = **0**(F♯장조의 B는 제자리음), `keyInterval(0,7,7)` → `keyInterval(0,1,7)`(목표 조와 반음 수 일치).
+- 카포 결과 조표: 프롬프트의 preferFlat=true 대신 `keyFifthsAfter` 기본 표(C♭장조 회피). C장조 기준 결과는 같음.
+- 음역대 로그 수치: 옥타브 이동 횟수 → "N개 음표 이동, M개 범위 밖 유지".
+- 화성 쌓기 다이어토닉 모드에서 조표 밖 음: F♯ → A(이전 A♯). 자리바꿈 베이스: E/A♭·B7/E♭ → E/G♯·B7/D♯.
+- all12: 열린 악보 1개 커밋 → ZIP 다운로드, 열린 악보·히스토리 불변. 조 이름 표는 파일마다 자기 mode 기준.
+
+### 남은 문제
+- 화성 쌓기 단조는 자연단음계 기준입니다. 화성단음계(이끈음) 3도 옵션은 없습니다.
+- 같은 마디 앞선 임시표는 같은 보표의 문서 순서로 판단합니다. 다성부에서 backup으로 시간이 되돌아가는 경우, 붙임줄로 넘어온 임시표, 마디를 넘는 확인 임시표는 반영하지 않습니다.
+- 마디 중간 조바꿈은 마디 단위로 근사합니다(`keyFifthsAt`은 그 마디의 마지막 조표를 반환).
+- 파트별 조표가 다른 합주보(이조 악기 포함)의 마디별 조바꿈은 첫 파트 기준 반음 수를 모든 파트에 적용하고 각 파트 조표는 `keyFifthsAfter`로 정하는 분기 경로입니다. 픽스처가 단일 파트(f05)뿐이라 합주보 E2E는 없습니다.
+- HTML의 `STEP_TO_SEMI`·`SEMI_TO_STEP`·`KEY_FIFTHS`·`DIATONIC_SCALES`는 UI·표시용으로 1벌씩 남아 있습니다(코어 내부 표와 값이 같음). 이후 PitchCore 참조로 바꿀 수 있습니다.
+- 설명서 화면 이미지는 Studio09 화면입니다(적용 대상 토글·방향 칩 없음). Linux 시각 기준 이미지 3장도 여전히 없습니다.
+- main 병합 전 GitHub CI(Linux Playwright Chromium)에서 한 번 더 확인해야 합니다. main에 푸시하면 Pages 배포가 실행됩니다.
