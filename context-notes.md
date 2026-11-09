@@ -352,3 +352,13 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 테스트: 단위 transpose +6(tonicFifths·단조, f15 두 조표·D3, 감5도 G♭·−6 / 증4도 F♯·6, 으뜸음 조표 범위 밖 폴백, 구간 조옮김 두 조표, 보표별 다른 조 철자). E2E 01-transpose +2(감5도 G♭/4·조표 −6·로그, 3도 단 → 4도 완전 복귀), 20-stats +2(f02 마디 4·파트 2개·두 분석 마디 4, f04 Am).
 - 검증: 단위 185, 01·20·01-fixtures·02·03·05·08·03-transpose-harmony·23 스펙, 스모크 7 통과.
 
+## 2026-11-10 · A2-10
+- C17: 템포 프리셋(`aria-pressed`)·눈금(`aria-label="{v} BPM"`)·음자리표 카드(`aria-pressed`, 기호 `aria-hidden`)를 `button type="button"`으로 바꿨습니다. 안쪽 div 구조는 유지(마디별 템포 프리셋과 같은 방식). styles.css는 프롬프트의 `border:0; background:none`을 프리셋·음자리표에 그대로 쓰면 기존 테두리·배경이 사라져, appearance·font·color·text-align만 초기화하고 눈금에만 border·background·padding을 지웠습니다. 세 컨트롤에 `:focus-visible` 외곽선.
+- 오류문(D12): `friendlyError(e)`와 대응표(JSON·ZIP·OSMD 불완전/잘못된 문서·파트·네트워크). 맞으면 `{한글} ({원문 앞 80자})`, 아니면 원문 그대로(앱이 만든 한글 오류). 패널의 `'❌ '+e.message` 24곳, 렌더·Ossia 오류, 업로드 로그, 세션 모달, 공유 링크 생성·읽기, 자동 저장 불러오기, MXL 내보내기, 재생 라이브러리 오류를 바꿨습니다. 디버그 기록(`__mxlLastError`)만 원문입니다. JSON 패턴은 최신 V8 문구("Expected property name … in JSON at position")도 맞도록 넓혔습니다.
+- E17: 화성 쌓기는 원음 뒤에 이어지는 chord 음표(그리고 이번 실행에 넣은 음)와 step·alter·octave가 같으면 건너뛰고 `✓ {name}: {added}개 추가, {skipped}개는 이미 있어 건너뜀`을 적습니다. 바뀐 기대값: 14-harmony f04 1마디 `['A/3','C/4','C/4','E/4']` → `['A/3','C/4','E/4']`(A3 위 3도 C4가 이미 화음에 있음 — 예전 기대값이 중복 버그를 고정하고 있었음).
+- E51·E54: 가사 스타일 크기 입력은 문자열 상태(`aria-invalid`, 라벨 '폰트 크기 (pt, 4~72)')이고, 실행 시 범위 밖이면 커밋하지 않고 로그를 남깁니다. 적용 항목이 모두 꺼지면 실행 버튼 비활성과 안내 문구.
+- E30: 원위치 버튼에 '불러온 악보의 원래 슬래시 베이스도 함께 제거됩니다' 설명(aria-describedby). R56: 표기 변환 스위치 라벨 '{파트} 파트 제거(출력에서 삭제)', 카드 제목 '파트 제거', 상태 '제거/유지'(동작 그대로).
+- 추가 발견(A2-8에서 기록): OSMD는 `<?xml`로 시작하지 않는 문자열을 URL로 보고 내려받으려 해, XML 선언 없는 MusicXML이 '악보를 렌더링하지 못했습니다'로 끝났습니다. `serializeScore`/`withXmlDeclaration`으로 본보·Ossia 렌더(뷰어·내보내기 미리보기)와 MXL score.xml·XML 내보내기에 선언을 보장합니다. 내보낸 파일을 OSMD 기반 다른 앱이 읽을 때도 같은 문제를 막습니다.
+- 테스트: E2E 14-a11y-controls +1(Tab으로 F 음자리표 Enter, Allegro Space → 138, 60 BPM 눈금 Enter), 21-upload +2(깨진 MXL·JSON 한글 문구, 선언 없는 MusicXML 렌더와 MXL score.xml 선언), 14-harmony +1(위+아래 두 번 실행 음표 수 불변·건너뜀 로그)·기대값 1곳, 17-lyricstyle +1(200pt 거부·기록 불변·aria-invalid, 모든 항목 끔 → 비활성).
+- 검증: 단위 185, 14-a11y·11·14-harmony·17·21·06·09·15·axe 28개, 12-session(모바일 포함)·09-notify·02-share·07·06-export·05-ossia 18개, 스모크 7 통과.
+
