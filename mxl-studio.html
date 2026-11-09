@@ -1124,35 +1124,31 @@ function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
   const [capos,setCapos]=useState([{measure:1,fret:2}]);
   const [log,setLog]=useState([]);
 
-  const totalMeasures=useMemo(()=>{
-    if(!files.length)return 0;
-    return activeDoc(files,activeFile).querySelector('part')?.querySelectorAll('measure')?.length||0;
-  },[files,activeFile]);
-
-  const origKeyName=useMemo(()=>{
-    if(!files.length)return 'C';
-    const f=parseInt(activeDoc(files,activeFile).querySelector('key fifths')?.textContent||'0');
-    const idx=KEY_FIFTHS.indexOf(f);return idx>=0?KEY_NAMES[idx]:'C';
-  },[files,activeFile]);
+  const doc=activeDoc(files,activeFile);
+  const measureNumbers=useMemo(()=>doc?MeasureCore.measureNumbers(doc):[],[doc]);
+  const firstNumber=measureNumbers[0]??1,lastNumber=measureNumbers[measureNumbers.length-1]??0;
+  const totalMeasures=measureNumbers.length;
+  const isMinor=doc?.querySelector('key mode')?.textContent==='minor';
+  const origFifths=Number(doc?.querySelector('key fifths')?.textContent||0);
+  const keyName=fifths=>(isMinor?MINOR_KEY_NAMES:KEY_NAMES)[keyIndexOfFifths(fifths)];
+  const origKeyName=keyName(origFifths);
+  const clampMeasure=value=>Math.min(Math.max(Number.isFinite(value)?value:firstNumber,firstNumber),lastNumber||9999);
 
   const addCapo=useCallback(()=>{
     const last=capos[capos.length-1];
-    setCapos(c=>[...c,{measure:Math.min((last?.measure||1)+16,totalMeasures||999),fret:last?.fret||2}]);
-  },[capos,totalMeasures]);
+    setCapos(c=>[...c,{measure:Math.min((last?.measure??firstNumber)+16,lastNumber||999),fret:last?.fret||2}]);
+  },[capos,firstNumber,lastNumber]);
   const removeCapo=useCallback(i=>setCapos(c=>c.filter((_,j)=>j!==i)),[]);
   const updateCapo=useCallback((i,field,val)=>setCapos(c=>c.map((x,j)=>j===i?{...x,[field]:val}:x)),[]);
 
   const segments=useMemo(()=>{
     if(!totalMeasures||!capos.length)return[];
-    const sorted=[...capos].sort((a,b)=>a.measure-b.measure);
-    const segs=[];
-    if(sorted[0].measure>1)segs.push({from:1,to:sorted[0].measure-1,fret:0,label:'No Capo'});
-    sorted.forEach((cp,i)=>{
-      const end=i<sorted.length-1?sorted[i+1].measure-1:totalMeasures;
-      segs.push({from:cp.measure,to:end,fret:cp.fret,label:`Capo ${cp.fret}`});
-    });
-    return segs;
-  },[capos,totalMeasures]);
+    const segs=MeasureCore.segments(capos.map(capo=>({measure:capo.measure,value:capo.fret})),lastNumber);
+    const out=[];
+    if(segs.length&&segs[0].from>firstNumber)out.push({from:firstNumber,to:segs[0].from-1,fret:0,label:'No Capo'});
+    segs.forEach(seg=>out.push({from:seg.from,to:seg.to,fret:seg.value,label:`Capo ${seg.value}`}));
+    return out;
+  },[capos,totalMeasures,firstNumber,lastNumber]);
 
   // Preview: show how chords change with capo
   const previewChords=useMemo(()=>{
@@ -1177,88 +1173,44 @@ function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
     try{
       const lines=[];const updatedFiles=[];
       for(const file of files){
+        const numbers=MeasureCore.measureNumbers(file.xmlDoc);
+        if(!numbers.length){lines.push({m:`⚠ ${file.name}: 번호가 있는 마디가 없어 건너뜁니다.`,t:'warn'});updatedFiles.push(file);continue;}
         const doc=cloneDoc(file.xmlDoc);
-        const sorted=[...capos].sort((a,b)=>a.measure-b.measure);
-
-        doc.querySelectorAll('part').forEach((part,partIdx)=>{
-          const measures=part.querySelectorAll('measure');
-
-          sorted.forEach(cp=>{
-            const semi=-cp.fret; // capo raises pitch, so written goes DOWN
-
-            for(let m=cp.measure-1;m<measures.length;m++){
-              const measure=measures[m];if(!measure)continue;
-
-              // Transpose notes
-              measure.querySelectorAll('note').forEach(note=>{
-                const p=getNotePitch(note);if(!p)return;
-                const np=transposeNote(p.step,p.alter,p.octave,semi);
-                setNotePitch(note,np.step,np.alter,np.octave);
-                let acc=note.querySelector('accidental');
-                if(acc){if(np.alter===1)acc.textContent='sharp';else if(np.alter===-1)acc.textContent='flat';else acc.remove()}
-                else if(np.alter!==0){
-                  acc=doc.createElement('accidental');acc.textContent=np.alter===1?'sharp':'flat';
-                  const pi=note.querySelector('pitch');
-                  if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);else note.appendChild(acc);
-                }
-              });
-
-              // Transpose chord symbols (harmony)
-              measure.querySelectorAll('harmony').forEach(harm=>{
-                const rs=harm.querySelector('root root-step');
-                const ra=harm.querySelector('root root-alter');
-                if(!rs)return;
-                const rootStep=rs.textContent;
-                const rootAlter=parseInt(ra?.textContent||'0');
-                const origMidi=STEP_TO_SEMI[rootStep]+(rootAlter||0);
-                const newMidi=((origMidi+semi)%12+12)%12;
-                const nn=SEMI_TO_STEP[newMidi];
-                rs.textContent=nn.step;
-                if(nn.alter!==0){
-                  if(!ra){const a=doc.createElement('root-alter');harm.querySelector('root').appendChild(a);a.textContent=nn.alter}
-                  else ra.textContent=nn.alter;
-                }else if(ra)ra.remove();
-              });
-
-              // Update key signature at the capo start measure
-              if(m===cp.measure-1){
-                let attrs=measure.querySelector('attributes');
-                if(!attrs){attrs=doc.createElement('attributes');const f=measure.firstChild;if(f)measure.insertBefore(attrs,f);else measure.appendChild(attrs)}
-                let key=attrs.querySelector('key');
-                if(!key){key=doc.createElement('key');attrs.appendChild(key)}
-                let fifths=key.querySelector('fifths');
-                if(!fifths){fifths=doc.createElement('fifths');key.appendChild(fifths)}
-                const oldFifths=parseInt(fifths.textContent||'0');
-                const fifthsUpBySemi=[0,-5,2,-3,4,-1,6,1,-4,3,-2,5];
-                const semiAbs=((semi%12)+12)%12;
-                let newFifths=oldFifths+fifthsUpBySemi[semiAbs];
-                while(newFifths>7)newFifths-=12;while(newFifths<-7)newFifths+=12;
-                fifths.textContent=newFifths;
-              }
-            }
-
-            // Insert "Capo N Fret" text at the capo measure (first part only)
-            if(partIdx===0){
-              const measure=measures[cp.measure-1];if(!measure)return;
-              const direction=doc.createElement('direction');
-              direction.setAttribute('placement','above');
-              const dirType=doc.createElement('direction-type');
-              const words=doc.createElement('words');
-              words.setAttribute('font-size','12');
-              words.setAttribute('font-weight','bold');
-              words.textContent=`Capo ${cp.fret} Fret`;
-              dirType.appendChild(words);
-              direction.appendChild(dirType);
-              const firstNote=measure.querySelector('note');
-              if(firstNote)measure.insertBefore(direction,firstNote);
-              else measure.appendChild(direction);
-            }
+        const originalParts=Array.from(file.xmlDoc.querySelectorAll('score-partwise > part'));
+        const parts=Array.from(doc.querySelectorAll('score-partwise > part'));
+        const fileMinor=file.xmlDoc.querySelector('key mode')?.textContent==='minor';
+        const nameOf=fifths=>(fileMinor?MINOR_KEY_NAMES:KEY_NAMES)[keyIndexOfFifths(fifths)];
+        const segs=MeasureCore.segments(capos.map(capo=>({measure:capo.measure,value:capo.fret})),numbers[numbers.length-1]);
+        const detail=[];
+        for(const seg of segs){
+          // 각 구간은 원본 대비 -프렛만큼 옮깁니다(앞 구간 이동량이 누적되지 않음). 코드 root·bass와 조표도 함께 옮깁니다.
+          const semis=-seg.value;let refStart=0,refTarget=0;
+          parts.forEach((part,index)=>{
+            const original=originalParts[index]||originalParts[0];
+            const startFifths=MeasureCore.keyFifthsAt(original,seg.from),startMode=MeasureCore.modeAt(original,seg.from);
+            const targetFifths=TransposeCore.keyFifthsAfter(startFifths,semis);
+            TransposeCore.transposePartRange(part,seg.from,seg.to,semis,{startFifths,startMode,targetFifths});
+            if(index===0){refStart=startFifths;refTarget=targetFifths;}
           });
-        });
-
+          // "Capo N Fret" 표기는 첫 파트 구간 시작 마디에 하나만 둡니다(다시 실행하면 교체).
+          const measure=parts[0]&&MeasureCore.measuresByNumber(parts[0]).map.get(seg.from);
+          if(measure){
+            xmlChildren(measure,'direction').filter(direction=>/^Capo \d+ Fret$/.test(xmlDesc(direction,'words')?.textContent||'')).forEach(direction=>direction.remove());
+            const direction=doc.createElement('direction');
+            direction.setAttribute('placement','above');
+            const dirType=doc.createElement('direction-type');
+            const words=doc.createElement('words');
+            words.setAttribute('font-size','12');
+            words.setAttribute('font-weight','bold');
+            words.textContent=`Capo ${seg.value} Fret`;
+            dirType.appendChild(words);
+            direction.appendChild(dirType);
+            measure.insertBefore(direction,xmlChild(measure,'note'));
+          }
+          detail.push({m:`    마디 ${seg.from}~${seg.to}: Capo ${seg.value} Fret · ${nameOf(refStart)} → ${nameOf(refTarget)} 표기`});
+        }
         updatedFiles.push(commitFile(file,doc));
-        lines.push({m:`✓ ${file.name}`,t:'ok'});
-        sorted.forEach(cp=>lines.push({m:`    마디 ${cp.measure}부터 Capo ${cp.fret} Fret 적용`}));
+        lines.push({m:`✓ ${file.name}`,t:'ok'},...detail);
       }
       onFilesUpdate(updatedFiles,'카포 적용');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
@@ -1275,7 +1227,7 @@ function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
 
     {totalMeasures>0 && <div className="card">
       <div className="card__title">📄 악보 정보</div>
-      <div className="card__text">총 {totalMeasures}마디 · 원본 조: {origKeyName} Major</div>
+      <div className="card__text">총 {totalMeasures}마디 (마디 {firstNumber}~{lastNumber}) · 원본 조: {origKeyName}{isMinor?' minor':' Major'}</div>
     </div>}
 
     <div className="card">
@@ -1285,23 +1237,23 @@ function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
           <div className="change-entry" key={i}>
             <div className="change-entry__field change-entry__field--narrow">
               <span className="change-entry__micro">시작 마디</span>
-              <input className="measure-input" type="number" min={1} max={totalMeasures||9999}
-                value={cp.measure} onChange={e=>updateCapo(i,'measure',parseInt(e.target.value)||1)}/>
+              <input className="measure-input" type="number" aria-label={`카포 ${i+1} 시작 마디`} min={firstNumber} max={lastNumber||9999}
+                value={cp.measure} onChange={e=>updateCapo(i,'measure',clampMeasure(parseInt(e.target.value)))}/>
             </div>
             <span className="change-entry__arrow">→</span>
             <div className="change-entry__field change-entry__field--narrow">
               <span className="change-entry__micro">프렛 번호</span>
-              <select className="measure-input" value={cp.fret} onChange={e=>updateCapo(i,'fret',parseInt(e.target.value))}>
+              <select className="measure-input" aria-label={`카포 ${i+1} 프렛`} value={cp.fret} onChange={e=>updateCapo(i,'fret',parseInt(e.target.value))}>
                 {[1,2,3,4,5,6,7,8,9,10,11,12].map(f=><option key={f} value={f}>{f}프렛</option>)}
               </select>
             </div>
             <div className="change-entry__field">
               <span className="change-entry__micro">결과 조</span>
               <div className="info-box__value info-box__value--accent">
-                {origKeyName} → {KEY_NAMES[((KEY_NAMES.indexOf(origKeyName)>=0?KEY_NAMES.indexOf(origKeyName):0)-cp.fret+12)%12]} 표기
+                {origKeyName} → {keyName(TransposeCore.keyFifthsAfter(origFifths,-cp.fret))} 표기
               </div>
             </div>
-            <button className="change-entry__remove" onClick={()=>removeCapo(i)}>✕</button>
+            <button type="button" className="change-entry__remove" aria-label={`카포 ${i+1} 삭제`} onClick={()=>removeCapo(i)}>✕</button>
           </div>
         )}
       </div>
@@ -1365,11 +1317,11 @@ function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesU
   const [changes,setChanges]=useState([{measure:1,bpm:120}]);
   const [log,setLog]=useState([]);
 
-  const totalMeasures=useMemo(()=>{
-    if(!files.length)return 0;
-    const parts=activeDoc(files,activeFile).querySelectorAll('part');
-    return parts[0]?.querySelectorAll('measure')?.length||0;
-  },[files,activeFile]);
+  const doc=activeDoc(files,activeFile);
+  const measureNumbers=useMemo(()=>doc?MeasureCore.measureNumbers(doc):[],[doc]);
+  const firstNumber=measureNumbers[0]??1,lastNumber=measureNumbers[measureNumbers.length-1]??0;
+  const totalMeasures=measureNumbers.length;
+  const clampMeasure=value=>Math.min(Math.max(Number.isFinite(value)?value:firstNumber,firstNumber),lastNumber||9999);
 
   const origBpm=useMemo(()=>{
     if(!files.length)return 120;
@@ -1382,24 +1334,19 @@ function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesU
 
   const addChange=useCallback(()=>{
     const last=changes[changes.length-1];
-    setChanges(c=>[...c,{measure:Math.min((last?.measure||1)+8,totalMeasures||999),bpm:last?.bpm||120}]);
-  },[changes,totalMeasures]);
+    setChanges(c=>[...c,{measure:Math.min((last?.measure??firstNumber)+8,lastNumber||999),bpm:last?.bpm||120}]);
+  },[changes,firstNumber,lastNumber]);
   const removeChange=useCallback(i=>setChanges(c=>c.filter((_,j)=>j!==i)),[]);
   const updateChange=useCallback((i,field,val)=>setChanges(c=>c.map((x,j)=>j===i?{...x,[field]:val}:x)),[]);
 
   const segments=useMemo(()=>{
     if(!totalMeasures||!changes.length)return[];
-    const sorted=[...changes].sort((a,b)=>a.measure-b.measure);
-    const segs=[];
-    if(sorted[0].measure>1){
-      segs.push({from:1,to:sorted[0].measure-1,bpm:origBpm,term:getTempoTerm(origBpm)});
-    }
-    sorted.forEach((ch,i)=>{
-      const end=i<sorted.length-1?sorted[i+1].measure-1:totalMeasures;
-      segs.push({from:ch.measure,to:end,bpm:ch.bpm,term:getTempoTerm(ch.bpm)});
-    });
-    return segs;
-  },[changes,totalMeasures,origBpm]);
+    const segs=MeasureCore.segments(changes.map(change=>({measure:change.measure,value:change.bpm})),lastNumber);
+    const out=[];
+    if(segs.length&&segs[0].from>firstNumber)out.push({from:firstNumber,to:segs[0].from-1,bpm:origBpm,term:getTempoTerm(origBpm)});
+    segs.forEach(seg=>out.push({from:seg.from,to:seg.to,bpm:seg.value,term:getTempoTerm(seg.value)}));
+    return out;
+  },[changes,totalMeasures,firstNumber,lastNumber,origBpm]);
 
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
@@ -1412,14 +1359,14 @@ function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesU
         const sorted=[...changes].sort((a,b)=>a.measure-b.measure);
         let insertCount=0;
 
-        // Work on the first part for direction/sound elements
-        const firstPart=doc.querySelector('part');
-        if(!firstPart)continue;
-        const measures=firstPart.querySelectorAll('measure');
+        // 템포 표기는 첫 파트에만 넣습니다. 마디는 인덱스가 아니라 number 속성으로 찾습니다(못갖춘마디 0 포함).
+        const firstPart=MeasureCore.firstPart(doc);
+        if(!firstPart){lines.push({m:`⚠ ${file.name}: 파트를 찾지 못해 건너뜁니다.`,t:'warn'});updatedFiles.push(file);continue;}
+        const byNumber=MeasureCore.measuresByNumber(firstPart).map;
 
         sorted.forEach(ch=>{
-          const measure=measures[ch.measure-1];
-          if(!measure)return;
+          const measure=byNumber.get(Number(ch.measure));
+          if(!measure){lines.push({m:`⚠ ${file.name}: ${ch.measure}번 마디가 없습니다.`,t:'warn'});return;}
 
           // Check if there's already a direction with sound tempo in this measure
           let existingSound=null;
@@ -1487,8 +1434,8 @@ function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesU
           <div className="change-entry" key={i}>
             <div className="change-entry__field change-entry__field--narrow">
               <span className="change-entry__micro">시작 마디</span>
-              <input className="measure-input" type="number" min={1} max={totalMeasures||9999}
-                value={ch.measure} onChange={e=>updateChange(i,'measure',parseInt(e.target.value)||1)}/>
+              <input className="measure-input" type="number" aria-label={`템포 변경 ${i+1} 시작 마디`} min={firstNumber} max={lastNumber||9999}
+                value={ch.measure} onChange={e=>updateChange(i,'measure',clampMeasure(parseInt(e.target.value)))}/>
             </div>
             <span className="change-entry__arrow">→</span>
             <div className="change-entry__field change-entry__field--narrow">
