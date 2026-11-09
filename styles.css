@@ -1565,6 +1565,10 @@ body {
 .roman-cadence-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
+/* 종지 5종(PAC·IAC·HC·PC·DC): 홀수 개의 마지막 칸은 한 줄을 다 씁니다 */
+.roman-cadence-grid > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
 
 .roman-progressions {
   list-style: none;
@@ -1605,7 +1609,7 @@ body {
 
 .roman-table {
   width: 100%;
-  min-width: 420px;
+  min-width: 480px;
   border-collapse: collapse;
   font-size: 11px;
 }
@@ -1635,6 +1639,11 @@ body {
   font-family: var(--font-mono);
   font-weight: 700;
   color: var(--accent);
+}
+
+/* 첫 조표와 다른 조로 해석한 행에만 조성을 적습니다 */
+.roman-table__key {
+  color: var(--text-secondary);
 }
 
 /* ===== BAR CHART ===== */

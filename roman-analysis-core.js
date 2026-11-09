@@ -23,7 +23,7 @@
     {intervals:[0,3,6], quality:'dim', suffix:'°'},
     {intervals:[0,4,8], quality:'aug', suffix:'+'},
   ];
-  const CADENCE_TYPES = ['완전종지 (PAC)','반종지 (HC)','변격종지 (PC)','위종지 (DC)'];
+  const CADENCE_TYPES = ['완전종지 (PAC)','불완전정격종지 (IAC)','반종지 (HC)','변격종지 (PC)','위종지 (DC)'];
 
   function toArray(list){return Array.from(list||[])}
   function normSemi(n){return ((n%12)+12)%12}
@@ -39,14 +39,23 @@
     );
   }
 
-  function getPitchMidi(note){
+  // transposeSemis: 기보음 → 실음 반음 수(<transpose>의 chromatic + 12×octave-change).
+  function getPitchMidi(note,transposeSemis=0){
     const pitch=xmlChild(note,'pitch');
     if(!pitch)return null;
     const step=xmlText(pitch,'step','C');
     const alter=parseFloat(xmlText(pitch,'alter','0'))||0;
     const octave=parseInt(xmlText(pitch,'octave','4'),10);
     if(!(step in STEP_TO_SEMI)||Number.isNaN(octave))return null;
-    return (octave+1)*12+STEP_TO_SEMI[step]+alter;
+    return (octave+1)*12+STEP_TO_SEMI[step]+alter+(Number(transposeSemis)||0);
+  }
+
+  // <attributes> 안의 <transpose>(number 없는 것 또는 number="1")를 반음 수로 바꿉니다. 없으면 null(이전 값 유지).
+  function transposeSemitones(attributes){
+    const transposes=xmlChildren(attributes,'transpose');
+    if(!transposes.length)return null;
+    const transpose=transposes.find(node=>!node.hasAttribute('number')||node.getAttribute('number')==='1')||transposes[0];
+    return (Number(xmlText(transpose,'chromatic','0'))||0)+12*(Number(xmlText(transpose,'octave-change','0'))||0);
   }
 
   function getKeyInfo(xmlDoc){
@@ -139,18 +148,21 @@
     const notes=[],rests=[],starts=new Set();let phraseAfter=false;
     parts.forEach(part=>{
       const measures=xmlChildren(part,'measure'),measure=measures[measureIndex];if(!measure)return;
-      let divisions=1;
-      for(let i=0;i<measureIndex;i++)for(const attr of xmlChildren(measures[i],'attributes'))divisions=Number(xmlText(attr,'divisions'))||divisions;
+      let divisions=1,transpose=0;
+      for(let i=0;i<measureIndex;i++)for(const attr of xmlChildren(measures[i],'attributes')){
+        divisions=Number(xmlText(attr,'divisions'))||divisions;
+        transpose=transposeSemitones(attr)??transpose;
+      }
       let cursor=0,lastStart=0;
       for(const node of xmlChildren(measure)){
-        if(node.localName==='attributes'){divisions=Number(xmlText(node,'divisions'))||divisions;continue;}
+        if(node.localName==='attributes'){divisions=Number(xmlText(node,'divisions'))||divisions;transpose=transposeSemitones(node)??transpose;continue;}
         const duration=(Number(xmlText(node,'duration','0'))||0)/divisions;
         if(node.localName==='backup'){cursor=Math.max(0,cursor-duration);continue;}
         if(node.localName==='forward'){cursor+=duration;continue;}
         if(node.localName!=='note')continue;
         const chord=!!xmlChild(node,'chord'),start=chord?lastStart:cursor;
         if(xmlChild(node,'rest'))rests.push(start);
-        else{const midi=getPitchMidi(node);if(midi!==null&&!xmlChild(node,'grace')){notes.push({midi,start,end:start+duration});starts.add(start);}}
+        else{const midi=getPitchMidi(node,transpose);if(midi!==null&&!xmlChild(node,'grace')){notes.push({midi,start,end:start+duration});starts.add(start);}}
         if(!chord){lastStart=start;cursor+=duration;}
       }
       const next=measures[measureIndex+1];
@@ -162,7 +174,7 @@
     return sorted.map((start,index)=>{
       const sounding=notes.filter(note=>note.start<=start&&note.end>start);
       const bass=Math.min(...sounding.map(note=>note.midi));
-      return {start,beat:String(Math.round((start+1)*100)/100),pitchClasses:new Set(sounding.map(note=>normSemi(note.midi))),bass: normSemi(bass),phraseEnd:index===sorted.length-1&&(phraseAfter||rests.some(rest=>rest>start))};
+      return {start,beat:String(Math.round((start+1)*100)/100),pitchClasses:new Set(sounding.map(note=>normSemi(note.midi))),bass: normSemi(bass),bassMidi:bass,phraseEnd:index===sorted.length-1&&(phraseAfter||rests.some(rest=>rest>start))};
     });
   }
 
@@ -172,13 +184,21 @@
     return Number.isNaN(parsed)?index+1:parsed;
   }
 
+  // V→I은 두 화음이 모두 기본위치일 때만 PAC, 하나라도 전위면 IAC입니다(최상성부는 보지 않음).
+  // 판정하지 못한 화음(quality unknown)은 앞·뒤 어느 쪽으로도 쓰지 않습니다.
   function detectCadence(prev,current){
-    if(!current)return null;
-    if(prev?.degree===5&&current.degree===1)return '완전종지 (PAC)';
-    if(prev?.degree===4&&current.degree===1)return '변격종지 (PC)';
-    if(prev?.degree===5&&current.degree===6)return '위종지 (DC)';
+    if(!current||current.quality==='unknown')return null;
+    const before=prev&&prev.quality!=='unknown'?prev:null;
+    if(before?.degree===5&&current.degree===1)return (before.inversion||0)===0&&(current.inversion||0)===0?'완전종지 (PAC)':'불완전정격종지 (IAC)';
+    if(before?.degree===4&&current.degree===1)return '변격종지 (PC)';
+    if(before?.degree===5&&current.degree===6)return '위종지 (DC)';
     if(current.degree===5&&['M','7'].includes(current.quality)&&current.phraseEnd)return '반종지 (HC)';
     return null;
+  }
+
+  function keyFromFifths(fifths,mode){
+    const tonicSemi=normSemi(fifths*7+(mode==='minor'?9:0));
+    return {fifths,mode,tonicSemi,keyName:KEY_NAMES[tonicSemi]||'C'};
   }
 
   function summarizeProgressions(rows){
@@ -195,16 +215,31 @@
       .slice(0,5);
   }
 
+  // 첫 파트의 조표를 마디 순서로 따라가며 행마다 그 시점의 조(keyName·tonicSemi·fifths·mode)로 해석합니다.
+  // 반환 객체의 keyName·mode는 첫 조표(헤더 표시용)이고, 조가 바뀐 마디는 keyChanges에 담깁니다.
   function detectRomanNumeral(xmlDoc){
     const key=getKeyInfo(xmlDoc);
     const parts=getPlayablePartElements(xmlDoc);
     const firstMeasures=xmlChildren(parts[0],'measure');
-    const rows=[];
+    const rows=[],keyChanges=[];
+    let current=keyFromFifths(key.fifths,key.mode);
     for(let i=0;i<firstMeasures.length;i++){
       const number=measureNumber(firstMeasures[i],i);
+      for(const attributes of xmlChildren(firstMeasures[i],'attributes')){
+        const keyEl=primaryKeyOf(attributes);if(!keyEl)continue;
+        const fifthsEl=xmlChild(keyEl,'fifths'),modeEl=xmlChild(keyEl,'mode');
+        const fifths=fifthsEl?parseInt(fifthsEl.textContent.trim(),10)||0:current.fifths;
+        const mode=modeEl?(modeEl.textContent.trim()==='minor'?'minor':'major'):current.mode;
+        const next=keyFromFifths(fifths,mode);
+        if(next.tonicSemi!==current.tonicSemi||next.mode!==current.mode){
+          if(rows.length||i>0)keyChanges.push({measure:number,...next});
+        }
+        current=next;
+      }
+      const rowKey=current;
       collectMeasureBeats(parts,i).forEach(beatInfo=>{
         const chord=identifyChord(beatInfo.pitchClasses,{bass:beatInfo.bass});
-        const roman=romanForChord(chord,key.tonicSemi,key.mode,beatInfo.bass);
+        const roman=romanForChord(chord,rowKey.tonicSemi,rowKey.mode,beatInfo.bass);
         rows.push({
           measure:number,
           beat:beatInfo.beat,
@@ -214,13 +249,14 @@
           degree:roman.degree,
           quality:chord?.quality||'unknown',
           rootSemi:chord?.rootSemi,pitchClasses:chord?.pitchClasses||[],inversion:roman.inversion,figure:roman.figure,phraseEnd:beatInfo.phraseEnd,
+          keyName:rowKey.keyName,tonicSemi:rowKey.tonicSemi,fifths:rowKey.fifths,mode:rowKey.mode,
         });
       });
     }
     rows.forEach((row,index)=>{
       const next=rows[index+1];
-      const scales=key.mode==='minor'?Object.values(DIATONIC_SCALES_MINOR):[DIATONIC_SCALES[0]];
-      const diatonic=scales.some(scale=>row.pitchClasses.every(pc=>scale.includes(normSemi(pc-key.tonicSemi))));
+      const scales=row.mode==='minor'?Object.values(DIATONIC_SCALES_MINOR):[DIATONIC_SCALES[0]];
+      const diatonic=scales.some(scale=>row.pitchClasses.every(pc=>scale.includes(normSemi(pc-row.tonicSemi))));
       if(!diatonic&&['M','7'].includes(row.quality)){
         if(next?.degree&&normSemi(row.rootSemi-next.rootSemi)===7){
           const target=['I','II','III','IV','V','VI','VII'][next.degree-1];
@@ -230,13 +266,20 @@
       }
     });
     const cadenceCounts=CADENCE_TYPES.reduce((acc,type)=>({...acc,[type]:0}),{}),cadences=[];
-    rows.forEach((row,index)=>{
-      const label=detectCadence(rows[index-1],row);if(!label)return;
-      cadences.push({measure:row.measure,from:rows[index-1]?.roman||'',to:row.roman,label});
-      cadenceCounts[label]++;row.cadence=label;
+    // 판정하지 못한 박(단음·두 음 등)은 건너뛰고, 바로 앞의 판정된 화음과 이어서 종지를 봅니다.
+    let previous=null;
+    rows.forEach(row=>{
+      if(row.quality==='unknown')return;
+      const label=detectCadence(previous,row);
+      if(label){
+        cadences.push({measure:row.measure,from:previous?.roman||'',to:row.roman,label});
+        cadenceCounts[label]++;row.cadence=label;
+      }
+      previous=row;
     });
     return {
       ...key,
+      keyChanges,
       rows,
       cadences,
       cadenceCounts,
@@ -328,8 +371,11 @@
     insertRomanNumerals,
     getKeyInfo,
     identifyChord,
+    detectCadence,
+    getPitchMidi,
     collectMeasureBeats,
     analyzeVerticalities,
+    CADENCE_TYPES,
     DIATONIC_SCALES_MINOR,
   };
 })(window);

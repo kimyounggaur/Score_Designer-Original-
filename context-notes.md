@@ -332,3 +332,13 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 설명서: 코드 분석·코드 도구·로마 숫자 분석 행.
 - 검증: 단위 173, 15·18·19·20·24·23·20-lazy·07·01 스펙, 스모크 7 통과. `grep -n "function detectChord" mxl-studio.html` 0건.
 
+## 2026-11-10 · A2-8
+- roman-analysis-core: `getPitchMidi(note,transposeSemis=0)`. `collectMeasureBeats`가 파트별 `<transpose>`(number 없음 또는 "1", chromatic + 12×octave-change)를 이전 마디부터 누적해 실음으로 읽고, 박 정보에 `bassMidi`를 더했습니다(단위 테스트용·재사용). `detectRomanNumeral`은 첫 파트 조표를 마디 순서로 따라가 행마다 keyName·tonicSemi·fifths·mode를 넣고, 부속화음 판정도 행의 조를 씁니다. 조가 바뀐 마디는 `keyChanges`로 돌려줍니다. mode 요소가 없는 조표는 이전 mode를 유지합니다(MeasureCore.modeAt과 같은 규칙). 헤더 조(keyName·mode)는 기존처럼 문서 첫 조표입니다.
+- 종지: `CADENCE_TYPES`에 IAC 추가. V→I은 둘 다 기본위치일 때만 PAC, 아니면 IAC. 판정하지 못한 화음은 종지의 앞·뒤로 쓰지 않고, 앞 화음은 바로 앞의 판정된 화음입니다(V – 선율 한 음 – I도 PAC). `detectCadence`·`getPitchMidi`·`CADENCE_TYPES`를 공개했습니다.
+- 패널: 종지 칸 5개(PAC·IAC·HC·PC·DC, 홀수 마지막 칸은 한 줄), 로그는 `a단조`/`C장조`와 `(마디 3부터 G장조)`, 표에 조성 열(첫 조와 다를 때만), 설명 문구에 실음·최상성부 안내. 결과 초기화는 `useEffect(…,[file])`에 이 패널이 삽입해 만든 파일 객체를 예외로 두었습니다(그대로 쓰면 '악보에 삽입' 직후 로그·표가 지워져 24 B01의 '적용 완료' 단언이 깨짐). 다른 도구의 변경·실행 취소·파일 전환은 모두 지웁니다.
+- 픽스처 f16-ensemble-transposing 추가, 01-fixtures 등록.
+- 발견(이번 범위 밖, A2-10에서 처리): XML 선언(`<?xml`)이 없는 짧은 MusicXML은 OSMD가 문자열을 URL로 보고 렌더에 실패합니다. 앱이 `XMLSerializer` 결과를 `osmd.load`에 넘기는데, Chrome은 원본에 선언이 있을 때만 선언을 붙입니다.
+- 테스트: 단위 roman +6(f16 C·Ⅰ, chromatic·octave-change 실음 60, f10 마디별 조·keyChanges, 조바꿈 뒤 새 으뜸음 로마 숫자, PAC/IAC/unknown, 판정 못 한 박을 건너뛴 PAC). E2E 19-roman +3(f04 a단조·장조 없음·종지 5칸, f16 C·Ⅰ, 파일 탭 전환 시 결과 지움·삽입 결과 유지).
+- 설명서: 로마 숫자 분석 행과 분석 안내 문장.
+- 검증: 단위 179, 19·24·01·18·15·20 스펙, 스모크 7 통과.
+

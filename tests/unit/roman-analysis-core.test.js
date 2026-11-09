@@ -139,3 +139,49 @@ describe('chord identification needs three pitch classes (C01, C15, C18)',()=>{
   });
 });
 
+describe('per-measure keys, sounding pitch and cadence types (C09, C10)',()=>{
+  const fixture=name=>new DOMParser().parseFromString(readFileSync(path.resolve('tests/fixtures',name),'utf8'),'text/xml');
+  it('reads a B-flat clarinet at sounding pitch so the ensemble is a C major triad',()=>{
+    const data=window.RomanAnalysis.detectRomanNumeral(fixture('f16-ensemble-transposing.musicxml'));
+    expect(data.rows[0]).toEqual(expect.objectContaining({chordName:'C',roman:'Ⅰ',keyName:'C'}));
+    expect(data.rows).toHaveLength(1);
+  });
+  it('applies chromatic and octave-change transposition',()=>{
+    const doc=new DOMParser().parseFromString('<score-partwise><part id="P1"><measure number="1"><attributes><divisions>1</divisions><transpose><diatonic>-8</diatonic><chromatic>-2</chromatic><octave-change>-1</octave-change></transpose></attributes><note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration></note></measure><measure number="2"><note><pitch><step>D</step><octave>5</octave></pitch><duration>4</duration></note></measure></part></score-partwise>','text/xml');
+    const parts=[doc.querySelector('part')];
+    expect(window.RomanAnalysis.collectMeasureBeats(parts,0)[0].bassMidi).toBe(60);
+    expect(window.RomanAnalysis.collectMeasureBeats(parts,1)[0].bassMidi).toBe(60);
+    expect(window.RomanAnalysis.getPitchMidi(doc.querySelector('note'),-14)).toBe(60);
+    expect(window.RomanAnalysis.getPitchMidi(doc.querySelector('note'))).toBe(74);
+  });
+  it('follows key changes from the measure where they appear',()=>{
+    const data=window.RomanAnalysis.detectRomanNumeral(fixture('f10-keychange-clef.musicxml'));
+    const keyOf=measure=>data.rows.filter(row=>row.measure===measure).map(row=>row.keyName);
+    expect(keyOf(1)).toEqual(['C']);expect(keyOf(2)).toEqual(['C']);
+    expect(keyOf(3)).toEqual(['A']);expect(keyOf(4)).toEqual(['A']);
+    expect(data.keyName).toBe('C');
+    expect(data.keyChanges).toEqual([expect.objectContaining({measure:3,keyName:'A',mode:'major',fifths:3})]);
+  });
+  it('labels roman numerals with the new tonic after a modulation',()=>{
+    const triad=(notes)=>notes.map(([step,octave,alter=0],index)=>`<note>${index?'<chord/>':''}<pitch><step>${step}</step><alter>${alter}</alter><octave>${octave}</octave></pitch><duration>4</duration></note>`).join('');
+    const doc=new DOMParser().parseFromString(`<score-partwise><part id="P1"><measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key></attributes>${triad([['G',3],['B',3],['D',4]])}</measure><measure number="2"><attributes><key><fifths>1</fifths></key></attributes>${triad([['G',3],['B',3],['D',4]])}</measure></part></score-partwise>`,'text/xml');
+    expect(window.RomanAnalysis.detectRomanNumeral(doc).rows.map(row=>row.roman)).toEqual(['Ⅴ','Ⅰ']);
+  });
+  it('separates PAC from IAC by inversion and ignores undetermined chords',()=>{
+    const {detectCadence}=window.RomanAnalysis;
+    expect(detectCadence({degree:5,inversion:1,quality:'M'},{degree:1,inversion:1,quality:'M'})).toBe('불완전정격종지 (IAC)');
+    expect(detectCadence({degree:5,inversion:0,quality:'M'},{degree:1,inversion:1,quality:'M'})).toBe('불완전정격종지 (IAC)');
+    expect(detectCadence({degree:5,inversion:0,quality:'M'},{degree:1,inversion:0,quality:'M'})).toBe('완전종지 (PAC)');
+    expect(detectCadence({degree:5,inversion:0,quality:'unknown'},{degree:1,inversion:0,quality:'M'})).toBeNull();
+    expect(detectCadence({degree:5,inversion:0,quality:'M'},{degree:null,inversion:0,quality:'unknown'})).toBeNull();
+    expect(window.RomanAnalysis.CADENCE_TYPES).toContain('불완전정격종지 (IAC)');
+  });
+  it('links a cadence across an undetermined beat in roman analysis',()=>{
+    const chord=(notes,duration=4)=>notes.map(([step,octave,alter=0],index)=>`<note>${index?'<chord/>':''}<pitch><step>${step}</step><alter>${alter}</alter><octave>${octave}</octave></pitch><duration>${duration}</duration></note>`).join('');
+    const doc=new DOMParser().parseFromString(`<score-partwise><part id="P1"><measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key></attributes>${chord([['G',3],['B',3],['D',4]],2)}${chord([['D',4]],2)}</measure><measure number="2">${chord([['C',3],['E',3],['G',3]])}</measure></part></score-partwise>`,'text/xml');
+    const data=window.RomanAnalysis.detectRomanNumeral(doc);
+    expect(data.rows.map(row=>row.roman)).toEqual(['Ⅴ','?','Ⅰ']);
+    expect(data.cadences).toEqual([expect.objectContaining({measure:2,from:'Ⅴ',to:'Ⅰ',label:'완전종지 (PAC)'})]);
+  });
+});
+
