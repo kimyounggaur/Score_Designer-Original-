@@ -46,3 +46,20 @@ GitHub Pages 대상은 `https://kimyounggaur.github.io/Score_Designer-Original-/
 제외 4개는 이전과 같습니다(모바일의 데스크톱 패널 폭 검사 1개, Linux 기준 이미지가 없는 시각 회귀 3개).
 
 설명서 10쪽과 퀵스타트 4쪽 PDF를 `npm run docs:build`로 다시 만들고 전 페이지를 이미지로 렌더해 잘림·겹침·빈 페이지가 없음을 확인했습니다. Linux에는 Malgun Gothic이 없어 한글은 Noto Sans CJK로 표시됩니다. 내용이 바뀌지 않은 업데이트 안내 PDF·SVG는 다시 만들지 않았습니다. 설명서 화면 이미지는 Studio09 화면 그대로입니다.
+
+## 2026-11-10 Studio10 Phase A2 재검증
+
+환경: Linux, Node.js 22.23.4, Google Chrome for Testing 153 (헤드리스), Phase A와 같은 로컬 HTTPS 미러(SRI 일치). 근거는 2026-11-09 외부 검수 보고서(B01~B10·C01~C18)와 그 소스 대조이며, 수정 범위는 `MXL-Studio10-PhaseA2-검수대응-바이브코딩-프롬프트.md`의 A2-1~A2-11입니다.
+
+| 구분 | 결과 |
+|---|---|
+| Vitest 단위 테스트 | 11개 파일, 185개 통과 (numbering-core 추가, chord-tools·roman·transpose·session-store·playback 확장) |
+| Playwright 전체 | 154개 중 150개 통과(chromium 141, mobile 9), 4개 제외, 8.6분 |
+| 접근성 | 빈 화면·악보·공유 모달·세션 모달·반복 기호 경고 장면에서 axe serious/critical 0, 음자리표·템포 프리셋·눈금 키보드 조작 |
+| 데이터 보존 | 현재 파일 범위 로마 숫자 삽입이 다른 파일을 덮지 않음(B01), 파트 ID가 없는 파일은 건너뜀(B02), 템포 변경이 duration을 바꾸지 않음(B03), 다른 패널 뒤에도 원본 가사 복원(B04), 히스토리 지우기 뒤 되돌리기(B07), 저장 실패를 ok:false와 이유로 전달하고 구세션 키를 성공 시에만 삭제(C11·C12) |
+| 분석·변환 정확도 | 3음 미만 코드 미확정·박 단위 수직 분석·못갖춘마디 0(C01·C02·C15·C18), 이조 악기 실음·마디별 조표·IAC(C09·C10), 보표별 조표·온음계 음정(C05·C06), 통계 마디·단조·실제 철자(B09·C08·N6) |
+
+바뀐 동작 요약: 템포 'duration 비례 변환' 제거(D1), 숫자 악보 생성 가사 표식과 원본 백업(D3), 옥타브 점(D4), 히스토리 기준점(D6), Ossia는 PNG·SVG 포함·MXL 제외 알림(D7), IAC(D8), 코드 확정 기준(D9·D10), 온음계 음정과 완전음정 칩(D11), 한글 오류문(D12). 추가 발견으로 XML 선언이 없는 MusicXML이 그려지지 않던 문제(OSMD가 문자열을 URL로 해석)를 고쳤습니다.
+
+설명서 10쪽과 퀵스타트 4쪽을 `npm run docs:build`로 다시 만들고 전 페이지를 이미지로 확인했습니다(Linux라 한글은 Noto Sans CJK). 내용이 바뀌지 않은 업데이트 안내 PDF·SVG는 원래 파일을 유지했습니다. 설명서 화면 이미지는 Studio09 화면 그대로입니다.
+

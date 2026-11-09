@@ -18,15 +18,15 @@ Vitest는 Windows 한글·공백 경로의 forks 문제를 피하려고 threads 
 | 태그 | 파일/영역 | 검사 |
 |---|---|---|
 | @smoke | 00, 02 | 시작·업로드·Ossia·조옮김·자동복원·편집 후 공유 |
-| @fixtures | 01 | f01-f12 렌더링 |
-| @panels | 03-06, 17-19, 21, 23, panels/01-21 | 활성 파일·MXL 왕복·Ossia·재생·커서·각 패널 결과·기록·적용 대상(전체/현재 파일)·12개 조 ZIP |
+| @fixtures | 01 | f01-f17 렌더링 |
+| @panels | 03-06, 17-19, 21, 23, 24, panels/01-21 | 활성 파일·MXL 왕복·Ossia·재생·커서·각 패널 결과·기록·적용 대상(전체/현재 파일)·12개 조 ZIP·검수 보고서 회귀(24-audit-regressions) |
 | @ux | 09-13, 16 | 알림·탭·레이아웃·세션·줌·인쇄·모바일 드로어 |
-| @a11y | 14-15, a11y/axe | 키보드 버튼·메뉴, axe 네 장면 |
+| @a11y | 14-15, a11y/axe | 키보드 버튼·메뉴·음자리표·템포 프리셋, axe 다섯 장면 |
 | @robustness | 07-08 | CDN·패널 오류, 파일 형식·중복·크기 제한 |
 | @perf | 20, 22 | 초기 패널 수·가사 복원·자동저장 중복·지연 오디오 |
 | @visual | visual/score | f01, f04, f09 악보 스크린샷 |
 
-`tests/unit`의 10개 코어 테스트 파일은 transpose, pitch, measure, playback, chord-symbol, chord-tools, roman-analysis, history, share-session, session-store를 검증합니다. 기존 `history-core.test.html`, `chord-tools-core.test.html`, `roman-analysis.test.html`도 보존합니다.
+`tests/unit`의 11개 코어 테스트 파일은 transpose, pitch, measure, numbering, playback, chord-symbol, chord-tools, roman-analysis, history, share-session, session-store를 검증합니다. 기존 `history-core.test.html`, `chord-tools-core.test.html`, `roman-analysis.test.html`도 보존합니다.
 
 | 픽스처 | 내용 |
 |---|---|
@@ -42,8 +42,15 @@ Vitest는 Windows 한글·공백 경로의 forks 문제를 피하려고 threads 
 | f10-keychange-clef.musicxml | Cello 4마디. 3마디에서 조표 0→3♯, 음자리표 G→F 변경 (Ossia·조옮김 구간) |
 | f11-chords-inversion.musicxml | C장조 4마디 코드 E, B7, A♭m(임시표 ♭), C/E (자리바꿈·코드 조옮김) |
 | f12-piano-voices.musicxml | 피아노 2보표·2성부, divisions 6, 셋잇단음·beam (화성 쌓기 속성 복사) |
+| f13-part-p99.musicxml | 파트 ID P99 Flute 2마디 (전체 범위 파트 추출 B02) |
+| f14-dotted-metronome.musicxml | 6/8, 점4분음표=60·sound 90 (메트로놈 박 단위 환산 C07·N5) |
+| f15-two-staff-keys.musicxml | 피아노 2보표, key number 1·2 따로 표기 (보표별 조표 조옮김 C05) |
+| f16-ensemble-transposing.musicxml | 피아노 C·E·G + B♭ 클라리넷 기보 D·F♯·A (실음 로마 숫자 C09) |
+| f17-dacapo.musicxml | 4마디, Fine·D.C. al Fine (반복 기호 미지원 경고 C16) |
 
 2026-09-03 결과: 단위 84개 통과. 전체 E2E는 84개 중 80개 통과, 4개 제외, 5.5분. `chromium` 전체와 `mobile` Pixel 5의 @ux를 실행했습니다. 모바일에서는 데스크톱 패널 너비 검사를 제외합니다.
+
+2026-11-10 결과(Phase A2, Linux 헤드리스 Chrome): 단위 11개 파일 185개 통과. 전체 E2E는 154개 중 150개 통과(chromium 141, mobile 9), 4개 제외(시각 3·모바일 데스크톱 너비 1), 8.6분. 외부 검수 보고서의 재현 순서는 `24-audit-regressions.spec.js`(B01·B02·B07·C16)와 각 패널 스펙에 있으며, 파일 머리 주석에 보고서 4항 여섯 사례의 위치를 적었습니다. 같은 로컬 미러 방식으로 실행했습니다.
 
 2026-11-09 결과(Phase A, Linux 헤드리스 Chrome): 단위 142개 통과. 전체 E2E는 111개 중 107개 통과(chromium 100, mobile 7), 4개 제외(Linux 기준 이미지가 없는 시각 검사 3개, 모바일 데스크톱 너비 검사 1개), 6.1분. 작업 환경에서 외부 CDN 접속이 막혀 같은 버전·같은 바이트의 라이브러리 파일을 로컬 미러로 제공해 실행했습니다.
 

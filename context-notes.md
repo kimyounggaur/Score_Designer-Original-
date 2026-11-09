@@ -362,3 +362,81 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 테스트: E2E 14-a11y-controls +1(Tab으로 F 음자리표 Enter, Allegro Space → 138, 60 BPM 눈금 Enter), 21-upload +2(깨진 MXL·JSON 한글 문구, 선언 없는 MusicXML 렌더와 MXL score.xml 선언), 14-harmony +1(위+아래 두 번 실행 음표 수 불변·건너뜀 로그)·기대값 1곳, 17-lyricstyle +1(200pt 거부·기록 불변·aria-invalid, 모든 항목 끔 → 비활성).
 - 검증: 단위 185, 14-a11y·11·14-harmony·17·21·06·09·15·axe 28개, 12-session(모바일 포함)·09-notify·02-share·07·06-export·05-ossia 18개, 스모크 7 통과.
 
+## 2026-11-10 · A2-11
+- grep `detectChord|getKeyRoot|noteToNumStr|optStretch|baselineRef|files.map((f,i)=>i===fileIndex`: 남은 것은 NumberingCore.noteToNumStr·ChordToolsCore.detectChordFromPitchClasses 호출과 NotationPanel의 `baselineRef` 5줄뿐입니다(N8, A2-3에서 범위를 NumberingPanel로 한정).
+- 24-audit-regressions 머리 주석에 보고서 4항 여섯 사례의 위치를 적었습니다((1)·B07·C16은 이 파일, (2) 06-tempo, (3) 16-numbering B04, (4)·(5) 12-export B05·B06, (6) 18-cursor). 중복 작성하지 않았습니다.
+- 20-stats에 N6(f07 최고음 B♯5·음역 F♯4–B♯5) 테스트를 더했습니다.
+- 전체 검증: 단위 185, chromium 141 통과·3 제외(시각), mobile @ux 9 통과·1 제외(데스크톱 너비). 합계 154개 중 150 통과, 4 제외, 8.6분.
+- 문서: README(코어 11개, 픽스처 17개, 검증 행, 설계 문서 5번), README-TESTING(f13~f17, 24 스펙, axe 다섯 장면, 결과), docs/verification-report.md(Phase A2 재검증), 설명서·퀵스타트 표지 'Phase A2 · 2026년 11월 10일'과 꼬리말 날짜, 퀵스타트 Ossia·저장 실패 문장. `npm run docs:build`(DOCS_PYTHON=python3, PyMuPDF 1.28.2)로 설명서 10쪽·퀵스타트 4쪽 PDF·SVG 재생성, 전 페이지 이미지 확인. Linux라 Malgun Gothic 대신 Noto Sans CJK입니다. 업데이트 안내 PDF·SVG는 내용이 같아 원래 파일로 되돌렸습니다.
+
+## Phase A2 요약
+
+### 검수 ID ↔ 세션 ↔ 테스트
+
+| ID | 세션 | 결과 | 테스트 |
+|---|---|---|---|
+| B01 | A2-1 | 현재 파일 범위 로마 숫자 삽입이 대상 파일만 바꿈, `mergeTargets` 길이 검사(N2) | e2e 24 B01 |
+| B02 | A2-1 (D2) | 파일마다 파트 ID 재검증, 남길 파트가 없으면 건너뜀·경고 | e2e 24 B02 |
+| B03 | A2-2 (D1) | duration 비례 변환 제거 | panels/06-tempo '300 BPM' |
+| B04 | A2-3 (D3) | 생성 가사 표식 + 파일 객체 백업으로 다른 패널 뒤에도 복원 | panels/16-numbering B04 |
+| B05 | A2-4 | 미리보기 출처가 바뀌면 지우고 저장 전 재확인 | panels/12-export B05 |
+| B06 | A2-4 | ZIP stem 고유화 `(2)` | panels/12-export B06 |
+| B07 | A2-5 (D6) | 지우기 뒤 기준점 1칸 | e2e 24 B07, 21-history |
+| B08 | A2-2 | 마디별 템포 20~400 검증, 무효면 커밋 안 함 | panels/07-tempochange |
+| B09 | A2-9 | 마디는 첫 파트 기준, 파트 수 표시 | panels/20-stats '첫 파트' |
+| B10 | A2-5 | 재생 중 A-B 해제 시 곡 끝 정지 예약 + 폴링 안전망 | 18-cursor 'A-B loop off' |
+| C01 | A2-7 (D9) | 3음 미만 unknown, 점수 폴백 제거 | unit roman |
+| C02 | A2-7 (D9) | 코어 판정(1음 null, 2음은 완전5도만 5) | unit chord-tools 13케이스, panels/18-chords f02 |
+| C03 | A2-3 | 이동 도법이 마디별 조표 | panels/16-numbering C03 |
+| C04 | A2-3 (D4) | 기준 옥타브에서 떨어진 만큼 점(최대 3) | panels/16-numbering C04, unit numbering |
+| C05 | A2-9 | 모든 key 갱신·보표별 철자 | unit transpose f15 |
+| C06 | A2-9 (D11) | 온음계 간격 전달(C 감5도 ↑ G♭) | unit transpose, panels/01-transpose |
+| C07 | A2-2 | 메트로놈 박 단위 환산 | panels/06-tempo f14, 07 f14 |
+| C08 | A2-9 | 조성 상위에 단조 이름 | panels/20-stats Am |
+| C09 | A2-8 | `<transpose>` 실음 | unit roman f16, panels/19-roman |
+| C10 | A2-8 (D8) | 전위가 있으면 IAC | unit roman detectCadence |
+| C11 | A2-6 | 모두 성공할 때만 구저장 키 삭제·migrationPending | unit session-store |
+| C12 | A2-6 | no-storage·quota·storage-error 전달·UI 알림 | unit session-store, e2e 12-session-modal +2 |
+| C13 | A2-4 (D7) | PNG·SVG에 Ossia, MXL·XML은 알림 | panels/12-export C13 |
+| C14 | A2-4 | filled 속성 쓰지 않음 | panels/13-color |
+| C15 | A2-7 (D10) | 박 단위 수직 분석 | unit roman analyzeVerticalities, panels/18-chords |
+| C16 | A2-5 | 이동 기호 경고 표기 | unit playback, e2e 24 C16, axe 장면 |
+| C17 | A2-10 | 음자리표·템포 프리셋·눈금 button | 14-a11y-controls |
+| C18 | A2-7·A2-8 | 마디 number(0), 단조 로그, 파일 전환 시 결과 초기화 | panels/18-chords f03, panels/19-roman |
+| E17 | A2-10 | 같은 3도 건너뜀 | panels/14-harmony 두 번 실행 |
+| E30 | A2-10 | 원위치 설명 문구(동작 그대로) | (문구) |
+| E37 | A2-3 | 생성 가사만 지우고 다시 생성 | panels/16-numbering E37 |
+| E51·E54 | A2-10 | 적용 항목 없으면 비활성, 크기 4~72 | panels/17-lyricstyle |
+| R10·R52 | A2-10 (D12) | `friendlyError` 한글 문장 + 원문 괄호 | panels/21-upload |
+| R56 | A2-10 | '파트 제거(출력에서 삭제)' 라벨(동작 그대로) | (라벨) |
+| N1 | A2-3 (D5) | '숫자 (도=1)' 칩 제거, 고정 도법 기본 | panels/16-numbering |
+| N2 | A2-1 | `mergeTargets` 길이 불일치 예외 | e2e 24 B01(간접) |
+| N3 | A2-4 | 12개 조 ZIP stem 고유화 | panels/01-transpose 같은 stem |
+| N4 | A2-9 (D11) | 완전음정 칩 P·A·d·AA·dd | panels/01-transpose |
+| N5 | A2-2 | 마디별 템포 기존 direction의 per-minute 환산 | panels/07-tempochange f14 |
+| N6 | A2-9 | 최저·최고음 실제 철자 | panels/20-stats f07 |
+| N7 | A2-1 | 업로드·복원 파일 객체를 commitFile 출처로 신뢰(재직렬화 방지) | e2e 24 B01 xmlString 불변 |
+| N8 | — | NotationPanel baselineRef(남은 문제) | — |
+| 추가 | A2-10 | XML 선언 없는 MusicXML 렌더·내보내기 선언 | panels/21-upload |
+
+### 바뀐 기본값 D1~D12 (코드·설명서와 같음)
+
+D1 템포 duration 비례 변환 제거 · D2 파트 추출 파일별 ID 검증·건너뜀 · D3 생성 가사 `name="mxl-studio-number"`와 파일 객체 `lyricBackup`(히스토리에도 참조로 보관, 세션·공유에는 넣지 않음) · D4 옥타브 점 기준 4·최대 3 · D5 고정 도법 기본 · D6 히스토리 기준점 · D7 Ossia는 PNG·SVG만 · D8 IAC · D9 코드 확정은 3음 이상(완전5도 2음은 5 코드, 로마 숫자는 3음 이상만) · D10 박 단위·마디 number · D11 온음계 음정·완전음정 칩 · D12 한글 오류문.
+
+### 프롬프트와 다르게 정한 것 (각 세션 절에 이유)
+
+A2-2 per-minute는 비율 대신 `목표 BPM ÷ 박 배수`, 겹점 ×1.75 · A2-3 lyricBackup을 히스토리에 포함, 이동 도법은 음이름 기반 · A2-4 PDF는 미리보기 검사 제외 · A2-5 경고는 재생 막대 시간 줄에 짧게(전체 문장은 title·숨김 글), 기준점 지우기 조건 확장 · A2-6 '자동저장 행'을 상태 줄로, 현재 상태 JSON 내보내기 추가 · A2-7 마디 찾기는 `measureIndex`, 로그에 '박' 표기 · A2-8 결과 초기화에서 이 패널의 삽입 결과는 유지 · A2-9 `keyIndexOfFifths`는 기존 함수 재사용 · A2-10 버튼 CSS는 기존 테두리·배경 유지.
+
+### 바뀐 기대값
+
+21-history 지우기 뒤 0개 → 기준점 1개 · 24 B01 두 번째 파일 f02 → f04(f02 유니슨 박은 화음이 아님) · 20-stats 타일 '총 음표' → '음표 (전체 파트)' · 14-harmony f04 1마디 중복 C4 제거. 기존 테스트가 없던 동작 변경: 이동 도법 A장조의 C가 '#2' → '♭3'(새 단위 테스트가 고정).
+
+### 남은 문제
+
+- 출력 파이프라인(최종 PDF 인쇄 검증, pageFormat·drawCredits, 한글 폰트, 좁은 미리보기의 첫 마디 뭉침) → 심층 분석 Phase B.
+- Ossia를 MusicXML에 넣는 방식(별도 파트 또는 cue) 결정 → Phase B 또는 별도.
+- D.C./D.S./Fine/Coda 재생 점프(지금은 경고만).
+- NotationPanel `baselineRef`(N8): 다른 패널 커밋 뒤 '원본 복원'이 처음 상태로 돌아가지 못함.
+- 모바일 실기기·Safari·Firefox, 드래그앤드롭, 실제 저장공간 가득 참 환경 확인(자동 테스트는 예외를 흉내 냄).
+- Linux 시각 기준 이미지 3장은 Nightly `update_snapshots=true` 아티팩트 검토 후 반영.
+

@@ -73,3 +73,12 @@ Phase A 종료 체크리스트 (기준 문서 4.3)
 - [x] A2-8 · 로마 숫자: 마디별 조표, 이조 악기 실음(C09), IAC 종지(C10), 단조 로그·결과 초기화(C18) (완료 기준 3개)
 - [x] A2-9 · 통계 마디·조성 기준(B09·C08·N6), 복수 보표 조표 갱신(C05), 온음계 음정 조옮김과 완전음정 칩(C06·N4) (완료 기준 3개)
 - [x] A2-10 · 키보드 접근 버튼화(C17), 오류문 한글화(R10·R52), 화성 중복 방지(E17), 가사 스타일 검증(E51·E54), 원위치·파트 제거 안내(E30·R56), XML 선언 없는 악보 렌더(추가 발견) (완료 기준 3개)
+- [x] A2-11 · 회귀 매트릭스(보고서 4항 여섯 사례 위치), 전체 검증(단위 185, E2E 150 통과·4 제외), README·README-TESTING·검증 보고서·설명서(PDF·SVG) 동기화, PR
+
+### Phase A2 종료 체크리스트
+- [x] 1.1·1.2 표의 모든 ID에 대응하는 테스트(단위 또는 E2E)가 있고 통과한다. 대응표는 context-notes `## Phase A2 요약`(E30·R56은 문구 변경만)
+- [x] 다른 파일을 덮어쓰거나 파트·duration·가사를 비우는 경로가 없다: B01·B02·B03·B04 회귀 스펙 통과
+- [x] `mergeTargets` 길이 검사, 입력 범위 검사(BPM·가사 크기), 산출물 이름 고유화
+- [x] HTML에 `detectChord`·`getKeyRoot`·`noteToNumStr`·`optStretch` 정의가 없다. `baselineRef`는 NotationPanel에만 남음(N8, 남은 문제)
+- [x] 기본값 D1~D12가 코드·설명서·context-notes에서 서로 같다
+- [x] README·README-TESTING·검증 보고서·설명서(PDF·SVG)·checklist·context-notes 동기화, PR 열림

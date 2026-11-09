@@ -1,9 +1,12 @@
 // 2026-11-09 외부 검수 보고서(핵심 오류 B01~B10)의 재현 순서를 그대로 옮긴 회귀 스펙입니다.
-// 보고서 "수정 순서 제안 4항" 여섯 사례 중 이 파일에 없는 것은 각 패널 스펙에 있습니다:
-//   (2) divisions 1·100→300 템포 → panels/06-tempo.spec.js
-//   (4) 미리보기 후 파일 변경 → panels/12-export.spec.js
-//   (5) 동명 다른 확장자 ZIP → panels/12-export.spec.js
-//   (6) 반복 중 A-B 해제 → 18-cursor.spec.js
+// 보고서 "수정 순서 제안 4항" 여섯 사례의 위치(중복 작성하지 않음):
+//   (1) 2파일·다른 파트 ID 추출 → 이 파일 B02
+//   (2) divisions 1·100→300 템포 → panels/06-tempo.spec.js ('durations stay intact at 300 BPM')
+//   (3) 가사→숫자→색깔→복원 → panels/16-numbering.spec.js (B04)
+//   (4) 미리보기 후 파일 변경 → panels/12-export.spec.js (B05)
+//   (5) 동명 다른 확장자 ZIP → panels/12-export.spec.js (B06)
+//   (6) 반복 중 A-B 해제 → 18-cursor.spec.js ('turning the A-B loop off mid-playback')
+// 그 밖에 B07(히스토리 기준점)·C16(반복 기호 경고)도 여기 있습니다.
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
 import { openApp, openPanel, fixturesDir, uploadFixture, getPitches } from './helpers.js';

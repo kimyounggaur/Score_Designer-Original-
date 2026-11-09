@@ -23,3 +23,13 @@ test('@panels stats: minor keys are classified as minor',async({page})=>{
   await panel.getByRole('button',{name:/작곡 스타일 분석/}).click();
   await expect(panel.locator('.composer-keys .composer-tag').first()).toHaveText('Am');
 });
+// N6: 최저·최고음은 악보 철자 그대로(F♯장조의 B♯5가 C6으로 보이지 않음).
+test('@panels stats: lowest and highest notes keep their written spelling',async({page})=>{
+  test.setTimeout(30000);await openApp(page);await uploadFixture(page,'f07-enharmonic.musicxml');
+  const panel=await openPanel(page,'stats');
+  await panel.getByRole('button',{name:'▶ 기본 분석',exact:true}).click();
+  await expect(panel.locator('.stat-tile').filter({hasText:'최고음'}).locator('.stat-tile__value')).toHaveText('B#5');
+  await expect(panel.locator('.stat-tile').filter({hasText:'최저음'}).locator('.stat-tile__value')).toHaveText('F#4');
+  await panel.getByRole('button',{name:/작곡 스타일 분석/}).click();
+  await expect(panel.locator('.stat-tile').filter({hasText:'음역대'}).locator('.stat-tile__value')).toHaveText('F#4–B#5');
+});
