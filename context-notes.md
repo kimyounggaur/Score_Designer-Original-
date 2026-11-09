@@ -172,3 +172,8 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 다이어토닉 모드에서 조표에 없는 음(예: C장조의 F♯)도 음이름 3도와 조표 변화표로 정합니다(F♯→A). 이전 코드는 이런 음에 장3도(F♯→A♯)를 썼습니다. 단조는 자연단음계 기준이며 화성단음계 옵션은 범위 밖입니다.
 - `getDiaThirdAbove/Below` 삭제(다른 호출처 없음). `getKeyRoot`·`DIATONIC_SCALES`는 숫자 악보 패널이 쓰므로 유지.
 - 검증: 14-harmony 5개(f01 기존, f07 철자 8개·임시표 없음, f12 voice·staff·셋잇단 복사와 렌더 오류 없음, f04 자연단음계 G, f06 붙임줄 유지와 재생 이벤트 결합), 단위 142개, 스모크 7개 통과.
+
+## 2026-11-09 · A-6
+- ChordToolsPanel.runInversion: 베이스 음을 `PitchCore.bassForInversion(근음, kind, n)`으로 계산합니다. 근음 철자에서 구성음 음정(음이름 간격+반음)을 더하므로 E 1st → G♯, B7 1st → D♯, A♭m 1st → C♭이 됩니다(이전: ♭ 전용 표 때문에 A♭, E♭). 지원하지 않는 kind(none·other 등)나 구성음이 모자란 자리바꿈은 건너뜁니다.
+- `KIND_INTERVALS`·`STEP_SEMI`·`PC_STEP_ALTER` 삭제(다른 호출처 없음). PitchCore.CHORD_TONES는 MusicXML 정식 이름 `major-minor`와 기존 표기 `minor-major`를 모두 받습니다.
+- 검증: 15-chordtools 3개(f04 기존 일괄 변경, f11 1st: E/G# B7/D# A♭m/C♭ C/E와 root·kind·inversion·bass 순서, f11 3rd: B7/A만 적용·3개 생략), 단위 142개, 스모크 7개 통과.
