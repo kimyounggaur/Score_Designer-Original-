@@ -285,3 +285,15 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 추가 발견 N8(이번에 고치지 않음): NotationPanel(악보 표기 변환)도 `baselineRef`로 "처음 상태에서 다시 적용"을 합니다. 다른 패널이 커밋하면 기준선이 바뀌어 '원본 복원'이 처음 상태로 돌아가지 못합니다. 보고서에 없던 항목이라 남은 문제로 둡니다. 따라서 A2-11의 `baselineRef` grep 확인 범위는 NumberingPanel로 한정합니다.
 - 테스트: 16-numbering +3(B04 색깔 악보 뒤 복원 '원본 가사 3개 복원', E37 2회 생성 후 총 10개, C03·C04 f10 이동 도법 '5˙'·'6˙'·기준 옥타브 3에서 '˙1'), history-core +1.
 - 검증: 단위 153, 16·20·13·21 스펙 7개, 스모크 7, 07·12·02 스펙 7개 통과.
+
+## 2026-11-09 · A2-4
+- 유틸 `uniqueStem`, `stackSvgMarkup`(SVG를 위→아래로 쌓기, 하나면 예전과 같은 마크업), `svgMarkupToPngBlob`, `renderScoreSvgs`(본보+Ossia 렌더, 뷰어와 같은 0.65배) 추가.
+- ExportPanel: 미리보기가 그린 {파일 위치, xmlDoc, ossiaMxml}을 기억하고, 선택 파일·악보·Ossia가 바뀌면 미리보기를 지우고 안내합니다. PNG·SVG 저장도 시작에서 다시 확인합니다(B05). PDF는 미리보기가 아니라 선택 파일을 인쇄하므로 검사하지 않습니다(내보내기 카드는 미리보기가 있을 때만 보임).
+- Ossia: 이미지 패널 미리보기·PNG·SVG·전체 PNG ZIP과 상단 PNG 버튼에 본보 위로 합성합니다. MXL·XML 내보내기에는 넣지 않고 다운로드 직전에 알립니다(결정 D7, C13).
+- ZIP 이름: 전체 PNG ZIP과 12개 조 ZIP 폴더가 같은 stem이면 `이름 (2)`로 구분합니다(B06, N3). 완료 로그의 수는 실제 엔트리 수입니다.
+- ColorPanel: `filled="yes"` 쓰기를 제거하고 기존 filled는 건드리지 않습니다(C14).
+- 렌더 폭 회귀를 막은 과정: 미리보기 안에 본보·Ossia 상자를 따로 두자 OSMD가 패딩 없는 안쪽 폭(239px)으로 배치해 예전(패딩 포함 271px 배치 후 CSS 축소)과 크기가 달라졌습니다. 안쪽 상자에 `margin-inline:-16px; padding-inline:16px`를 줘 offsetWidth를 같게 맞췄고, b605c7e와 비교해 SVG는 바이트 단위로 같고 PNG는 크기·배치가 같음(안티앨리어싱만 다름)을 확인했습니다. 또 `.export-preview__ossia:empty{display:none}` 규칙은 OSMD가 렌더를 시작할 때 상자가 비어 있어 폭 0으로 측정되게 만들어 제거했습니다.
+- 확인한 기존 현상(이번에 고치지 않음): 패널 폭이 좁아 미리보기 첫 마디 음표가 뭉치는 것은 b605c7e에서도 같습니다. 심층 분석 문서 Phase B(오프스크린 고정 폭 렌더) 범위입니다.
+- 테스트: 12-export +3(B05 파일 전환 후 미리보기 지움·f02 SVG에 Violin, B06 동명 다른 확장자 ZIP 2개, C13 Ossia 포함 PNG 높이 증가·MXL 알림), 13-color +1(filled 0개), 01-transpose +1(같은 stem 두 파일 12조 ZIP 24개·폴더 2개).
+- 설명서: Ossia(이미지 포함·MusicXML 제외), 이미지/PDF(미리보기 무효화·(2) 접미), 색깔 악보(머리 채움 유지).
+- 검증: 단위 153, 12·13·01·06·13-zoom·05·19-ossia·08·11 스펙 20개, 스모크 7 통과.

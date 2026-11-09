@@ -251,6 +251,69 @@ async function buildMxlBlob(file){return buildMxlBlobFromDoc(file.xmlDoc);}
 // ZIP 경로·파일명에 쓸 수 있게 정리합니다 (F#/G♭ → F#-Gb).
 function safeKeyName(name){return String(name).replace(/\//g,'-').replace(/♭/g,'b').replace(/♯/g,'#');}
 function safeFileStem(name){return String(name).replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').trim()||'score';}
+// 확장자 없는 이름을 겹치지 않게 만듭니다(같은 이름의 .xml·.mxl을 함께 내보낼 때 ZIP 엔트리가 덮이지 않도록).
+function uniqueStem(stem,used){
+  let result=stem,suffix=2;
+  while(used.has(result))result=`${stem} (${suffix++})`;
+  used.add(result);return result;
+}
+// 렌더된 SVG들을 위에서 아래로 쌓아 하나의 SVG 마크업으로 만듭니다(Ossia 위, 본보 아래, 간격 12px).
+// SVG가 하나면 기존 내보내기와 같은 마크업을 냅니다.
+function stackSvgMarkup(svgEls,gap=12){
+  const items=svgEls.filter(Boolean).map(svg=>{const r=svg.getBoundingClientRect();return {svg,width:r.width,height:r.height};});
+  if(!items.length)throw new Error('SVG를 찾을 수 없습니다.');
+  const serializer=new XMLSerializer();
+  if(items.length===1){
+    const clone=items[0].svg.cloneNode(true);
+    clone.setAttribute('width',items[0].width);clone.setAttribute('height',items[0].height);
+    return {markup:serializer.serializeToString(clone),width:items[0].width,height:items[0].height};
+  }
+  const width=Math.max(...items.map(item=>item.width));let y=0;const parts=[];
+  items.forEach((item,index)=>{
+    const clone=item.svg.cloneNode(true);
+    clone.setAttribute('width',item.width);clone.setAttribute('height',item.height);
+    clone.setAttribute('x','0');clone.setAttribute('y',String(y));
+    parts.push(serializer.serializeToString(clone));
+    y+=item.height+(index<items.length-1?gap:0);
+  });
+  return {markup:`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${y}" viewBox="0 0 ${width} ${y}">${parts.join('')}</svg>`,width,height:y};
+}
+function svgMarkupToPngBlob({markup,width,height},{scale=1,bgWhite=true}={}){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml;charset=utf-8'}));
+    const img=new Image();
+    img.onload=()=>{
+      const canvas=document.createElement('canvas');canvas.width=width*scale;canvas.height=height*scale;
+      const ctx=canvas.getContext('2d');
+      if(bgWhite){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);}
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);URL.revokeObjectURL(url);
+      canvas.toBlob(blob=>blob?resolve({blob,width:canvas.width,height:canvas.height}):reject(new Error('PNG 변환 실패')),'image/png');
+    };
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('이미지 로드 실패'));};
+    img.src=url;
+  });
+}
+// 본보와 Ossia(있으면)를 container 안에 렌더합니다. 뷰어와 같은 순서·배율(Ossia 0.65)입니다.
+// isStale()이 true를 돌려주면 렌더를 멈추고 null을 반환합니다.
+async function renderScoreSvgs(file,container,{isStale=()=>false}={}){
+  container.innerHTML='';
+  const ossiaBox=document.createElement('div');ossiaBox.className='export-preview__ossia';
+  const mainBox=document.createElement('div');mainBox.className='export-preview__main';
+  container.append(ossiaBox,mainBox);
+  const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(mainBox,{autoResize:false,backend:'svg',drawTitle:true,drawComposer:true,drawPartNames:true,drawMeasureNumbers:true});
+  await osmd.load(new XMLSerializer().serializeToString(file.xmlDoc));
+  if(isStale())return null;
+  osmd.render();
+  let ossia=null;
+  if(file.ossiaMxml){
+    const ossiaOsmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(ossiaBox,{autoResize:false,backend:'svg',drawTitle:false,drawComposer:false,drawPartNames:true,drawMeasureNumbers:true,drawCredits:false});
+    await ossiaOsmd.load(file.ossiaMxml);
+    if(isStale())return null;
+    ossiaOsmd.zoom=0.65;ossiaOsmd.render();
+    ossia=ossiaBox.querySelector('svg');
+  }else ossiaBox.remove();
+  return {osmd,main:mainBox.querySelector('svg'),ossia};
+}
 function serializeSessionFiles(files){
   return Array.from(files||[]).map(file=>({
     name:file.name,
@@ -619,9 +682,10 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
       if(mode==='all12'){
         // 12개 조 결과를 .mxl로 만들어 ZIP 하나로 내려받습니다. 열린 악보와 작업 기록은 바꾸지 않습니다.
         if(!window.JSZip)throw new Error('ZIP 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.');
-        const zip=new window.JSZip();const targets=targetFiles(files,activeFile,scope);let count=0;
+        const zip=new window.JSZip();const targets=targetFiles(files,activeFile,scope);let count=0;const usedStems=new Set();
         for(const {file} of targets){
-          const stem=safeFileStem(base(file));
+          // 같은 이름의 .xml·.mxl을 함께 변환해도 폴더가 겹치지 않게 합니다(N3).
+          const stem=uniqueStem(safeFileStem(base(file)),usedStems);
           const source=keyIndexOfFifths(file.xmlDoc.querySelector('key fifths')?.textContent||0);
           const names=file.xmlDoc.querySelector('key mode')?.textContent==='minor'?MINOR_KEY_NAMES:KEY_NAMES;
           for(let i=0;i<12;i++){
@@ -1973,77 +2037,57 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
     return activeDoc(files,activeFile).querySelector('part')?.querySelectorAll('measure')?.length||0;
   },[files,activeFile]);
 
-  // Load preview with OSMD
+  // 미리보기가 그린 파일·문서·Ossia를 기억합니다. 선택 파일이나 악보가 바뀌면 미리보기를 지웁니다(B05).
+  const previewSourceRef=useRef(null);
+  const previewMatches=useCallback(()=>{
+    const source=previewSourceRef.current,current=files[selIdx];
+    return !!(source&&current&&source.index===selIdx&&source.xmlDoc===current.xmlDoc&&source.ossiaMxml===current.ossiaMxml);
+  },[files,selIdx]);
+  useEffect(()=>{
+    if(!previewReady||previewMatches())return;
+    previewGeneration.current++;
+    if(previewRef.current)previewRef.current.innerHTML='';
+    osmdRef.current=null;previewSourceRef.current=null;setPreviewReady(false);
+    setLog([{m:'ℹ 선택 파일이나 악보가 바뀌어 미리보기를 지웠습니다. 다시 실행하세요.',t:'info'}]);
+  },[files,selIdx,previewReady,previewMatches]);
+
+  // 본보와 Ossia를 함께 미리보기에 렌더합니다(Ossia 위, 본보 아래).
   const loadPreview=useCallback(async()=>{
     if(!files.length||!previewRef.current)return;
-    const file=files[selIdx]||files[0];
+    const index=files[selIdx]?selIdx:0;const file=files[index];
     const generation=++previewGeneration.current;
-    setPreviewing(true);setPreviewReady(false);
+    setPreviewing(true);setPreviewReady(false);previewSourceRef.current=null;
     try{
-      previewRef.current.innerHTML='';
-      const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(previewRef.current,{
-        autoResize:false,
-        backend:'svg',
-        drawTitle:true,
-        drawComposer:true,
-        drawPartNames:true,
-        drawMeasureNumbers:true,
-      });
-      osmdRef.current=osmd;
-      const xmlStr=new XMLSerializer().serializeToString(file.xmlDoc);
-      await osmd.load(xmlStr);
-      if(generation!==previewGeneration.current)return;
-      osmd.render();
+      const rendered=await renderScoreSvgs(file,previewRef.current,{isStale:()=>generation!==previewGeneration.current});
+      if(!rendered||generation!==previewGeneration.current)return;
+      osmdRef.current=rendered.osmd;
+      previewSourceRef.current={index,xmlDoc:file.xmlDoc,ossiaMxml:file.ossiaMxml};
       setPreviewReady(true);
     }catch(e){
-      previewRef.current.innerHTML='';
+      if(previewRef.current)previewRef.current.innerHTML='';
       setLog(l=>[...l,{m:'❌ 렌더링 오류: '+e.message,t:'err'}]);
+    }finally{
+      if(generation===previewGeneration.current)setPreviewing(false);
     }
-    setPreviewing(false);
-  },[files,activeFile,selIdx]);
+  },[files,selIdx]);
+
+  const previewSvgs=()=>[previewRef.current?.querySelector('.export-preview__ossia svg'),previewRef.current?.querySelector('.export-preview__main svg')];
+  const stemOf=name=>safeFileStem(String(name||'score').replace(/\.(mxl|xml|musicxml)$/i,''));
 
   // Export as PNG
   const exportPNG=useCallback(async()=>{
     if(!previewRef.current||!previewReady){notify('먼저 미리보기를 실행해주세요.','warn');return}
+    if(!previewMatches()){notify('미리보기와 선택 파일이 다릅니다. 미리보기를 다시 실행하세요.','warn');return}
     setLog([]);showProgress('PNG 생성 중...');await new Promise(r=>setTimeout(r,100));
     try{
-      const svgEl=previewRef.current.querySelector('svg');
-      if(!svgEl)throw new Error('SVG를 찾을 수 없습니다.');
-
-      const svgRect=svgEl.getBoundingClientRect();
-      const w=svgRect.width*scale;
-      const h=svgRect.height*scale;
-
-      // Clone SVG and set explicit dimensions
-      const svgClone=svgEl.cloneNode(true);
-      svgClone.setAttribute('width',svgRect.width);
-      svgClone.setAttribute('height',svgRect.height);
-
-      const svgData=new XMLSerializer().serializeToString(svgClone);
-      const svgBlob=new Blob([svgData],{type:'image/svg+xml;charset=utf-8'});
-      const url=URL.createObjectURL(svgBlob);
-
-      const img=new Image();
-      img.onload=()=>{
-        const canvas=document.createElement('canvas');
-        canvas.width=w;canvas.height=h;
-        const ctx=canvas.getContext('2d');
-        if(bgWhite){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h)}
-        ctx.drawImage(img,0,0,w,h);
-        URL.revokeObjectURL(url);
-
-        canvas.toBlob(blob=>{
-          if(!blob){setLog([{m:'❌ PNG 변환 실패',t:'err'}]);hideProgress();return}
-          const fn=files[selIdx]?.name?.replace(/\.(mxl|xml|musicxml)$/i,'')||'score';
-          downloadBlob(blob,fn+'.png');
-          setLog([{m:`✓ ${fn}.png (${Math.round(w)}×${Math.round(h)}px, ${(blob.size/1024).toFixed(0)}KB)`,t:'ok'},{m:'✅ 다운로드 완료!',t:'ok'}]);
-          hideProgress();
-        },'image/png');
-      };
-      img.onerror=()=>{URL.revokeObjectURL(url);setLog([{m:'❌ 이미지 로드 실패',t:'err'}]);hideProgress()};
-      img.src=url;
-    }catch(e){setLog([{m:'❌ '+e.message,t:'err'}]);hideProgress()}
-  },[previewReady,scale,bgWhite,files,selIdx,showProgress,hideProgress]);
+      const stacked=stackSvgMarkup(previewSvgs());
+      const {blob,width,height}=await svgMarkupToPngBlob(stacked,{scale,bgWhite});
+      const fn=stemOf(files[selIdx]?.name);
+      downloadBlob(blob,fn+'.png');
+      setLog([{m:`✓ ${fn}.png (${Math.round(width)}×${Math.round(height)}px, ${(blob.size/1024).toFixed(0)}KB${files[selIdx]?.ossiaMxml?', Ossia 포함':''})`,t:'ok'},{m:'✅ 다운로드 완료!',t:'ok'}]);
+    }catch(e){setLog([{m:'❌ '+e.message,t:'err'}]);}
+    hideProgress();
+  },[previewReady,previewMatches,scale,bgWhite,files,selIdx,showProgress,hideProgress]);
 
   // Export as PDF
   const exportPDF=useCallback(()=>{
@@ -2056,72 +2100,44 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
   const exportAllPNG=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('전체 파일 PNG 변환 중...');
+    const container=document.createElement('div');
+    container.id='osmd-batch-'+Date.now();
+    document.body.appendChild(container);
     try{
-      const zip=new JSZip();const lines=[];
-      const container=document.createElement('div');
-      container.id='osmd-batch-'+Date.now();
-      document.body.appendChild(container);
-
+      const zip=new JSZip();const lines=[];const used=new Set();
       for(let fi=0;fi<files.length;fi++){
         showProgress(`PNG 변환 중... (${fi+1}/${files.length})`);
         await new Promise(r=>setTimeout(r,50));
-        container.innerHTML='';
-
-        const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(container,{
-          autoResize:false,backend:'svg',drawTitle:true,drawComposer:true,drawPartNames:true,drawMeasureNumbers:true,
-        });
-        const xmlStr=new XMLSerializer().serializeToString(files[fi].xmlDoc);
-        await osmd.load(xmlStr);
-        osmd.render();
-
-        const svgEl=container.querySelector('svg');
-        if(!svgEl){lines.push({m:`⚠ ${files[fi].name}: SVG 렌더링 실패`,t:'warn'});continue}
-
-        const svgRect=svgEl.getBoundingClientRect();
-        const w=svgRect.width*scale;const h=svgRect.height*scale;
-        const svgClone=svgEl.cloneNode(true);
-        svgClone.setAttribute('width',svgRect.width);svgClone.setAttribute('height',svgRect.height);
-        const svgData=new XMLSerializer().serializeToString(svgClone);
-        const svgBlob=new Blob([svgData],{type:'image/svg+xml;charset=utf-8'});
-        const url=URL.createObjectURL(svgBlob);
-
-        const blob=await new Promise((resolve,reject)=>{
-          const img=new Image();
-          img.onload=()=>{
-            const canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;
-            const ctx=canvas.getContext('2d');
-            if(bgWhite){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h)}
-            ctx.drawImage(img,0,0,w,h);URL.revokeObjectURL(url);
-            canvas.toBlob(b=>b?resolve(b):reject(new Error('toBlob 실패')),'image/png');
-          };
-          img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('이미지 로드 실패'))};
-          img.src=url;
-        });
-
-        const bn=files[fi].name.replace(/\.(mxl|xml|musicxml)$/i,'');
+        const rendered=await renderScoreSvgs(files[fi],container);
+        if(!rendered?.main){lines.push({m:`⚠ ${files[fi].name}: SVG 렌더링 실패`,t:'warn'});continue}
+        const {blob,width,height}=await svgMarkupToPngBlob(stackSvgMarkup([rendered.ossia,rendered.main]),{scale,bgWhite});
+        // 같은 이름의 .xml·.mxl이 있어도 엔트리가 덮이지 않게 고유 이름을 씁니다(B06).
+        const bn=uniqueStem(stemOf(files[fi].name),used);
         zip.file(`${bn}.png`,blob);
-        lines.push({m:`✓ ${bn}.png (${Math.round(w)}×${Math.round(h)}px)`,t:'ok'});
+        lines.push({m:`✓ ${bn}.png (${Math.round(width)}×${Math.round(height)}px${rendered.ossia?', Ossia 포함':''})`,t:'ok'});
       }
-
-      document.body.removeChild(container);
       const zipBlob=await zip.generateAsync({type:'blob'});
       downloadBlob(zipBlob,'scores_png.zip');
-      lines.push({m:'✅ 전체 다운로드 완료!',t:'ok'});setLog(lines);
+      lines.push({m:`✅ ${used.size}개 PNG를 ZIP으로 내려받았습니다.`,t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
+    finally{container.remove();}
     hideProgress();
-  },[files,activeFile,scale,bgWhite,showProgress,hideProgress]);
+  },[files,scale,bgWhite,showProgress,hideProgress]);
 
-  // Export SVG directly
+  // Export SVG directly (Ossia가 있으면 위에 함께 넣습니다)
   const exportSVG=useCallback(()=>{
     if(!previewRef.current||!previewReady){notify('먼저 미리보기를 실행해주세요.','warn');return}
-    const svgEl=previewRef.current.querySelector('svg');
-    if(!svgEl)return;
-    const svgData=new XMLSerializer().serializeToString(svgEl);
-    const blob=new Blob([svgData],{type:'image/svg+xml'});
-    const fn=files[selIdx]?.name?.replace(/\.(mxl|xml|musicxml)$/i,'')||'score';
-    downloadBlob(blob,fn+'.svg');
-    setLog([{m:`✓ ${fn}.svg 다운로드 완료`,t:'ok'}]);
-  },[previewReady,files,selIdx]);
+    if(!previewMatches()){notify('미리보기와 선택 파일이 다릅니다. 미리보기를 다시 실행하세요.','warn');return}
+    try{
+      const [ossia,main]=previewSvgs();
+      if(!main)throw new Error('SVG를 찾을 수 없습니다.');
+      const markup=ossia?stackSvgMarkup([ossia,main]).markup:new XMLSerializer().serializeToString(main);
+      const blob=new Blob([markup],{type:'image/svg+xml'});
+      const fn=stemOf(files[selIdx]?.name);
+      downloadBlob(blob,fn+'.svg');
+      setLog([{m:`✓ ${fn}.svg 다운로드 완료${files[selIdx]?.ossiaMxml?' (Ossia 포함)':''}`,t:'ok'}]);
+    }catch(e){setLog([{m:'❌ '+e.message,t:'err'}]);}
+  },[previewReady,previewMatches,files,selIdx]);
 
   return <div>
     <h2 className="panel__heading">이미지 / PDF 내보내기</h2>
@@ -2204,7 +2220,8 @@ function ColorPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
           const color=NOTE_COLORS[p.step];if(!color)return;
           note.setAttribute('color',color);
           let nh=note.querySelector('notehead');if(!nh){nh=doc.createElement('notehead');nh.textContent='normal';insertNoteheadInOrder(note,nh)}
-          nh.setAttribute('color',color);nh.setAttribute('filled','yes');
+          // 머리 채움(filled)은 음표 길이가 정하므로 건드리지 않고 색만 바꿉니다(C14).
+          nh.setAttribute('color',color);
           if(doStem){let st=note.querySelector('stem');if(st)st.setAttribute('color',color)}
           cnt++;
         });
@@ -4428,23 +4445,29 @@ function App(){
     return()=>{delete window.__mxlGetState;delete window.__mxlSetActiveFile};
   },[files,activeFile,history,historyIndex,restoreSession,sessionStatus,shareModal,leftPanel,rightPanel,bpm,scope]);
 
+  // Ossia는 별도 문서(ossiaMxml)라 MusicXML에 들어가지 않습니다. 내보내기 전에 알립니다(결정 D7).
+  const warnOssiaNotExported=useCallback(file=>{
+    if(file?.ossiaMxml)notify(`${file.ossiaMeta?.label||'Ossia'}은(는) MusicXML에 포함되지 않습니다. 세션·공유·PNG/SVG에는 포함됩니다.`,'warn');
+  },[notify]);
+
   const exportXML=useCallback(()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     const file=files[activeFile]||files[0];
+    warnOssiaNotExported(file);
     const xmlStr=new XMLSerializer().serializeToString(file.xmlDoc);
     const blob=new Blob([xmlStr],{type:'text/xml'});
     downloadBlob(blob,file.name.replace(/\.(mxl|xml|musicxml)$/i,'')+'.xml');
-  },[files,activeFile]);
+  },[files,activeFile,warnOssiaNotExported]);
 
   const exportMXL=useCallback(async()=>{
     if(!files.length)return;
     try{
       const file=files[activeFile]||files[0];
       const blob=await buildMxlBlob(file);
-      if(blob)downloadBlob(blob,file.name.replace(/\.(mxl|xml|musicxml)$/i,'')+'.mxl');
+      if(blob){warnOssiaNotExported(file);downloadBlob(blob,file.name.replace(/\.(mxl|xml|musicxml)$/i,'')+'.mxl');}
       else{exportXML();setHistoryNotice({m:'JSZip을 불러오지 못해 비압축 XML로 저장했습니다.',t:'warn'});}
     }catch(error){setHistoryNotice({m:'MXL 내보내기 실패: '+error.message,t:'err'});}
-  },[files,activeFile,exportXML]);
+  },[files,activeFile,exportXML,warnOssiaNotExported]);
 
   const exportPNG=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
@@ -4452,32 +4475,13 @@ function App(){
     if(!svgEl){notify('악보가 렌더링되지 않았습니다.','warn');return}
     showProgress('PNG 생성 중...');
     try{
-      const svgRect=svgEl.getBoundingClientRect();
-      const scale=2;
-      const w=svgRect.width*scale;const h=svgRect.height*scale;
-      const svgClone=svgEl.cloneNode(true);
-      svgClone.setAttribute('width',svgRect.width);svgClone.setAttribute('height',svgRect.height);
-      const svgData=new XMLSerializer().serializeToString(svgClone);
-      const svgBlob=new Blob([svgData],{type:'image/svg+xml;charset=utf-8'});
-      const url=URL.createObjectURL(svgBlob);
-      const img=new Image();
-      img.onload=()=>{
-        const canvas=document.createElement('canvas');
-        canvas.width=w;canvas.height=h;
-        const ctx=canvas.getContext('2d');
-        ctx.fillStyle='#ffffff';ctx.fillRect(0,0,w,h);
-        ctx.drawImage(img,0,0,w,h);
-        URL.revokeObjectURL(url);
-        canvas.toBlob(blob=>{
-          if(!blob){hideProgress();return}
-          const fn=(files[activeFile]||files[0]).name.replace(/\.(mxl|xml|musicxml)$/i,'');
-          downloadBlob(blob,fn+'.png');
-          hideProgress();
-        },'image/png');
-      };
-      img.onerror=()=>{URL.revokeObjectURL(url);hideProgress()};
-      img.src=url;
-    }catch(e){notify(e.message,'err');hideProgress()}
+      // 뷰어에 Ossia가 있으면 본보 위에 함께 넣습니다(이미지 패널과 같은 합성).
+      const ossiaEl=(files[activeFile]||files[0])?.ossiaMxml?document.querySelector('.ossia-inline svg'):null;
+      const {blob}=await svgMarkupToPngBlob(stackSvgMarkup([ossiaEl,svgEl]),{scale:2,bgWhite:true});
+      const fn=(files[activeFile]||files[0]).name.replace(/\.(mxl|xml|musicxml)$/i,'');
+      downloadBlob(blob,fn+'.png');
+    }catch(e){notify(e.message,'err');}
+    hideProgress();
   },[files,activeFile,showProgress,hideProgress]);
 
   const exportPDF=useCallback(()=>{

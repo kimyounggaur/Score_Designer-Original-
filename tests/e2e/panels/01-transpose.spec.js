@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
-import {openApp,uploadFixture,runPanel,getDocQuery,getPitchAt,getPitches} from '../helpers.js';
+import path from 'node:path';
+import {openApp,uploadFixture,runPanel,getDocQuery,getPitchAt,getPitches,fixturesDir} from '../helpers.js';
 test('@panels transpose: validates the resulting score',async({page})=>{
   test.setTimeout(30000);await openApp(page);
   await runPanel(page,{id:'transpose',before:()=>uploadFixture(page,'f04-minor-harmony.musicxml'),action:async panel=>{await panel.getByRole('button',{name:'Bm',exact:true}).click();await panel.getByRole('button',{name:/변환 실행/}).click();},expect:async panel=>{await expect.poll(()=>getDocQuery(page,'key fifths')).toMatchObject({text:'2'});await expect.poll(()=>getDocQuery(page,'harmony root-step')).toMatchObject({text:'B'});}});
@@ -58,5 +59,25 @@ test('@panels transpose all 12 keys downloads twelve MXL files and leaves the op
     await expect(panel.locator('.result-log')).toContainText('12개 .mxl');
     const after=await page.evaluate(()=>{const state=window.__mxlGetState();return {xml:state.files[0].xmlString,doc:new XMLSerializer().serializeToString(state.files[0].xmlDoc),history:state.history.length};});
     expect(after).toEqual(before);
+  }});
+});
+
+test('@panels transpose all 12 keys keeps same-stem files in separate folders (N3)',async({page})=>{
+  test.setTimeout(60000);await openApp(page);
+  await uploadFixture(page,'f01-basic.musicxml');
+  const buffer=await readFile(path.join(fixturesDir,'f01-basic.musicxml'));
+  await page.locator('input[type="file"]').setInputFiles({name:'f01-basic.xml',mimeType:'application/xml',buffer});
+  await page.waitForFunction(()=>window.__mxlGetState?.().files.length===2);
+  await runPanel(page,{id:'transpose',action:async panel=>{
+    await panel.getByRole('button',{name:'12개 장조 모두',exact:true}).click();
+  },expect:async panel=>{
+    const downloadEvent=page.waitForEvent('download');
+    await panel.getByRole('button',{name:/변환 실행/}).click();
+    const download=await downloadEvent;
+    const base64=(await readFile(await download.path())).toString('base64');
+    const names=await page.evaluate(async text=>{const zip=await window.JSZip.loadAsync(text,{base64:true});return Object.keys(zip.files).filter(name=>!zip.files[name].dir);},base64);
+    expect(names).toHaveLength(24);
+    expect(names.filter(name=>name.startsWith('f01-basic/'))).toHaveLength(12);
+    expect(names.filter(name=>name.startsWith('f01-basic (2)/'))).toHaveLength(12);
   }});
 });

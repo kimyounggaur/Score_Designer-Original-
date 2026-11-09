@@ -2421,3 +2421,10 @@ body {
 /* Phase A2 · 입력 검증 표시 */
 .measure-input[aria-invalid="true"],
 .form-input[aria-invalid="true"] { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
+
+/* Phase A2 · 이미지 내보내기 미리보기의 Ossia(본보 위)
+   OSMD는 상자의 offsetWidth로 배치합니다. 안쪽 상자가 .export-preview의 패딩까지 같은 폭(offsetWidth)을 갖게 해
+   본보만 있을 때 예전(미리보기 상자에 바로 렌더)과 같은 배치·크기로 나오게 합니다. */
+.export-preview > .export-preview__main,
+.export-preview > .export-preview__ossia { margin-inline: -16px; padding-inline: 16px; }
+.export-preview > .export-preview__ossia { margin-bottom: 12px; }
