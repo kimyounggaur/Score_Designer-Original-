@@ -2417,3 +2417,7 @@ body {
 .scope-toggle__btn { appearance:none; font:inherit; font-size:12px; line-height:1.2; padding:5px 10px; border-radius:999px; border:1px solid var(--border-default); background:var(--bg-primary); color:var(--text-secondary); cursor:pointer; }
 .scope-toggle__btn:hover { background:var(--bg-hover); }
 .scope-toggle__btn--on { background:var(--accent); border-color:var(--accent); color:var(--text-inverse); }
+
+/* Phase A2 · 입력 검증 표시 */
+.measure-input[aria-invalid="true"],
+.form-input[aria-invalid="true"] { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }

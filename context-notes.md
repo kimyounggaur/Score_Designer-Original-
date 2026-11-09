@@ -259,3 +259,14 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 추가 수정(N7, 보고서에 없음): 업로드·세션 복원·공유 불러오기·작업 기록 복원으로 만든 파일 객체가 `committedFiles`에 없어서, 다른 파일을 변환할 때 `updateFiles`가 이 파일들까지 다시 직렬화했습니다(내용은 같지만 xmlString 형식과 객체가 바뀜). B01 회귀 테스트의 "다른 파일 xmlString 불변" 단언에서 드러났습니다. `trustParsedFile(file)`로 네 생성 지점의 객체를 등록합니다. xmlString을 파싱해 만든 xmlDoc이라 둘이 일치하고, xmlDoc을 제자리에서 바꾸는 코드가 없음을 grep으로 확인했습니다(StatsPanel의 두 곳은 읽기 전용).
 - 픽스처 f13-part-p99(Flute, 파트 ID P99, 8음표). 새 회귀 스펙 tests/e2e/24-audit-regressions.spec.js(@panels): B01·B02.
 - 검증: 단위 142, 24·23·10-parts·19-roman·21-history·12-session-modal·02-share·08-upload·01-fixtures 27개, 스모크 7, @panels 60 모두 통과.
+
+## 2026-11-09 · A2-2
+- TempoPanel: 'duration 비례 변환' 칩·state·분기를 제거했습니다(결정 D1, B03). `Math.round(old/rat)`가 divisions 1 악보에서 duration 0을 만들었고, backup·forward·type·divisions·박자표는 그대로여서 어떤 경우에도 악보가 어긋났습니다. 옵션 카드에 "음표 길이는 바꾸지 않습니다" 설명을 넣었습니다.
+- 유틸 `metronomeBeat`·`metronomePerMinute`·`quarterBpmFromMetronome`·`metronomeLabel`·`isValidBpm` 추가. 점은 하나 ×1.5, 둘 ×1.75(프롬프트의 "점마다 ×1.5"를 음악 규칙대로 바로잡음).
+- **프롬프트와 다르게 정한 것**: 프롬프트는 템포 조절의 per-minute를 `원래 값×(목표/원본)` 비율로 바꾸라고 했지만, 이 패널은 모든 `sound[tempo]`를 목표 BPM 하나로 맞춥니다. 비율로 바꾸면 곡 중간 템포 표기가 sound와 어긋나므로 `per-minute=round(목표 BPM ÷ 박 단위 배수)`로 sound와 같은 빠르기를 쓰게 했습니다. f14 기대값(점4분음표=80)은 두 방식이 같습니다. per-minute가 숫자가 아니거나 박 단위를 모르면 바꾸지 않고 ⚠ 로그를 남깁니다(C07).
+- 원본 템포 감지: sound가 있으면 그 값과 함께 "표기: 점4분음표=60"을 보여주고, sound 없이 metronome만 있으면 4분음표 기준으로 환산합니다.
+- TempoChangePanel: BPM 입력을 문자열 그대로 두고 `aria-invalid`로 표시, 실행 시 20~400을 다시 검사해 하나라도 무효면 커밋하지 않습니다(B08). 기존 direction 갱신 때 per-minute도 박 단위로 환산합니다(N5). 미리보기 타임라인은 유효한 지점만 씁니다. 원본 템포도 metronome 환산을 씁니다.
+- styles.css: `.measure-input`·`.form-input`의 `aria-invalid="true"` 테두리.
+- 픽스처 f14-dotted-metronome(6/8, 점4분음표=60, sound 90). 06-tempo +2(300 BPM 후 duration 전부 1, 점4분음표 환산 80), 07-tempochange +2(−60 거부·기록 불변, f14 마디별 120 → per-minute 80).
+- 설명서 두 사본: 템포 조절(환산·길이 불변), 마디별 템포(20~400). 퀵스타트에는 템포 문구가 없습니다.
+- 검증: 단위 142, 06·07·01-fixtures 21개, 스모크 7, 17-playback·22-autosave 3개 통과.
