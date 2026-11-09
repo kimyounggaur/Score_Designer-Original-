@@ -49,11 +49,22 @@
     }
   }
 
-  function writeJson(key,value){
+  // localStorage 쓰기 결과를 이유와 함께 돌려줍니다. 예외를 밖으로 던지지 않습니다.
+  //   no-storage: 저장소 자체가 없음 · quota: 용량 초과 · storage-error: 그 밖의 실패
+  function storageFailure(error){
+    const quota = Boolean(error) && (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED' || error.code === 22 || error.code === 1014);
+    return {ok:false,reason:quota ? 'quota' : 'storage-error',error:String(error?.message || error)};
+  }
+
+  function tryWriteJson(key,value){
     const storage = getLocalStorage();
-    if(!storage)return false;
-    storage.setItem(key,JSON.stringify(value));
-    return true;
+    if(!storage)return {ok:false,reason:'no-storage'};
+    try{
+      storage.setItem(key,JSON.stringify(value));
+      return {ok:true};
+    }catch(error){
+      return storageFailure(error);
+    }
   }
 
   function localSessionKey(id){
@@ -64,19 +75,23 @@
     return readJson(LOCAL_INDEX_KEY,[]);
   }
 
+  // 본문 → 목록 순서로 씁니다. 새 id의 목록 쓰기가 실패하면 방금 쓴 본문을 지워 목록과 본문이 어긋나지 않게 합니다.
   function localSaveSession(session){
     const normalized = normalizeSession(session);
     const size = jsonSize(normalized);
     if(size > MAX_JSON_BYTES)return Promise.resolve({ok:false,reason:'too-large',size});
-    try{
-      writeJson(localSessionKey(normalized.id),normalized);
-      const ids = new Set(localListIds());
-      ids.add(normalized.id);
-      writeJson(LOCAL_INDEX_KEY,[...ids]);
-      return Promise.resolve({ok:true,backend:'local',size});
-    }catch(error){
-      return Promise.resolve({ok:false,reason:'storage-error',error:String(error),size});
+    const key = localSessionKey(normalized.id);
+    const body = tryWriteJson(key,normalized);
+    if(!body.ok)return Promise.resolve({...body,size});
+    const ids = localListIds();
+    if(!ids.includes(normalized.id)){
+      const index = tryWriteJson(LOCAL_INDEX_KEY,[...ids,normalized.id]);
+      if(!index.ok){
+        try{getLocalStorage()?.removeItem(key)}catch(_){}
+        return Promise.resolve({...index,size});
+      }
     }
+    return Promise.resolve({ok:true,backend:'local',size});
   }
 
   function localLoadSession(id){
@@ -96,11 +111,12 @@
 
   function localDeleteSession(id){
     const storage = getLocalStorage();
-    if(storage){
-      try{storage.removeItem(localSessionKey(id))}catch(_){}
-      writeJson(LOCAL_INDEX_KEY,localListIds().filter(existing=>existing!==id));
-    }
-    return Promise.resolve(true);
+    if(!storage)return Promise.resolve(true);
+    try{storage.removeItem(localSessionKey(id))}catch(_){}
+    const ids = localListIds();
+    if(!ids.includes(id))return Promise.resolve(true);
+    // 목록을 못 고쳐도 본문이 없으니 목록 읽기에서 걸러집니다. 결과로만 알립니다.
+    return Promise.resolve(tryWriteJson(LOCAL_INDEX_KEY,ids.filter(existing=>existing!==id)).ok);
   }
 
   function localGetMeta(key){
@@ -108,8 +124,8 @@
   }
 
   function localPutMeta(entry){
-    writeJson(`${LOCAL_META_PREFIX}${entry.key}`,entry);
-    return Promise.resolve(entry);
+    const result = tryWriteJson(`${LOCAL_META_PREFIX}${entry.key}`,entry);
+    return Promise.resolve(result.ok ? entry : null);
   }
 
   function normalizeSession(session){
@@ -177,6 +193,17 @@
     dbPromise = null;
   }
 
+  // 요청 성공 뒤에도 트랜잭션 커밋(용량 초과 등)이 실패할 수 있어 complete까지 기다립니다.
+  function transactionDone(tx){
+    const done = new Promise((resolve,reject)=>{
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error || new Error('IndexedDB transaction failed'));
+      tx.onabort = () => reject(tx.error || new Error('IndexedDB transaction aborted'));
+    });
+    done.catch(()=>{});
+    return done;
+  }
+
   async function idbStore(storeName,mode,callback){
     const db = await openDb();
     if(!db)return null;
@@ -190,16 +217,21 @@
     }
   }
 
+  // IndexedDB가 성공하면 {ok:true,backend:'idb'}. IndexedDB를 쓸 수 없으면 localStorage 결과를 그대로
+  // 돌려주므로 둘 다 실패하면 ok:false와 이유(no-storage·quota·storage-error)가 나옵니다.
   async function saveSession(session){
     const normalized = normalizeSession(session);
     const size = jsonSize(normalized);
     if(size > MAX_JSON_BYTES)return {ok:false,reason:'too-large',size};
-    await localSaveSession(normalized);
-    const result = await idbStore(SESSION_STORE,'readwrite',async store=>{
+    // 자동 복구용 로컬 사본을 먼저 씁니다. IndexedDB가 성공하면 사본의 실패는 결과에 넣지 않습니다.
+    const local = await localSaveSession(normalized);
+    const result = await idbStore(SESSION_STORE,'readwrite',async (store,tx)=>{
+      const done = transactionDone(tx);
       await requestAsPromise(store.put(normalized));
+      await done;
       return {ok:true,backend:'idb',size};
     });
-    return result || localSaveSession(normalized);
+    return result || local;
   }
 
   async function loadSession(id){
@@ -252,6 +284,9 @@
     return [];
   }
 
+  // 구저장 키(세션 1개·슬롯 목록)를 새 저장소로 옮깁니다. 모두 저장된 경우에만 구저장 키를 지우고
+  // migratedAt을 남깁니다. 하나라도 실패하면 키를 그대로 두고 migrationPending을 기록해 다음 실행에서
+  // 다시 시도합니다(같은 id로 다시 써도 내용이 같으므로 안전합니다).
   async function migrateFromLocalStorage(){
     const migrated = await getMeta('migratedAt');
     if(migrated)return {ok:true,migrated:0,skipped:true};
@@ -267,22 +302,28 @@
     const legacySession = readJson(sessionKey,null);
     const legacySlots = parseLegacySlots(readJson(slotKey,null));
     let count = 0;
-
-    if(legacySession){
-      const result = await saveSession({...legacySession,id:legacySession.id || AUTOSAVE_ID});
+    const failed = [];
+    const migrate = async (session,id) => {
+      const result = await saveSession({...session,id});
       if(result.ok)count += 1;
+      else failed.push({id,reason:result.reason || 'storage-error'});
+    };
+
+    if(legacySession)await migrate(legacySession,legacySession.id || AUTOSAVE_ID);
+    for(const [index,slot] of legacySlots.entries()){
+      // 다시 시도해도 같은 id가 나오도록 시각 대신 순번을 마지막 대안으로 씁니다.
+      await migrate(slot,slot.id || `slot-${slot.timestamp || slot.savedAt || `legacy-${index + 1}`}`);
     }
 
-    for(const slot of legacySlots){
-      const id = slot.id || `slot-${slot.timestamp || slot.savedAt || Date.now()}`;
-      const result = await saveSession({...slot,id});
-      if(result.ok)count += 1;
+    if(failed.length){
+      await putMeta({key:'migrationPending',value:{lastAttemptAt:new Date().toISOString(),failed:failed.length}});
+      return {ok:false,migrated:count,failed};
     }
-
     try{
       storage.removeItem(sessionKey);
       storage.removeItem(slotKey);
     }catch(_){}
+    if((await getMeta('migrationPending'))?.value)await putMeta({key:'migrationPending',value:null});
     await putMeta({key:'migratedAt',value:new Date().toISOString()});
     return {ok:true,migrated:count};
   }
@@ -322,6 +363,7 @@
     listSessions,
     deleteSession,
     migrateFromLocalStorage,
+    getMeta,
     estimateUsage,
     backend,
     closeDb,

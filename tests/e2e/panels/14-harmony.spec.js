@@ -1,5 +1,5 @@
 import {test,expect} from '@playwright/test';
-import {openApp,uploadFixture,runPanel,getDocQuery,getPitchAt,getPitches} from '../helpers.js';
+import {openApp,uploadFixture,runPanel,openPanel,getDocQuery,getPitchAt,getPitches} from '../helpers.js';
 const chordNotes=page=>page.evaluate(()=>{
   const signs={'-2':'bb','-1':'b','0':'','1':'#','2':'##'};
   return Array.from(window.__mxlGetState().files[0].xmlDoc.querySelectorAll('note')).filter(note=>note.querySelector(':scope > chord')).map(note=>{
@@ -39,7 +39,8 @@ test('@panels harmony uses natural minor thirds without a harmonic minor option'
   test.setTimeout(30000);await openApp(page);
   await runPanel(page,{id:'harmony',before:()=>uploadFixture(page,'f04-minor-harmony.musicxml'),action:async panel=>{await panel.getByRole('button',{name:'3도 위',exact:true}).click();await panel.getByRole('button',{name:/화성 쌓기 실행/}).click();},expect:async panel=>{
     await expect.poll(()=>getPitches(page,{measure:3})).toEqual(['E/3','G/3','G#/4','B/4','D/4']);
-    expect(await getPitches(page,{measure:1})).toEqual(['A/3','C/4','C/4','E/4']);
+    // E17: 1마디는 A3 위 3도 C4가 이미 화음에 있어 다시 넣지 않습니다(예전 기대값 ['A/3','C/4','C/4','E/4']는 중복 추가).
+    expect(await getPitches(page,{measure:1})).toEqual(['A/3','C/4','E/4']);
   }});
 });
 test('@panels harmony keeps ties on added notes so playback joins them',async({page})=>{
@@ -50,3 +51,18 @@ test('@panels harmony keeps ties on added notes so playback joins them',async({p
     expect(events.sort()).toEqual([60,64]);
   }});
 });
+// E17: 같은 설정으로 두 번 실행해도 이미 있는 3도는 건너뛰어 음표 수가 늘지 않습니다.
+test('@panels harmony: running twice does not duplicate thirds',async({page})=>{
+  test.setTimeout(30000);await openApp(page);await uploadFixture(page,'f01-basic.musicxml');
+  const panel=await openPanel(page,'harmony');
+  await panel.getByRole('button',{name:'위+아래 모두',exact:true}).click();
+  const count=()=>page.evaluate(()=>window.__mxlGetState().files[0].xmlDoc.querySelectorAll('note').length);
+  const before=await count();
+  await panel.getByRole('button',{name:/화성 쌓기 실행/}).click();
+  await expect.poll(count).toBe(before*3);
+  await expect(panel.locator('.result-log')).toContainText(`${before*2}개 추가, 0개는 이미 있어 건너뜀`);
+  await panel.getByRole('button',{name:/화성 쌓기 실행/}).click();
+  await expect(panel.locator('.result-log')).toContainText(`0개 추가, ${before*2}개는 이미 있어 건너뜀`);
+  expect(await count()).toBe(before*3);
+});
+

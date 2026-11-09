@@ -60,3 +60,25 @@ Phase A 종료 체크리스트 (기준 문서 4.3)
 - [x] mxl-studio.html에 음표를 쓰는 MIDI 기반 코드 없음 (`midiToNote`는 StatsPanel·InstrumentPanel 표시용만)
 - [x] 변환 기본 범위 '전체' 유지, '현재 파일' 옵션 동작, all12 ZIP 산출
 - [x] README·README-TESTING·checklist·context-notes·매뉴얼 동기화 (PDF·SVG 재생성 포함)
+
+## Phase A2 · 검수 대응 (기준 문서 `MXL-Studio10-PhaseA2-검수대응-바이브코딩-프롬프트.md`, 브랜치 `phase-a2/audit-fixes`)
+
+- [x] A2-1 · 범위 병합 결과 검증, 로마 숫자 삽입(B01)·파트 추출(B02) 파일별 처리 (완료 기준 3개)
+- [x] A2-2 · 템포 패널 정합성: duration 비례 변환 제거, 점음표 메트로놈 환산, BPM 범위 검증 (완료 기준 3개)
+- [x] A2-3 · 숫자 악보 코어 분리, 생성 가사 표식·원본 백업 복원, 마디별 조표·옥타브 점 (완료 기준 3개)
+- [x] A2-4 · 내보내기: 미리보기 무효화, ZIP 이름 충돌 방지, Ossia 이미지 포함, filled 속성 제거 (완료 기준 3개)
+- [x] A2-5 · 히스토리 기준점 유지(B07), 재생 중 A-B 해제 시 곡 끝 정지 예약(B10), 반복 기호 미지원 경고 표시(C16) (완료 기준 3개)
+- [x] A2-6 · 세션 저장 실패 전파(no-storage·quota·storage-error, C12)와 구세션 이전 보호(전부 성공할 때만 구저장 키 삭제, C11) (완료 기준 3개)
+- [x] A2-7 · 화음 판정 코어 통합: 최소 음 수(C01·C02), 조표 철자, 박 단위 수직 분석(C15), 마디 번호(C18), HTML `detectChord` 삭제 (완료 기준 3개)
+- [x] A2-8 · 로마 숫자: 마디별 조표, 이조 악기 실음(C09), IAC 종지(C10), 단조 로그·결과 초기화(C18) (완료 기준 3개)
+- [x] A2-9 · 통계 마디·조성 기준(B09·C08·N6), 복수 보표 조표 갱신(C05), 온음계 음정 조옮김과 완전음정 칩(C06·N4) (완료 기준 3개)
+- [x] A2-10 · 키보드 접근 버튼화(C17), 오류문 한글화(R10·R52), 화성 중복 방지(E17), 가사 스타일 검증(E51·E54), 원위치·파트 제거 안내(E30·R56), XML 선언 없는 악보 렌더(추가 발견) (완료 기준 3개)
+- [x] A2-11 · 회귀 매트릭스(보고서 4항 여섯 사례 위치), 전체 검증(단위 185, E2E 150 통과·4 제외), README·README-TESTING·검증 보고서·설명서(PDF·SVG) 동기화, PR
+
+### Phase A2 종료 체크리스트
+- [x] 1.1·1.2 표의 모든 ID에 대응하는 테스트(단위 또는 E2E)가 있고 통과한다. 대응표는 context-notes `## Phase A2 요약`(E30·R56은 문구 변경만)
+- [x] 다른 파일을 덮어쓰거나 파트·duration·가사를 비우는 경로가 없다: B01·B02·B03·B04 회귀 스펙 통과
+- [x] `mergeTargets` 길이 검사, 입력 범위 검사(BPM·가사 크기), 산출물 이름 고유화
+- [x] HTML에 `detectChord`·`getKeyRoot`·`noteToNumStr`·`optStretch` 정의가 없다. `baselineRef`는 NotationPanel에만 남음(N8, 남은 문제)
+- [x] 기본값 D1~D12가 코드·설명서·context-notes에서 서로 같다
+- [x] README·README-TESTING·검증 보고서·설명서(PDF·SVG)·checklist·context-notes 동기화, PR 열림

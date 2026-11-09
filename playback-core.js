@@ -145,8 +145,39 @@
       if(note.tieStart)ties.set(key,current);else ties.delete(key);
     }
     // TODO: D.C., D.S., Fine and Coda navigation require a separate jump graph.
-    const warnings=xmlDoc?.querySelector('sound[dacapo],sound[dalsegno],sound[fine],sound[tocoda]')?['D.C./D.S./Fine/코다 이동은 재생에 반영되지 않습니다.']:[];
-    return {events,parts,measureTimeline,totalMeasures:measureTimeline.length,totalDuration,warnings};
+    const navigationMarks=navigationLabels(xmlDoc);
+    const warnings=navigationMarks.map(label=>`반복 기호 ${label}은(는) 재생에 반영되지 않습니다.`);
+    return {events,parts,measureTimeline,totalMeasures:measureTimeline.length,totalDuration,warnings,navigationMarks};
+  }
+  // 재생이 따르지 않는 이동 기호(D.C., D.S., Fine, Coda, Segno)를 악보에 적힌 표기 그대로 문서 순서로 모읍니다.
+  // 같은 direction에 글자 표기와 sound 속성이 함께 있으면 글자 표기 하나만 씁니다.
+  const NAVIGATION_WORDS=/\b(D\.?\s*C\.?|D\.?\s*S\.?|Fine|Coda|al\s+Fine|al\s+Coda)\b/i;
+  const SOUND_JUMPS=[['dacapo','D.C.'],['dalsegno','D.S.'],['fine','Fine'],['tocoda','To Coda']];
+  function navigationLabels(xmlDoc){
+    const labels=[],seen=new Set();
+    const add=raw=>{
+      let label=String(raw||'').replace(/\s+/g,' ').trim();if(!label)return;
+      if(label.length>40)label=label.slice(0,39)+'…';
+      const key=label.toLowerCase();if(seen.has(key))return;
+      seen.add(key);labels.push(label);
+    };
+    const fromSound=sound=>{for(const [attribute,label] of SOUND_JUMPS)if(sound?.hasAttribute(attribute))add(label);};
+    for(const element of xmlDoc?.querySelectorAll('direction,sound,barline')||[]){
+      if(element.localName==='direction'){
+        const types=children(element,'direction-type');
+        const words=types.flatMap(type=>children(type,'words')).map(node=>node.textContent).join(' ');
+        if(NAVIGATION_WORDS.test(words)){add(words);continue;}
+        if(types.some(type=>child(type,'segno')))add('Segno');
+        if(types.some(type=>child(type,'coda')))add('Coda');
+        fromSound(child(element,'sound'));
+      }else if(element.localName==='sound'){
+        if(element.parentElement?.localName!=='direction')fromSound(element);
+      }else{
+        if(child(element,'segno'))add('Segno');
+        if(child(element,'coda'))add('Coda');
+      }
+    }
+    return labels;
   }
   function measureAtTime(timeline,sec){
     if(!timeline?.length)return null;
