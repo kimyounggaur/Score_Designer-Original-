@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>악보 디자이너 — React</title>
 <link rel="icon" href="data:,">
-<link rel="stylesheet" href="styles.css?v=ossia-inline-20260707">
+<link rel="stylesheet" href="styles.css?v=phase-a-20261109">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -205,9 +205,33 @@ function uniqueFileName(name,used){
   used.add(result);return result;
 }
 function activeDoc(files,activeFile){return (files[activeFile]||files[0])?.xmlDoc||null;}
+// commitFile이 만든 객체는 xmlString이 xmlDoc과 일치함이 보장되므로 App.updateFiles가 다시 직렬화하지 않습니다.
+const committedFiles=new WeakSet();
 function commitFile(file, doc, extra){
   const xmlString=new XMLSerializer().serializeToString(doc);
-  return {...file,...(extra||{}),xmlDoc:doc,xmlString};
+  const committed={...file,...(extra||{}),xmlDoc:doc,xmlString};
+  committedFiles.add(committed);
+  return committed;
+}
+// 적용 대상: scope가 'active'면 현재 파일만, 그 외에는 열린 파일 전체(기본).
+function targetFiles(files,activeFile,scope){
+  const list=Array.from(files||[]);
+  if(scope==='active'){const index=list[activeFile]?activeFile:0;return list[index]?[{file:list[index],index}]:[];}
+  return list.map((file,index)=>({file,index}));
+}
+// 대상 파일의 결과를 원래 자리에 넣습니다. 대상이 아닌 파일은 같은 객체를 그대로 둡니다.
+function mergeTargets(files,targets,results){
+  const out=Array.from(files||[]);
+  targets.forEach(({index},i)=>{if(results[i])out[index]=results[i];});
+  return out;
+}
+function scopeLabel(label,files,scope){
+  if((files?.length||0)<2)return label;
+  return `${label} · ${scope==='active'?'현재 파일':`전체 ${files.length}개`}`;
+}
+function scopeLogLine(files,activeFile,scope){
+  const targets=targetFiles(files,activeFile,scope);
+  return {m:scope==='active'?`대상: 현재 파일(${targets[0]?.file.name||'-'})`:`대상: 열린 파일 ${targets.length}개`,t:'info'};
 }
 function validOssia(xml){
   if(typeof xml!=='string'||!xml)return undefined;
@@ -468,6 +492,17 @@ function BarChart({data,barColor,labelWidth}){
   </div>;
 }
 
+// 변환·분석 패널의 적용 대상(열린 파일 전체 / 현재 파일). 파일이 두 개 이상일 때만 보입니다.
+function ScopeToggle({scope,onChange,files,activeFile,label}){
+  if((files?.length||0)<2)return null;
+  const current=files[activeFile]||files[0];
+  return <div className="scope-toggle" role="group" aria-label={label}>
+    <span className="scope-toggle__label">적용 대상</span>
+    <button type="button" className={`scope-toggle__btn${scope!=='active'?' scope-toggle__btn--on':''}`} aria-pressed={scope!=='active'} onClick={()=>onChange('all')}>전체 {files.length}개</button>
+    <button type="button" className={`scope-toggle__btn${scope==='active'?' scope-toggle__btn--on':''}`} aria-pressed={scope==='active'} onClick={()=>onChange('active')} title={current?.name}>현재 파일</button>
+  </div>;
+}
+
 function Chip({on,onClick,children}){
   return <button type="button" className={`chip${on?' chip--on':''}`} aria-pressed={!!on} onClick={onClick}>{children}</button>;
 }
@@ -481,7 +516,7 @@ const GlobalHistoryCore=window.HistoryCore;
 /* ==============================================================
    PANEL: UPLOAD
    ============================================================== */
-function UploadPanel({files,activeFile=0,onFilesAdd,onRemove,onClear,uploadLog,onSelect}){
+function UploadPanel({files,activeFile=0,scope='all',onFilesAdd,onRemove,onClear,uploadLog,onSelect}){
   const [dragging,setDragging]=useState(false);
   const inputRef=useRef();
 
@@ -550,7 +585,7 @@ function computeIntervalSemis(num,qual){
   return({major:b,minor:b-1,augmented:b+1,diminished:b-1,'double-augmented':b+2,'double-diminished':b-2})[qual];
 }
 
-function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   if(window.__mxlThrowInPanel==='transpose')throw new Error('test panel failure');
   const [mode,setMode]=useState('single');
@@ -570,8 +605,8 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
     setLog([]);showProgress('조옮김 처리 중...');
     await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         if(mode==='all12'){
           let previewDoc=null;
           for(let i=0;i<12;i++){
@@ -603,11 +638,11 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
           lines.push({m:`✓ ${base(file)} → ${keyNames[selKey]} (${s>0?'+':''}${s}반음)`,t:'ok'});
         }
       }
-      onFilesUpdate(updatedFiles,'조옮김');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('조옮김',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,mode,spelling,selKey,direction,semi,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,mode,spelling,selKey,direction,semi,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
 
   function transposeDoc(xmlDoc,semitones,targetKeyIdx){
     const doc=cloneDoc(xmlDoc);
@@ -681,7 +716,7 @@ function TransposePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
 /* ==============================================================
    PANEL: RANGE
    ============================================================== */
-function RangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function RangePanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [instr,setInstr]=useState('');
   const [customLow,setCustomLow]=useState('C4');
@@ -700,8 +735,8 @@ function RangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
     if(lm>hm){notify('최저음이 최고음보다 높습니다.','warn');return}
     setLog([]);showProgress('음역대 조정 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);let moved=0,skipped=0;
         doc.querySelectorAll('note').forEach(note=>{
           const pitch=PitchCore.readPitch(note);if(!pitch)return;
@@ -715,11 +750,11 @@ function RangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${moved}개 음표 이동, ${skipped}개 범위 밖 유지`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles,'음역대 자동 조정');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('음역대 자동 조정',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,instr,customLow,customHigh,range,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,instr,customLow,customHigh,range,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">음역대 자동 조정</h2>
@@ -751,7 +786,7 @@ function RangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
 /* ==============================================================
    PANEL: TRANSPOSING INSTRUMENT
    ============================================================== */
-function InstrumentPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function InstrumentPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [dir,setDir]=useState('toC');
   const [sel,setSel]=useState('');
@@ -777,8 +812,8 @@ function InstrumentPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
     if(!sel){notify('악기를 선택해주세요.','warn');return}
     setLog([]);showProgress('이조 변환 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);let cnt=0;
         if(!window.TransposeCore)throw new Error('조옮김 모듈을 불러오지 못했습니다.');
         cnt=window.TransposeCore.transposeDocument(doc,shift).notes;
@@ -798,11 +833,11 @@ function InstrumentPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 음표 변환`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles,'이조 악기 변환');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('이조 악기 변환',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,sel,shift,semiSounding,dir,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,sel,shift,semiSounding,dir,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">이조 악기 변환</h2>
@@ -856,7 +891,7 @@ function InstrumentPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
 /* ==============================================================
    PANEL: TEMPO
    ============================================================== */
-function TempoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function TempoPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [bpm,setBpm]=useState(120);
   const [origBpm,setOrigBpm]=useState(120);
@@ -885,8 +920,8 @@ function TempoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('템포 변경 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const rat=bpm/origBpm;const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const rat=bpm/origBpm;const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);const ch=[];
         if(optSound){
           const ss=doc.querySelectorAll('sound[tempo]');
@@ -910,11 +945,11 @@ function TempoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
         lines.push({m:`✓ ${file.name} → ${bpm} BPM`,t:'ok'});
         ch.forEach(c=>lines.push({m:`    ${c}`}));
       }
-      onFilesUpdate(updatedFiles,'템포 변경');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('템포 변경',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,bpm,origBpm,optSound,optMetro,optStretch,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,bpm,origBpm,optSound,optMetro,optStretch,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">템포 조절</h2>
@@ -966,7 +1001,7 @@ function TempoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
    PANEL: KEY CHANGE (마디별 조바꿈)
    ============================================================== */
 function keyIndexOfFifths(fifths){return ((Number(fifths)*7)%12+12)%12;}
-function KeyChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function KeyChangePanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [changes,setChanges]=useState([{measure:1,key:0}]);
   const [direction,setDirection]=useState('nearest');
@@ -1003,8 +1038,8 @@ function KeyChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
     if(!changes.length){notify('조바꿈 지점을 추가해주세요.','warn');return}
     setLog([]);showProgress('마디별 조바꿈 처리 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const numbers=MeasureCore.measureNumbers(file.xmlDoc);
         if(!numbers.length){lines.push({m:`⚠ ${file.name}: 번호가 있는 마디가 없어 건너뜁니다.`,t:'warn'});updatedFiles.push(file);continue;}
         const doc=cloneDoc(file.xmlDoc);
@@ -1032,11 +1067,11 @@ function KeyChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${segs.length}개 구간 조바꿈`,t:'ok'},...detail);
       }
-      onFilesUpdate(updatedFiles,'마디별 조바꿈');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('마디별 조바꿈',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,changes,direction,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,changes,direction,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">마디별 조바꿈</h2>
@@ -1116,7 +1151,7 @@ function KeyChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
 /* ==============================================================
    PANEL: CAPO
    ============================================================== */
-function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function CapoPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [capos,setCapos]=useState([{measure:1,fret:2}]);
   const [log,setLog]=useState([]);
@@ -1168,8 +1203,8 @@ function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
     if(!capos.length){notify('카포 설정을 추가해주세요.','warn');return}
     setLog([]);showProgress('카포 적용 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const numbers=MeasureCore.measureNumbers(file.xmlDoc);
         if(!numbers.length){lines.push({m:`⚠ ${file.name}: 번호가 있는 마디가 없어 건너뜁니다.`,t:'warn'});updatedFiles.push(file);continue;}
         const doc=cloneDoc(file.xmlDoc);
@@ -1209,11 +1244,11 @@ function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}`,t:'ok'},...detail);
       }
-      onFilesUpdate(updatedFiles,'카포 적용');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('카포 적용',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,capos,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,capos,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">카포 (Capo)</h2>
@@ -1309,7 +1344,7 @@ function CapoPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
 /* ==============================================================
    PANEL: TEMPO CHANGE (마디별 템포)
    ============================================================== */
-function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function TempoChangePanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [changes,setChanges]=useState([{measure:1,bpm:120}]);
   const [log,setLog]=useState([]);
@@ -1350,8 +1385,8 @@ function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesU
     if(!changes.length){notify('템포 변경 지점을 추가해주세요.','warn');return}
     setLog([]);showProgress('마디별 템포 변경 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);
         const sorted=[...changes].sort((a,b)=>a.measure-b.measure);
         let insertCount=0;
@@ -1406,11 +1441,11 @@ function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesU
         lines.push({m:`✓ ${file.name}: ${insertCount}개 템포 변경 삽입`,t:'ok'});
         sorted.forEach(ch=>lines.push({m:`    마디 ${ch.measure} → ${ch.bpm} BPM (${getTempoTerm(ch.bpm)})`}));
       }
-      onFilesUpdate(updatedFiles,'마디별 템포 변경');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('마디별 템포 변경',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,changes,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,changes,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">마디별 템포 변경</h2>
@@ -1498,7 +1533,7 @@ function TempoChangePanel({files,activeFile=0,showProgress,hideProgress,onFilesU
 /* ==============================================================
    PANEL: OSSIA
    ============================================================== */
-function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function OssiaPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [startMeasure,setStartMeasure]=useState(1);
   const [endMeasure,setEndMeasure]=useState(1);
@@ -1523,8 +1558,8 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
     await new Promise(r=>setTimeout(r,50));
 
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         try{
           const ossiaDoc=cloneDoc(file.xmlDoc);
           const partList=ossiaDoc.querySelector('part-list');
@@ -1611,7 +1646,7 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
           updatedFiles.push(file);
         }
       }
-      onFilesUpdate(updatedFiles,'Ossia 마디 생성');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('Ossia 마디 생성',files,scope));
       lines.push({m:'✅ 적용 완료! 악보 좌측 상단에 Ossia가 표시됩니다.',t:'ok'});
       setLog(lines);
     }catch(e){
@@ -1619,14 +1654,15 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
       setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}]);
     }
     hideProgress();
-  },[files,activeFile,startMeasure,endMeasure,transposeSemi,octaveShift,ossiaLabel,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,startMeasure,endMeasure,transposeSemi,octaveShift,ossiaLabel,showProgress,hideProgress,onFilesUpdate]);
 
   const clearOssia=useCallback(()=>{
     if(!files.length)return;
-    const updated=files.map(f=>{const{ossiaMxml,ossiaMeta,...rest}=f;return rest});
-    onFilesUpdate(updated,'Ossia 제거');
+    const targets=new Set(targetFiles(files,activeFile,scope).map(({index})=>index));
+    const updated=files.map((f,i)=>{if(!targets.has(i))return f;const{ossiaMxml,ossiaMeta,...rest}=f;return rest});
+    onFilesUpdate(updated,scopeLabel('Ossia 제거',files,scope));
     setLog([{m:'✅ Ossia 오버레이 제거됨',t:'ok'}]);
-  },[files,activeFile,onFilesUpdate]);
+  },[files,activeFile,scope,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">Ossia 마디 추가</h2>
@@ -1684,7 +1720,7 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
 /* ==============================================================
    PANEL: PARTS
    ============================================================== */
-function PartsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function PartsPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const [partStates,setPartStates]=useState({});
   const [log,setLog]=useState([]);
 
@@ -1704,21 +1740,21 @@ function PartsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
     if(!files.length)return;
     setLog([]);showProgress('파트 추출 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
       const keep=Object.entries(partStates).filter(([_,v])=>v).map(([k])=>k);
       if(!keep.length){setLog([{m:'❌ 최소 1개 파트는 유지해야 합니다.',t:'err'}]);hideProgress();return;}
-      for(const file of files){
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);
         doc.querySelectorAll('part-list score-part').forEach(sp=>{if(!keep.includes(sp.getAttribute('id')))sp.remove()});
         doc.querySelectorAll('part').forEach(p=>{if(!keep.includes(p.getAttribute('id')))p.remove()});
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${keep.length}파트 유지`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles,'파트 추출');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('파트 추출',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,partStates,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,partStates,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">파트 추출 / 삭제</h2>
@@ -1742,7 +1778,7 @@ function PartsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
 /* ==============================================================
    PANEL: NOTATION EDITING
    ============================================================== */
-function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function NotationPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [hideStaff,setHideStaff]=useState({});
   const [lyrics,setLyrics]=useState(false);
@@ -1778,11 +1814,11 @@ function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpda
     const hIds=Object.entries(hideStaff).filter(([_,v])=>v).map(([k])=>k);
     setLog([]);showProgress('표기 변환 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
       const baseline=baselineRef.current||files;
       if(!baselineRef.current)baselineRef.current=baseline;
-      for(let fi=0;fi<files.length;fi++){
-        const file=files[fi];const baseDoc=baseline[fi]?.xmlDoc||file.xmlDoc;
+      for(const {file,index:fi} of targetFiles(files,activeFile,scope)){
+        const baseDoc=baseline[fi]?.xmlDoc||file.xmlDoc;
         const doc=cloneDoc(baseDoc);const ch=[];
         if(hIds.length){hIds.forEach(id=>{doc.querySelector(`part-list score-part[id="${id}"]`)?.remove();doc.querySelector(`part[id="${id}"]`)?.remove()});ch.push(`${hIds.length}파트 제거`)}
         if(lyrics){const ls=doc.querySelectorAll('lyric');ch.push(`가사 ${ls.length}개 제거`);ls.forEach(l=>l.remove())}
@@ -1812,12 +1848,12 @@ function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpda
         const label=ch.length?'':' (원본 복원)';
         lines.push({m:`✓ ${file.name}${label}`,t:'ok'});ch.forEach(c=>lines.push({m:`    ${c}`}));
       }
-      lastOutRef.current=updatedFiles;
-      onFilesUpdate(updatedFiles,'악보 표기 변환');
+      lastOutRef.current=mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles);
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('악보 표기 변환',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,hideStaff,lyrics,chords,oneLine,slash,rmAcc,rmKey,slashPitch,slashKeep,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,hideStaff,lyrics,chords,oneLine,slash,rmAcc,rmKey,slashPitch,slashKeep,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">악보 표기 변환</h2>
@@ -1860,7 +1896,7 @@ function NotationPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpda
 /* ==============================================================
    PANEL: EXPORT (이미지 / PDF)
    ============================================================== */
-function ExportPanel({files,activeFile=0,onSelectActiveFile,showProgress,hideProgress,isActive=true}){
+function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProgress,hideProgress,isActive=true}){
   const notify=useNotify();
   const [selIdx,setSelIdx]=useState(activeFile);
   useEffect(()=>setSelIdx(activeFile),[activeFile]);
@@ -2099,7 +2135,7 @@ function ExportPanel({files,activeFile=0,onSelectActiveFile,showProgress,hidePro
 /* ==============================================================
    PANEL: COLOR
    ============================================================== */
-function ColorPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function ColorPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [doStem,setDoStem]=useState(false);
   const [log,setLog]=useState([]);
@@ -2108,8 +2144,8 @@ function ColorPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('색깔 악보 생성 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);let cnt=0;
         doc.querySelectorAll('note').forEach(note=>{
           const p=getNotePitch(note);if(!p)return;
@@ -2123,11 +2159,11 @@ function ColorPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 색상 적용`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles,'색상 악보 생성');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('색상 악보 생성',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,doStem,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,doStem,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">색깔 악보 만들기</h2>
@@ -2165,7 +2201,7 @@ function buildChordNote(doc,source,pitch){
   return note;
 }
 
-function HarmonyPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function HarmonyPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [mode,setMode]=useState('up');
   const [chromatic,setChromatic]=useState(false);
@@ -2190,8 +2226,8 @@ function HarmonyPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdat
     setLog([]);showProgress('화성 쌓기 중...');await new Promise(r=>setTimeout(r,50));
     const directions=[...(mode==='up'||mode==='both'?['above']:[]),...(mode==='down'||mode==='both'?['below']:[])];
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);let added=0;
         const parts=Array.from(doc.querySelectorAll('score-partwise > part'));
         for(const part of target==='first'?parts.slice(0,1):parts){
@@ -2216,11 +2252,11 @@ function HarmonyPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdat
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${added}개 화음 추가`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles,'화성 쌓기');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('화성 쌓기',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,mode,chromatic,target,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,mode,chromatic,target,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">화성 쌓기</h2>
@@ -2259,7 +2295,7 @@ function HarmonyPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdat
    PANEL: CHORD TOOLS
    ============================================================== */
 
-function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function ChordToolsPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [rules,setRules]=useState([{from:'',to:''}]);
   const [replaceExisting,setReplaceExisting]=useState(false);
@@ -2276,8 +2312,8 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
     if(!valid.length){notify('변경 규칙을 입력해주세요.','warn');return}
     setLog([]);showProgress('코드 변경 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);let cnt=0;
         doc.querySelectorAll('harmony').forEach(h=>{
           const cs=harmonyToString(h);
@@ -2289,18 +2325,18 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 변경`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles,'코드 일괄 변경');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('코드 일괄 변경',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,rules,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,rules,showProgress,hideProgress,onFilesUpdate]);
 
   const runAutoInsert=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('코드 분석 & 삽입 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);let ins=0;
         if(replaceExisting)window.ChordToolsCore.preserveNoChordHarmonies(doc);
         const parts=doc.querySelectorAll('part');
@@ -2321,18 +2357,18 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${ins}마디 코드 삽입`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles,'코드 분석 및 삽입');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('코드 분석 및 삽입',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,replaceExisting,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,replaceExisting,showProgress,hideProgress,onFilesUpdate]);
 
   const runInversion=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress(`${inv}st/nd/rd inversion 적용 중...`);await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);let ok=0,skip=0;
         doc.querySelectorAll('harmony').forEach(h=>{
           const rootEl=xmlChild(h,'root');const kindEl=xmlChild(h,'kind');
@@ -2355,17 +2391,17 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${ok}개 적용${skip?`, ${skip}개 생략`:''}`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles,'코드 자리바꿈');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('코드 자리바꿈',files,scope));
       lines.push({m:'✅ 자리바꿈 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,inv,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,inv,showProgress,hideProgress,onFilesUpdate]);
 
   const runInversionReset=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('원위치 복원 중...');await new Promise(r=>setTimeout(r,50));
-    const lines=[];const updatedFiles=[];
-    for(const file of files){
+    const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+    for(const {file} of targetFiles(files,activeFile,scope)){
       const doc=cloneDoc(file.xmlDoc);let n=0;
       doc.querySelectorAll('harmony').forEach(h=>{
         const invEl=h.querySelector('inversion');const bassEl=h.querySelector('bass');
@@ -2374,9 +2410,9 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
       updatedFiles.push(commitFile(file,doc));
       lines.push({m:`✓ ${file.name}: ${n}개 요소 제거`,t:'ok'});
     }
-    onFilesUpdate(updatedFiles,'코드 자리바꿈 원위치');
+    onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('코드 자리바꿈 원위치',files,scope));
     lines.push({m:'✅ 원위치 복원 완료',t:'ok'});setLog(lines);hideProgress();
-  },[files,activeFile,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">코드 도구</h2>
@@ -2420,7 +2456,7 @@ function ChordToolsPanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
 /* ==============================================================
    PANEL: NUMBER NOTATION
    ============================================================== */
-function NumberingPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function NumberingPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [mode,setMode]=useState('solfege');
   const [showOct,setShowOct]=useState(true);
@@ -2445,14 +2481,13 @@ function NumberingPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress(mode==='original'?'기존 가사 복원 중...':'숫자 악보 생성 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
       const baseline=baselineRef.current||files;
       if(!baselineRef.current)baselineRef.current=baseline;
-      for(let fi=0;fi<files.length;fi++){
-        const file=files[fi];
+      for(const {file,index:fi} of targetFiles(files,activeFile,scope)){
         if(mode==='original'){
           const baseDoc=baseline[fi]?.xmlDoc;
-          if(!baseDoc){lines.push({m:`⚠ ${file.name}: 원본 정보 없음`,t:'warn'});continue}
+          if(!baseDoc){lines.push({m:`⚠ ${file.name}: 원본 정보 없음`,t:'warn'});updatedFiles.push(file);continue}
           const doc=cloneDoc(file.xmlDoc);
           const baseNotes=baseDoc.querySelectorAll('note');
           const curNotes=doc.querySelectorAll('note');
@@ -2484,12 +2519,12 @@ function NumberingPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpd
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 숫자 삽입`,t:'ok'});
       }
-      lastOutRef.current=updatedFiles;
-      onFilesUpdate(updatedFiles,'숫자 악보 생성');
+      lastOutRef.current=mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles);
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('숫자 악보 생성',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,mode,showOct,showSharp,keepLyrics,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,mode,showOct,showSharp,keepLyrics,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">숫자 악보</h2>
@@ -2539,7 +2574,7 @@ const LYRIC_FONT_FAMILIES=[
   {id:'Comic Sans MS',label:'Comic Sans MS'},
 ];
 
-function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function LyricStylePanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [size,setSize]=useState(10);
   const [applySize,setApplySize]=useState(true);
@@ -2555,8 +2590,8 @@ function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('가사 스타일 적용 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);let cnt=0;
         doc.querySelectorAll('lyric').forEach(lyric=>{
           const targets=lyric.querySelectorAll('text, syllabic, elision, extend');
@@ -2573,17 +2608,17 @@ function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 가사 텍스트 수정`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles,'가사 스타일 적용');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('가사 스타일 적용',files,scope));
       lines.push({m:'✅ 가사 스타일 적용 완료',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,size,applySize,bold,applyBold,italic,applyItalic,family,applyFamily,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,size,applySize,bold,applyBold,italic,applyItalic,family,applyFamily,showProgress,hideProgress,onFilesUpdate]);
 
   const runReset=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('가사 스타일 초기화 중...');await new Promise(r=>setTimeout(r,50));
-    const lines=[];const updatedFiles=[];
-    for(const file of files){
+    const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+    for(const {file} of targetFiles(files,activeFile,scope)){
       const doc=cloneDoc(file.xmlDoc);let cnt=0;
       doc.querySelectorAll('lyric text').forEach(t=>{
         ['font-size','font-weight','font-style','font-family','color'].forEach(a=>t.removeAttribute(a));cnt++;
@@ -2591,16 +2626,16 @@ function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
       updatedFiles.push(commitFile(file,doc));
       lines.push({m:`✓ ${file.name}: ${cnt}개 초기화`,t:'ok'});
     }
-    onFilesUpdate(updatedFiles,'가사 스타일 초기화');
+    onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('가사 스타일 초기화',files,scope));
     lines.push({m:'✅ 초기화 완료',t:'ok'});setLog(lines);hideProgress();
-  },[files,activeFile,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,showProgress,hideProgress,onFilesUpdate]);
 
   const runColorByPitch=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('계이름 색상 적용 중...');await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];const updatedFiles=[];
-      for(const file of files){
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);let cnt=0;let skipRest=0;
         doc.querySelectorAll('note').forEach(note=>{
           const lyrics=note.querySelectorAll('lyric');if(!lyrics.length)return;
@@ -2614,11 +2649,11 @@ function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${cnt}개 가사에 계이름 색상 적용`,t:'ok'});
       }
-      onFilesUpdate(updatedFiles,'가사 색상 적용');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('가사 색상 적용',files,scope));
       lines.push({m:'✅ 가사 색상 적용 완료',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,showProgress,hideProgress,onFilesUpdate]);
 
   const previewStyle={
     fontSize:applySize?`${size*1.5}px`:undefined,
@@ -2689,15 +2724,15 @@ function LyricStylePanel({files,activeFile=0,showProgress,hideProgress,onFilesUp
 /* ==============================================================
    PANEL: CHORD ANALYSIS
    ============================================================== */
-function ChordsPanel({files,activeFile=0,showProgress,hideProgress}){
+function ChordsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
   const notify=useNotify();
   const [log,setLog]=useState([]);
 
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('코드 분석 중...');await new Promise(r=>setTimeout(r,50));
-    const lines=[];
-    for(const file of files){
+    const lines=[scopeLogLine(files,activeFile,scope)];
+    for(const {file} of targetFiles(files,activeFile,scope)){
       lines.push({m:`── ${file.name} ──`,t:'info'});
       const parts=file.xmlDoc.querySelectorAll('part');
       const mc=parts[0]?.querySelectorAll('measure')?.length||0;
@@ -2711,13 +2746,13 @@ function ChordsPanel({files,activeFile=0,showProgress,hideProgress}){
       }
     }
     lines.push({m:'✅ 분석 완료',t:'ok'});setLog(lines);hideProgress();
-  },[files,activeFile,showProgress,hideProgress]);
+  },[files,activeFile,scope,showProgress,hideProgress]);
 
   const runIdentify=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('코드 기호 파악 중...');await new Promise(r=>setTimeout(r,50));
-    const lines=[];let grandTotal=0;const grandTally={};
-    for(const file of files){
+    const lines=[scopeLogLine(files,activeFile,scope)];let grandTotal=0;const grandTally={};
+    for(const {file} of targetFiles(files,activeFile,scope)){
       lines.push({m:`── ${file.name} ──`,t:'info'});
       const parts=file.xmlDoc.querySelectorAll('part');
       const mc=parts[0]?.querySelectorAll('measure')?.length||0;
@@ -2742,7 +2777,7 @@ function ChordsPanel({files,activeFile=0,showProgress,hideProgress}){
       lines.push({m:`총 ${grandTotal}개 · 고유 ${sorted.length}종: ${sorted.map(([k,v])=>`${k}(${v})`).join(', ')}`,t:'ok'});
     }
     lines.push({m:'✅ 코드 기호 파악 완료',t:'ok'});setLog(lines);hideProgress();
-  },[files,activeFile,showProgress,hideProgress]);
+  },[files,activeFile,scope,showProgress,hideProgress]);
 
   return <div>
     <h2 className="panel__heading">코드 분석</h2>
@@ -2758,7 +2793,7 @@ function ChordsPanel({files,activeFile=0,showProgress,hideProgress}){
 /* ==============================================================
    PANEL: ROMAN NUMERAL ANALYSIS
    ============================================================== */
-function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function RomanAnalysisPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [analysis,setAnalysis]=useState(null);
   const [log,setLog]=useState([]);
@@ -2804,7 +2839,7 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
       const count=window.RomanAnalysis.insertRomanNumerals(doc,source.rows);
       const xmlString=new XMLSerializer().serializeToString(doc);
       const updatedFiles=files.map((f,i)=>i===fileIndex?commitFile(f,doc):f);
-      onFilesUpdate(updatedFiles,'로마 숫자 삽입');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('로마 숫자 삽입',files,scope));
       setAnalysis(window.RomanAnalysis.detectRomanNumeral(doc));
       setLog([{m:`${count}개 마디에 로마 숫자를 삽입했습니다.`,t:'ok'}]);
     }catch(e){
@@ -2812,7 +2847,7 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
     }finally{
       hideProgress();
     }
-  },[files,activeFile,file,fileIndex,onFilesUpdate,showProgress,hideProgress]);
+  },[files,activeFile,scope,file,fileIndex,onFilesUpdate,showProgress,hideProgress]);
 
   return <div>
     <h2 className="panel__heading">로마 숫자 분석</h2>
@@ -2869,7 +2904,7 @@ function RomanAnalysisPanel({files,activeFile=0,showProgress,hideProgress,onFile
 /* ==============================================================
    PANEL: STATISTICS
    ============================================================== */
-function StatsPanel({files,activeFile=0,showProgress,hideProgress}){
+function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
   const notify=useNotify();
   const [basicData,setBasicData]=useState(null);
   const [composerData,setComposerData]=useState(null);
@@ -2881,7 +2916,7 @@ function StatsPanel({files,activeFile=0,showProgress,hideProgress}){
     let tn=0,tr=0,tm=0,lo=127,hi=0;
     const rKo={whole:'온음표',half:'2분음표',quarter:'4분음표',eighth:'8분음표','16th':'16분음표','32nd':'32분음표',
       '점whole':'점온음표','점half':'점2분음표','점quarter':'점4분음표','점eighth':'점8분음표'};
-    for(const file of files){
+    for(const {file} of targetFiles(files,activeFile,scope)){
       const doc=file.xmlDoc;tm+=doc.querySelectorAll('measure').length;
       doc.querySelectorAll('note').forEach(note=>{
         if(note.querySelector('rest')){tr++;return}
@@ -2892,10 +2927,10 @@ function StatsPanel({files,activeFile=0,showProgress,hideProgress}){
     }
     const loN=lo<127?midiToNote(lo):null;const hiN=hi>0?midiToNote(hi):null;
     const rcDisplay={};Object.entries(rc).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>{rcDisplay[rKo[k]||k]=v});
-    setBasicData({fileCount:files.length,totalNotes:tn,totalRests:tr,totalMeasures:tm,
+    setBasicData({fileCount:targetFiles(files,activeFile,scope).length,totalNotes:tn,totalRests:tr,totalMeasures:tm,
       lowest:fmtNote(loN),highest:fmtNote(hiN),noteCounts:nc,rhythmCounts:rcDisplay});
     hideProgress();
-  },[files,activeFile,showProgress,hideProgress]);
+  },[files,activeFile,scope,showProgress,hideProgress]);
 
   const runComposer=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
@@ -2903,7 +2938,7 @@ function StatsPanel({files,activeFile=0,showProgress,hideProgress}){
     const allIv={},allProg={},phrases=[];
     let tn=0,tm=0,steps=0,leaps=0,reps=0;
     const ksc={},tsc={},tempos=[];let rMin=127,rMax=0;
-    for(const file of files){
+    for(const {file} of targetFiles(files,activeFile,scope)){
       const doc=file.xmlDoc;const measures=doc.querySelectorAll('part:first-of-type > measure');tm+=measures.length;
       const ks=doc.querySelector('key fifths');if(ks){const k=ks.textContent;ksc[k]=(ksc[k]||0)+1}
       const ts=doc.querySelector('time');if(ts){const sig=(ts.querySelector('beats')?.textContent||'?')+'/'+(ts.querySelector('beat-type')?.textContent||'?');tsc[sig]=(tsc[sig]||0)+1}
@@ -2929,12 +2964,12 @@ function StatsPanel({files,activeFile=0,showProgress,hideProgress}){
     const pBk={};phrases.forEach(l=>{const b=l<=4?'1-4':l<=8?'5-8':l<=12?'9-12':l<=16?'13-16':'17+';pBk[b]=(pBk[b]||0)+1});
     const topKeys=Object.entries(ksc).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>{const idx=KEY_FIFTHS.indexOf(parseInt(k));return{name:idx>=0?KEY_NAMES[idx]:k,count:v}});
     const topTime=Object.entries(tsc).sort((a,b)=>b[1]-a[1]).slice(0,5);
-    setComposerData({fileCount:files.length,totalNotes:tn,totalMeasures:tm,avgTempo:avgTm,
+    setComposerData({fileCount:targetFiles(files,activeFile,scope).length,totalNotes:tn,totalMeasures:tm,avgTempo:avgTm,
       lowest:fmtNote(rMin<127?midiToNote(rMin):null),highest:fmtNote(rMax>0?midiToNote(rMax):null),
       avgPhrase:avgPh,stepPct:(steps/move*100).toFixed(1),leapPct:(leaps/move*100).toFixed(1),repPct:(reps/move*100).toFixed(1),
       topKeys,topTime,intervals:allIv,progressions:topProg,phraseBuckets:pBk});
     hideProgress();
-  },[files,activeFile,showProgress,hideProgress]);
+  },[files,activeFile,scope,showProgress,hideProgress]);
 
   return <div>
     <h2 className="panel__heading">통계 분석</h2>
@@ -3008,7 +3043,7 @@ function applyClefConfig(doc,clef,cfg){
   xmlChild(clef,'clef-octave-change')?.remove();
 }
 
-function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
+function ClefPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [targetClef,setTargetClef]=useState('treble');
   const [autoTranspose,setAutoTranspose]=useState(true);
@@ -3025,7 +3060,7 @@ function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
     if(targetPart==='all')return 1;
     const part=Array.from(activeDoc(files,activeFile)?.querySelectorAll('score-partwise > part')||[]).find(element=>element.getAttribute('id')===targetPart);
     return Math.max(1,...Array.from(part?.querySelectorAll('attributes > staves')||[],staves=>Number(staves.textContent)||1));
-  },[files,activeFile,targetPart]);
+  },[files,activeFile,scope,targetPart]);
   useEffect(()=>{if(targetPart!=='all'&&!partInfo.some(part=>part.id===targetPart))setTargetPart('all');},[partInfo,targetPart]);
   useEffect(()=>{setTargetStaff('all');},[targetPart]);
 
@@ -3034,11 +3069,11 @@ function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
     setLog([]);showProgress('음자리표 변환 중...');
     await new Promise(r=>setTimeout(r,50));
     try{
-      const lines=[];
+      const lines=[scopeLogLine(files,activeFile,scope)];
       const cfg=CLEF_CONFIGS.find(c=>c.id===targetClef);
       const onTargetStaff=note=>targetStaff==='all'||xmlText(note,'staff','1')===targetStaff;
       const isTargetClef=clef=>targetStaff==='all'||(clef.getAttribute('number')||'1')===targetStaff;
-      const updatedFiles=files.map(file=>{
+      const updatedFiles=targetFiles(files,activeFile,scope).map(({file})=>{
         const doc=cloneDoc(file.xmlDoc);
         const parts=Array.from(doc.querySelectorAll('score-partwise > part')).filter(part=>targetPart==='all'||part.getAttribute('id')===targetPart);
         if(!parts.length){lines.push({m:`⚠ ${file.name}: 대상 파트(${targetPart})가 없어 건너뜁니다.`,t:'warn'});return file;}
@@ -3069,11 +3104,11 @@ function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
         lines.push({m:`✓ ${file.name} → ${cfg.label}${shiftStr}`,t:'ok'});
         return commitFile(file,doc);
       });
-      onFilesUpdate(updatedFiles,'음자리표 변환');
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('음자리표 변환',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,targetClef,autoTranspose,targetPart,targetStaff,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,targetClef,autoTranspose,targetPart,targetStaff,showProgress,hideProgress,onFilesUpdate]);
 
   const currentCfg=CLEF_CONFIGS.find(c=>c.id===currentClef);
 
@@ -3996,6 +4031,8 @@ function App(){
   const [activeFile,setActiveFile]=useState(0);
   const [showLeft,setShowLeft]=useState(true);
   const [showRight,setShowRight]=useState(true);
+  const [scope,setScopeState]=useState(()=>{try{return localStorage.getItem('mxlStudio.scope')==='active'?'active':'all';}catch(_){return 'all';}});
+  const setScope=useCallback(value=>{const next=value==='active'?'active':'all';setScopeState(next);try{localStorage.setItem('mxlStudio.scope',next);}catch(_){}},[]);
   const [progress,setProgress]=useState({visible:false,msg:''});
   const [bpm,setBpm]=useState(120);
   const [playback,setPlayback]=useState({isPlaying:false,currentMeasure:0});
@@ -4315,11 +4352,12 @@ function App(){
   },[pushHistory]);
 
   const updateFiles=useCallback((newFiles,label='변환')=>{
-    const committed=newFiles.map(file=>commitFile(file,file.xmlDoc));
+    // 이미 commitFile을 거친 파일(대상이 아니어서 그대로 둔 파일 포함)은 같은 객체를 유지합니다.
+    const committed=newFiles.map(file=>committedFiles.has(file)?file:commitFile(file,file.xmlDoc));
     setFiles(committed);
     pushHistory(committed,label);
   },[pushHistory]);
-  const panelProps={files,activeFile,onSelectActiveFile:setActiveFile,showProgress,hideProgress,onFilesUpdate:updateFiles};
+  const panelProps={files,activeFile,scope,onSelectActiveFile:setActiveFile,showProgress,hideProgress,onFilesUpdate:updateFiles};
 
   useEffect(()=>{
     window.__mxlSetActiveFile=index=>setActiveFile(Math.max(0,Math.min(index,files.length-1)));
@@ -4334,9 +4372,10 @@ function App(){
       leftPanel,
       rightPanel,
       bpm,
+      scope,
     });
     return()=>{delete window.__mxlGetState;delete window.__mxlSetActiveFile};
-  },[files,activeFile,history,historyIndex,restoreSession,sessionStatus,shareModal,leftPanel,rightPanel,bpm]);
+  },[files,activeFile,history,historyIndex,restoreSession,sessionStatus,shareModal,leftPanel,rightPanel,bpm,scope]);
 
   const exportXML=useCallback(()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
@@ -4524,6 +4563,7 @@ function App(){
       <ResizeHandle side="left"/>
       <div className="inspector__header">
         <div className="inspector__title">🛠 인스펙터 — {PANEL_LABELS[leftPanel]||leftPanel}</div>
+        <ScopeToggle scope={scope} onChange={setScope} files={files} activeFile={activeFile} label="인스펙터 적용 대상"/>
       </div>
       <div className="inspector__content">
         {Object.entries(ALL_PANELS).filter(([id])=>!RIGHT_PANEL_IDS.has(id)&&mountedPanels.has(id)).map(([id,comp])=>
@@ -4558,6 +4598,7 @@ function App(){
       <ResizeHandle side="right"/>
       <div className="inspector__header">
         <div className="inspector__title">🧰 도구 — {PANEL_LABELS[rightPanel]||rightPanel}</div>
+        <ScopeToggle scope={scope} onChange={setScope} files={files} activeFile={activeFile} label="도구 적용 대상"/>
       </div>
       <div className="inspector__content">
         {Object.entries(ALL_PANELS).filter(([id])=>RIGHT_PANEL_IDS.has(id)&&mountedPanels.has(id)).map(([id,comp])=>

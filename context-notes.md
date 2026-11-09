@@ -184,3 +184,11 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - mxl-studio.html의 MIDI 기반 `transposeNote`는 마지막 호출처가 사라져 정의를 삭제했습니다.
 - 테스트 기대값 정정: f07 Ossia +1반음에서 B♯은 F♯장조의 ♯4이므로 G장조의 ♯4인 C♯이 맞습니다(처음 작성한 C는 오류).
 - 검증: 08-ossia 3개(f01 기존, f10 4마디: divisions 1·3♯·F음자리표, f07 +1반음 -1옥타브: G장조 철자·조표 1), 05-ossia-persist, 19-ossia-pickup, 단위 142개, 스모크 7개 통과.
+
+## 2026-11-09 · A-8
+- 사용자 확정 사항대로 기본 범위는 '열린 파일 전체'를 유지하고 '현재 파일' 옵션을 더했습니다. App 상태 `scope`('all'|'active')를 localStorage `mxlStudio.scope`에 보존하고, 파일이 두 개 이상일 때 인스펙터·도구 패널 머리에 `ScopeToggle`(aria-pressed 버튼 2개)을 보여 줍니다.
+- 유틸 `targetFiles`·`mergeTargets`·`scopeLabel`·`scopeLogLine` 추가. 변환·분석 패널 18개의 파일 루프를 `targetFiles(files,activeFile,scope)`로 바꾸고, 결과는 `mergeTargets`로 원래 자리에 넣습니다. 로그 첫 줄은 "대상: 열린 파일 N개" 또는 "대상: 현재 파일(이름)", 히스토리 라벨은 파일이 둘 이상일 때 "· 전체 N개"/"· 현재 파일"을 붙입니다. 로마 숫자 분석은 원래 현재 파일만 다루므로 그대로이고, 이미지/PDF의 '전체 파일 PNG'도 의미상 전체를 유지합니다. Ossia 제거도 범위를 따릅니다.
+- 참조 동일성: `commitFile`이 만든 객체를 WeakSet에 기록하고 `App.updateFiles`는 이미 커밋된 파일을 다시 직렬화하지 않습니다. 대상이 아닌 파일은 같은 객체로 남고(E2E로 확인), 매 변환마다 모든 파일을 다시 직렬화하던 비용도 사라졌습니다.
+- 정렬 보장을 위해 숫자 악보 '기존 가사 복원'에서 원본이 없을 때 결과 배열에 파일을 넣지 않고 넘어가던 경로를 고쳤습니다(이전에는 해당 파일이 목록에서 사라질 수 있었음).
+- styles.css에 `.scope-toggle` 추가, 캐시 키를 `styles.css?v=phase-a-20261109`로 갱신.
+- 검증: 새 E2E 23-scope 2개(기본 전체 적용·현재 파일만 적용 시 다른 파일 객체·xmlString 불변·라벨·로그·localStorage 복원, 파일 1개면 토글 숨김), 전체 E2E 106 통과 / 4 skip, 단위 142개 통과.
