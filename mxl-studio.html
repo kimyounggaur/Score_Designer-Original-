@@ -345,6 +345,18 @@ function formatBytes(value){
   while(n>=1024&&i<units.length-1){n/=1024;i++}
   return `${n>=10||i===0?Math.round(n):Math.round(n*10)/10}${units[i]}`;
 }
+// SessionStoreCore.saveSession 실패 이유(C12)를 사용자 문장으로 바꿉니다.
+const SESSION_SAVE_MESSAGES={
+  'no-storage':'브라우저 저장소를 사용할 수 없어 세션을 저장하지 못했습니다. JSON 내보내기를 이용하세요.',
+  quota:'저장 공간이 부족합니다. 오래된 세션을 삭제하거나 JSON으로 내보내세요.',
+  'too-large':'세션이 4MB를 넘어 저장하지 못했습니다.',
+};
+function sessionSaveMessage(result){
+  return SESSION_SAVE_MESSAGES[result?.reason]||`세션 저장에 실패했습니다.${result?.error?` (${result.error})`:''}`;
+}
+function buildSessionSnapshot({id,name,files,activeFile}){
+  return {id,version:1,name,savedAt:new Date().toISOString(),activeFile,files:serializeSessionFiles(files)};
+}
 function insertNoteheadInOrder(note,nh){
   const anchors=['stem','time-modification','accidental','dot','type'];
   for(const tag of anchors){
@@ -4031,12 +4043,12 @@ function SessionModal({open,onClose,files,activeFile,onRestore,notify,sessionSta
     setBusy(true);
     try{await action();}catch(error){notify(error.message||'세션 처리에 실패했습니다.','err');}finally{setBusy(false);}
   };
+  const currentSession=()=>buildSessionSnapshot({id:`slot-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,name:name.trim()||'악보 세션',files,activeFile});
   const save=()=>perform(async()=>{
     if(!files.length){notify('먼저 파일을 업로드하세요.','warn');return;}
     if(!window.SessionStoreCore)throw new Error('세션 저장소를 사용할 수 없습니다.');
-    const session={id:`slot-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,version:1,name:name.trim()||'악보 세션',savedAt:new Date().toISOString(),activeFile,files:serializeSessionFiles(files)};
-    const result=await window.SessionStoreCore.saveSession(session);
-    if(!result.ok)throw new Error(result.reason==='too-large'?'세션이 4MB를 넘어 저장하지 못했습니다.':'세션 저장에 실패했습니다.');
+    const result=await window.SessionStoreCore.saveSession(currentSession());
+    if(!result.ok)throw new Error(sessionSaveMessage(result));
     await refresh();notify('세션을 저장했습니다.','ok');
   });
   const restore=async session=>{
@@ -4069,7 +4081,7 @@ function SessionModal({open,onClose,files,activeFile,onRestore,notify,sessionSta
   const rename=session=>perform(async()=>{
     if(!renameValue.trim())throw new Error('세션 이름을 입력하세요.');
     const result=await window.SessionStoreCore.saveSession({...session,name:renameValue.trim()});
-    if(!result.ok)throw new Error('세션 이름을 저장하지 못했습니다.');
+    if(!result.ok)throw new Error(`세션 이름을 저장하지 못했습니다. ${sessionSaveMessage(result)}`);
     setRenameId(null);await refresh();notify('세션 이름을 변경했습니다.','ok');
   });
   if(!open)return null;
@@ -4077,8 +4089,9 @@ function SessionModal({open,onClose,files,activeFile,onRestore,notify,sessionSta
     <section className="share-modal session-modal" role="dialog" aria-modal="true" aria-labelledby="session-title" tabIndex={-1} ref={dialogRef} onClick={event=>event.stopPropagation()}>
       <div className="share-modal__header"><h2 id="session-title">세션 관리</h2><button type="button" className="share-modal__close" onClick={onClose} aria-label="세션 관리 닫기">×</button></div>
       <h3>현재 세션 저장</h3>
-      <div className="session-save-row"><label htmlFor="session-name">세션 이름</label><input id="session-name" className="form-input" value={name} onChange={event=>setName(event.target.value)}/><button type="button" className="btn btn--primary" disabled={busy||!files.length} onClick={save}>저장</button></div>
+      <div className="session-save-row"><label htmlFor="session-name">세션 이름</label><input id="session-name" className="form-input" value={name} onChange={event=>setName(event.target.value)}/><button type="button" className="btn btn--primary" disabled={busy||!files.length} onClick={save}>저장</button><button type="button" className="btn btn--secondary" disabled={busy||!files.length} onClick={()=>exportJson(currentSession())}>JSON 내보내기</button></div>
       <h3>저장된 세션</h3>
+      {sessionStatus.autosaveError&&<p className="session-autosave-error" role="status">자동 저장 · 마지막 저장 실패: {sessionStatus.autosaveError}</p>}
       <div className="session-table-wrap"><table className="session-table"><thead><tr><th>이름</th><th>파일</th><th>저장 시각</th><th>크기</th><th>작업</th></tr></thead>
         <tbody>{sessions.map(session=><tr key={session.id} data-session-id={session.id}>
           <td>{renameId===session.id?<input className="form-input" aria-label="변경할 세션 이름" value={renameValue} onChange={event=>setRenameValue(event.target.value)}/>:session.id==='autosave'?'자동 저장':session.name||session.id}</td>
@@ -4145,7 +4158,9 @@ function App(){
   const [historyNotice,setHistoryNotice]=useState(null);
   const [restoreSession,setRestoreSession]=useState(null);
   const lastSavedHashRef=useRef(null);
-  const [sessionStatus,setSessionStatus]=useState({backend:'',usage:null,quota:null,savedAt:null,error:null});
+  const [sessionStatus,setSessionStatus]=useState({backend:'',usage:null,quota:null,savedAt:null,error:null,autosaveError:null});
+  // 자동 저장 실패 알림은 같은 이유마다 이 페이지에서 한 번만 띄웁니다(5초마다 반복되지 않게).
+  const autosaveNoticeRef=useRef(new Set());
   const [shareModal,setShareModal]=useState(null);
   const [sessionModalOpen,setSessionModalOpen]=useState(false);
   const shareDialogRef=useRef(null);
@@ -4385,14 +4400,21 @@ function App(){
           backend:window.SessionStoreCore.backend(),
           savedAt:new Date().toISOString(),
           error:null,
+          autosaveError:null,
         }));
         refreshStorageUsage();
       }else{
-        setSessionStatus(prev=>({...prev,error:result.reason||'저장 실패'}));
+        const message=sessionSaveMessage(result);
+        setSessionStatus(prev=>({...prev,backend:prev.backend||window.SessionStoreCore.backend(),error:message,autosaveError:message}));
+        const reason=result.reason||'storage-error';
+        if(!autosaveNoticeRef.current.has(reason)){
+          autosaveNoticeRef.current.add(reason);
+          notify(`자동 저장 실패: ${message}`,'warn',{duration:8000});
+        }
       }
     },5000);
     return()=>clearTimeout(timer);
-  },[files,activeFile,buildSession,refreshStorageUsage]);
+  },[files,activeFile,buildSession,refreshStorageUsage,notify]);
 
   useEffect(()=>{
     const handler=e=>{

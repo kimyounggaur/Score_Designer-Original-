@@ -308,3 +308,17 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 설명서: 편집 공통 안내에 '모두 지우기' 기준점, 재생 안내에 '재생 미반영' 표시와 A-B 해제 정지를 적었습니다.
 - 검증: 단위 155, 01·17·18·21·24·axe 스펙 29개, 스모크 7 통과.
 
+## 2026-11-09 · A2-5 뒤 줄 끝 복원
+- A2-2~A2-4에서 편집 스크립트(Python 텍스트 모드 읽기)가 CRLF 파일을 LF로 바꿔 styles.css 등 8개 파일의 diff가 파일 전체로 커졌습니다. 내용은 그대로 두고 main(b605c7e)의 줄별 줄 끝을 되살리는 커밋(dc3d63c)을 따로 두었습니다. 이후 편집은 `newline=''`로 줄 끝을 보존하고, 커밋 전에 HEAD와 CRLF 줄 수를 비교합니다.
+
+## 2026-11-10 · A2-6
+- session-store-core: `writeJson`을 `tryWriteJson`으로 바꿔 `{ok:false,reason:'no-storage'|'quota'|'storage-error',error}`를 돌려줍니다(QuotaExceededError·NS_ERROR_DOM_QUOTA_REACHED·code 22·1014는 quota). `localSaveSession`은 본문 → 목록 순서로 쓰고, 새 id의 목록 쓰기가 실패하면 방금 쓴 본문을 지웁니다(기존 id면 목록을 다시 쓰지 않음). `localPutMeta`는 실패 시 null, `localDeleteSession`은 목록 쓰기 결과를 돌려줍니다(저장소가 없으면 지울 것이 없으므로 true).
+- `saveSession`: 로컬 사본 결과를 한 번만 만들고, IndexedDB가 성공하면 `{ok:true,backend:'idb',size}`, 아니면 로컬 결과를 그대로 돌려줍니다(예전처럼 로컬을 두 번 쓰지 않음). IndexedDB는 요청 성공 뒤 트랜잭션 complete까지 기다립니다(커밋 단계의 용량 초과를 성공으로 오인하지 않게).
+- `migrateFromLocalStorage`: 구세션·슬롯 결과를 모아 모두 성공할 때만 구저장 키를 지우고 `migratedAt`을 씁니다. 실패가 있으면 키를 남기고 `migrationPending {lastAttemptAt, failed}`를 기록한 뒤 `{ok:false,migrated,failed:[{id,reason}]}`. 다음 실행에서 다시 시도하고, 성공하면 pending을 null로 바꿉니다. id 없는 슬롯의 마지막 대안 id를 `Date.now()` 대신 `slot-legacy-{순번}`으로 바꿔 재시도해도 중복이 생기지 않게 했습니다. 단위 테스트에서 메타를 확인하려고 `getMeta`를 공개했습니다.
+- 앱: `sessionSaveMessage(result)`로 이유별 문장(no-storage·quota·too-large, 그 밖은 원문 포함)을 만들고 세션 저장·이름 변경 실패에 씁니다. 자동 저장 실패는 같은 이유마다 페이지당 한 번 경고 알림(8초)을 띄우고 `sessionStatus.autosaveError`에 두어 세션 창 '저장된 세션' 제목 아래에 '자동 저장 · 마지막 저장 실패: …'로 보입니다(프롬프트의 '자동저장 행'을 표 행이 아닌 상태 줄로 구현: 자동 저장이 한 번도 성공하지 못하면 표에 행이 없기 때문). 성공하면 지웁니다.
+- 추가: 저장 실패 문구가 'JSON 내보내기를 이용하세요'인데 저장된 세션이 없으면 내보낼 방법이 없어, 세션 창 저장 줄에 현재 상태 'JSON 내보내기' 버튼을 넣었습니다(가져오기와 같은 version 1 형식).
+- 구세션 이전 실패는 키를 남기므로 데이터 손실이 없고 다음 실행에 다시 시도합니다. 사용자 알림은 넣지 않았습니다(영구 실패 시 매번 알림이 뜨는 것을 피함).
+- 테스트: 단위 session-store-core +7(no-storage, 가득 찬 저장소 quota·목록에 id 없음, 목록 쓰기만 실패 시 본문 롤백, 그 밖의 예외 storage-error, 로컬 사본만 가득 차도 idb 성공, 4MB 초과 구세션 + 정상 슬롯 이전 실패 → 키 유지·migratedAt 없음 → 제거 후 성공, id 없는 슬롯 재시도 같은 id). E2E 12-session-modal +2(가득 찬 저장소: 자동 저장 실패 알림 1회·세션 창 상태 줄·수동 저장 quota 문구·현재 상태 JSON 내보내기 내용, 저장소 없음: no-storage 문구·목록 0).
+- 설명서: 자동저장 실패 안내·JSON 내보내기·구세션 이전 보호.
+- 검증: 단위 162, 12-session-modal 10(chromium·mobile), 22·05·axe 8, 스모크 7 통과.
+
