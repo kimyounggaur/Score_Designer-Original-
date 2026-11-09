@@ -262,7 +262,6 @@ function insertNoteheadInOrder(note,nh){
 }
 function getNotePitch(n){const p=n.querySelector('pitch');if(!p)return null;return{step:p.querySelector('step')?.textContent,alter:parseFloat(p.querySelector('alter')?.textContent||'0'),octave:parseInt(p.querySelector('octave')?.textContent||'4')}}
 function setNotePitch(n,step,alter,oct){const p=n.querySelector('pitch');if(!p)return;p.querySelector('step').textContent=step;let a=p.querySelector('alter');if(alter!==0){if(!a){a=p.ownerDocument.createElement('alter');p.insertBefore(a,p.querySelector('octave'))}a.textContent=alter}else if(a)a.remove();p.querySelector('octave').textContent=oct}
-function transposeNote(step,alter,oct,semi){return midiToNote(noteToMidi(step,alter||0,oct)+semi)}
 function getCurrentClef(xmlDoc){
   const sign=xmlDoc.querySelector('clef sign')?.textContent||'G';
   const line=parseInt(xmlDoc.querySelector('clef line')?.textContent||'2');
@@ -1523,15 +1522,6 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
     setLog([]);showProgress('Ossia 오버레이 생성 중...');
     await new Promise(r=>setTimeout(r,50));
 
-    // 직접 자식 중 tagName이 일치하는 첫번째 요소 찾기 (":scope >" 대체)
-    const directChild=(parent,tagName)=>{
-      if(!parent)return null;
-      for(const c of parent.children){
-        if(c.tagName.toLowerCase()===tagName.toLowerCase())return c;
-      }
-      return null;
-    };
-
     try{
       const lines=[];const updatedFiles=[];
       for(const file of files){
@@ -1544,9 +1534,8 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
             updatedFiles.push(file);continue;
           }
 
-          // 원본 첫 마디의 attributes 저장
-          const origFirstMeasure=firstPart.querySelector('measure');
-          const origAttrsClone=origFirstMeasure?cloneEl(directChild(origFirstMeasure,'attributes')):null;
+          // 범위 시작 시점에 유효한 attributes(앞 마디의 조표·음자리표·박자 변경 누적)를 마디를 지우기 전에 구합니다.
+          const effective=MeasureCore.effectiveAttributes(firstPart,startMeasure);
 
           // 여러 part 중 첫번째 part만 남기기
           const allParts=ossiaDoc.querySelectorAll('part');
@@ -1569,9 +1558,8 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
           }
 
           // 범위 외 마디 제거
-          const allMeasures=Array.from(firstPart.querySelectorAll('measure'));
-          allMeasures.forEach((measure,idx)=>{
-            const measureNum=Number(measure.getAttribute('number'));
+          Array.from(firstPart.querySelectorAll('measure')).forEach(measure=>{
+            const measureNum=MeasureCore.measureNumber(measure);
             if(!Number.isFinite(measureNum)||measureNum<startMeasure||measureNum>endMeasure)measure.remove();
           });
 
@@ -1581,56 +1569,31 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
             updatedFiles.push(file);continue;
           }
 
-          // 첫번째 남은 마디에 attributes 보정
+          // 첫 남은 마디의 attributes에 유효 attributes 중 빠진 요소(보표 번호별)를 보충합니다.
           const firstKept=keptMeasures[0];
-          let firstKeptAttrs=directChild(firstKept,'attributes');
-          if(!firstKeptAttrs){
-            if(origAttrsClone){
-              firstKept.insertBefore(origAttrsClone,firstKept.firstChild);
-            }else{
-              // 기본 attributes 생성
-              const a=ossiaDoc.createElement('attributes');
-              const div=ossiaDoc.createElement('divisions');div.textContent='4';a.appendChild(div);
-              const key=ossiaDoc.createElement('key');const f=ossiaDoc.createElement('fifths');f.textContent='0';key.appendChild(f);a.appendChild(key);
-              const time=ossiaDoc.createElement('time');const b=ossiaDoc.createElement('beats');b.textContent='4';time.appendChild(b);const bt=ossiaDoc.createElement('beat-type');bt.textContent='4';time.appendChild(bt);a.appendChild(time);
-              const clef=ossiaDoc.createElement('clef');const s=ossiaDoc.createElement('sign');s.textContent='G';clef.appendChild(s);const ln=ossiaDoc.createElement('line');ln.textContent='2';clef.appendChild(ln);a.appendChild(clef);
-              firstKept.insertBefore(a,firstKept.firstChild);
+          if(effective.children.length){
+            const leading=MeasureCore.leadingAttributes(firstKept,true);
+            const perStaff=new Set(['key','time','clef','staff-details','transpose']);
+            for(const child of Array.from(effective.children)){
+              const tag=child.localName,number=child.getAttribute('number')||'1';
+              const exists=xmlChildren(leading,tag).some(existing=>!perStaff.has(tag)||(existing.getAttribute('number')||'1')===number);
+              if(!exists)MeasureCore.insertAttributesChild(leading,child.cloneNode(true));
             }
-          }else if(origAttrsClone){
-            // 누락된 필수 하위요소 병합
-            ['divisions','key','time','clef','staves'].forEach(tag=>{
-              if(!directChild(firstKeptAttrs,tag)){
-                const el=directChild(origAttrsClone,tag);
-                if(el)firstKeptAttrs.insertBefore(el.cloneNode(true),firstKeptAttrs.firstChild);
-              }
-            });
+          }else if(!MeasureCore.leadingAttributes(firstKept)){
+            // 기본 attributes 생성
+            const a=ossiaDoc.createElement('attributes');
+            const div=ossiaDoc.createElement('divisions');div.textContent='4';a.appendChild(div);
+            const key=ossiaDoc.createElement('key');const f=ossiaDoc.createElement('fifths');f.textContent='0';key.appendChild(f);a.appendChild(key);
+            const time=ossiaDoc.createElement('time');const b=ossiaDoc.createElement('beats');b.textContent='4';time.appendChild(b);const bt=ossiaDoc.createElement('beat-type');bt.textContent='4';time.appendChild(bt);a.appendChild(time);
+            const clef=ossiaDoc.createElement('clef');const s=ossiaDoc.createElement('sign');s.textContent='G';clef.appendChild(s);const ln=ossiaDoc.createElement('line');ln.textContent='2';clef.appendChild(ln);a.appendChild(clef);
+            firstKept.insertBefore(a,firstKept.firstChild);
           }
 
-          // 원래 마디 번호 유지 + 변형 + 가사/화음 제거
+          // 원래 마디 번호(못갖춘마디 0 포함)를 유지한 채 조표 기준으로 조옮김하고 옥타브는 철자를 바꾸지 않고 이동합니다.
+          if(transposeSemi)TransposeCore.transposePartRange(firstPart,startMeasure,endMeasure,transposeSemi);
+          if(octaveShift)keptMeasures.forEach(measure=>measure.querySelectorAll('note').forEach(note=>PitchCore.shiftNoteOctave(note,octaveShift)));
           const totalShift=transposeSemi+octaveShift*12;
-          keptMeasures.forEach((measure,idx)=>{
-            // Preserve the source measure number, including pickup 0.
-            if(totalShift!==0){
-              measure.querySelectorAll('note').forEach(note=>{
-                const p=getNotePitch(note);if(!p)return;
-                const np=transposeNote(p.step,p.alter,p.octave,totalShift);
-                setNotePitch(note,np.step,np.alter,np.octave);
-                let acc=note.querySelector('accidental');
-                if(acc){
-                  if(np.alter===1)acc.textContent='sharp';
-                  else if(np.alter===-1)acc.textContent='flat';
-                  else acc.remove();
-                }else if(np.alter!==0){
-                  acc=ossiaDoc.createElement('accidental');
-                  acc.textContent=np.alter===1?'sharp':'flat';
-                  const pi=note.querySelector('pitch');
-                  if(pi&&pi.nextSibling)note.insertBefore(acc,pi.nextSibling);
-                  else note.appendChild(acc);
-                }
-              });
-            }
-            measure.querySelectorAll('harmony,lyric').forEach(el=>el.remove());
-          });
+          keptMeasures.forEach(measure=>measure.querySelectorAll('harmony,lyric').forEach(el=>el.remove()));
 
           // 제목/작곡가/신용 정보만 제거 (defaults는 유지 — OSMD 렌더에 필요)
           ossiaDoc.querySelectorAll('work,movement-title,movement-number,credit').forEach(el=>el.remove());
@@ -1656,8 +1619,6 @@ function OssiaPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
       setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}]);
     }
     hideProgress();
-
-    function cloneEl(el){return el?el.cloneNode(true):null}
   },[files,activeFile,startMeasure,endMeasure,transposeSemi,octaveShift,ossiaLabel,showProgress,hideProgress,onFilesUpdate]);
 
   const clearOssia=useCallback(()=>{
