@@ -192,3 +192,12 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 정렬 보장을 위해 숫자 악보 '기존 가사 복원'에서 원본이 없을 때 결과 배열에 파일을 넣지 않고 넘어가던 경로를 고쳤습니다(이전에는 해당 파일이 목록에서 사라질 수 있었음).
 - styles.css에 `.scope-toggle` 추가, 캐시 키를 `styles.css?v=phase-a-20261109`로 갱신.
 - 검증: 새 E2E 23-scope 2개(기본 전체 적용·현재 파일만 적용 시 다른 파일 객체·xmlString 불변·라벨·로그·localStorage 복원, 파일 1개면 토글 숨김), 전체 E2E 106 통과 / 4 skip, 단위 142개 통과.
+
+## 2026-11-09 · A-9
+- TransposePanel '12개 장조 모두': 대상 파일(`targetFiles`)마다 12개 조를 `transposeDoc(file.xmlDoc, PitchCore.nearestShift(원래 조, i, 'nearest'), i)`로 만들고 `{파일명}/{파일명}_{조 이름}.mxl` 경로로 ZIP에 넣어 `transposed_12keys.zip`으로 내려받습니다. 원래 조와 같은 조도 포함해 파일당 12개로 고정합니다. 열린 악보는 바꾸지 않으므로 `onFilesUpdate`·히스토리를 호출하지 않습니다(이전: 12번 변환 후 마지막 결과 하나만 커밋해 로그와 결과가 달랐음).
+- 유틸 `buildMxlBlobFromDoc(doc)` 추가, `buildMxlBlob(file)`은 이를 호출합니다(시그니처 유지). 파일명 안전 처리 `safeKeyName`('/'→'-', '♭'→'b', '♯'→'#')과 `safeFileStem` 추가. 예: `f01-basic/f01-basic_Db.mxl`, `f01-basic_F#-Gb.mxl`.
+- 결정: 조 이름 표는 프롬프트의 '활성 파일이 단조면' 대신 **파일마다** 자기 첫 조표의 mode로 고릅니다. 범위가 '전체'일 때 장조·단조 파일이 섞여도 각 파일의 이름이 맞게 붙습니다.
+- 패널 설명을 "12개 조로 변환한 .mxl을 ZIP으로 내려받습니다. 열린 악보는 바뀌지 않습니다."로 바꾸고, 결과 로그는 조마다 한 줄과 `✅ N개 파일 × 12조 = M개 .mxl` 요약을 남깁니다. JSZip이 없으면 오류 로그로 안내합니다.
+- 같이 고친 기존 버그: 음정 이동에서 음정을 해석하지 못하면 결과 배열에 파일을 넣지 않아 목록에서 빠질 수 있던 경로를 원본 유지로 바꿨습니다.
+- 매뉴얼(manual/·MXL-Studio-사용자설명서/ 두 사본)과 퀵스타트: 적용 대상 토글, 조옮김 방향·12개 장조 ZIP, 마디별 조바꿈 방향·단조 이름, 카포 구간별 원래 악보 기준, 음역대 옥타브 이동·철자 유지, 음자리표 파트·보표, 화성 쌓기 철자·속성 이어받기, 코드 자리바꿈 베이스 철자, Ossia attributes 이어받기 문구와 갱신일(2026-11-09). PDF·SVG 재생성은 A-10.
+- 검증: 01-transpose 5개(새 all12: ZIP 엔트리 12개, 각 엔트리 `META-INF/container.xml`+`score.xml`·파싱 성공·rootfile, 조표 12종, Db는 fifths −5·첫 음 D♭, 실행 전후 xmlString·xmlDoc 직렬화·history 길이 불변), 14-a11y-controls, 06-export-mxl, 단위 142개 통과.

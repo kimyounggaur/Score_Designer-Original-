@@ -238,13 +238,17 @@ function validOssia(xml){
   const doc=new DOMParser().parseFromString(xml,'text/xml');
   return !doc.querySelector('parsererror')&&doc.documentElement.localName==='score-partwise'?xml:undefined;
 }
-async function buildMxlBlob(file){
+async function buildMxlBlobFromDoc(doc){
   if(!window.JSZip)return null;
   const zip=new window.JSZip();
   zip.file('META-INF/container.xml','<?xml version="1.0" encoding="UTF-8"?><container version="1.0"><rootfiles><rootfile full-path="score.xml" media-type="application/vnd.recordare.musicxml+xml"/></rootfiles></container>');
-  zip.file('score.xml',new XMLSerializer().serializeToString(file.xmlDoc));
+  zip.file('score.xml',new XMLSerializer().serializeToString(doc));
   return zip.generateAsync({type:'blob',compression:'DEFLATE',mimeType:'application/vnd.recordare.musicxml'});
 }
+async function buildMxlBlob(file){return buildMxlBlobFromDoc(file.xmlDoc);}
+// ZIP 경로·파일명에 쓸 수 있게 정리합니다 (F#/G♭ → F#-Gb).
+function safeKeyName(name){return String(name).replace(/\//g,'-').replace(/♭/g,'b').replace(/♯/g,'#');}
+function safeFileStem(name){return String(name).replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').trim()||'score';}
 function serializeSessionFiles(files){
   return Array.from(files||[]).map(file=>({
     name:file.name,
@@ -606,40 +610,52 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
     await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
-      for(const {file} of targetFiles(files,activeFile,scope)){
-        if(mode==='all12'){
-          let previewDoc=null;
+      if(mode==='all12'){
+        // 12개 조 결과를 .mxl로 만들어 ZIP 하나로 내려받습니다. 열린 악보와 작업 기록은 바꾸지 않습니다.
+        if(!window.JSZip)throw new Error('ZIP 라이브러리를 불러오지 못했습니다. 새로고침 후 다시 시도하세요.');
+        const zip=new window.JSZip();const targets=targetFiles(files,activeFile,scope);let count=0;
+        for(const {file} of targets){
+          const stem=safeFileStem(base(file));
+          const source=keyIndexOfFifths(file.xmlDoc.querySelector('key fifths')?.textContent||0);
+          const names=file.xmlDoc.querySelector('key mode')?.textContent==='minor'?MINOR_KEY_NAMES:KEY_NAMES;
           for(let i=0;i<12;i++){
-            const source=((Number(file.xmlDoc.querySelector('key fifths')?.textContent||0)*7)%12+12)%12;
-            const doc=transposeDoc(file.xmlDoc,(i-source+12)%12,i);
-            if(i===selKey)previewDoc=doc;
-            lines.push({m:`✓ ${base(file)} → ${keyNames[i]}`,t:'ok'});
+            showProgress(`12개 조 변환 중... ${stem} (${i+1}/12)`);
+            const shift=PitchCore.nearestShift(source,i,'nearest');
+            const blob=await buildMxlBlobFromDoc(transposeDoc(file.xmlDoc,shift,i));
+            zip.file(`${stem}/${stem}_${safeKeyName(names[i])}.mxl`,blob);count++;
+            lines.push({m:`✓ ${base(file)} → ${names[i]} (${shift>0?'+':''}${shift}반음)`,t:'ok'});
           }
-          updatedFiles.push(commitFile(file,previewDoc||transposeDoc(file.xmlDoc,0,0)));
-        }else if(mode==='semitone'){
-          const doc=transposeDoc(file.xmlDoc,semi,null);
-          updatedFiles.push(commitFile(file,doc));
-          lines.push({m:`✓ ${base(file)} → ${semi>0?'+':''}${semi} 반음`,t:'ok'});
-        }else if(mode==='interval'){
-          const s=computeIntervalSemis(ivNum,ivQual);
-          if(s===undefined){lines.push({m:`❌ 지원하지 않는 조합`,t:'err'});continue}
-          const shift=s*ivDir;
-          const doc=transposeDoc(file.xmlDoc,shift,null);
-          updatedFiles.push(commitFile(file,doc));
-          const qLabel=INTERVAL_QUALITIES.find(q=>q.id===ivQual)?.label||ivQual;
-          const nLabel=INTERVAL_NUMBERS.find(n=>n.id===ivNum)?.label||ivNum;
-          lines.push({m:`✓ ${base(file)} → ${ivDir>0?'↑':'↓'} ${qLabel} ${nLabel} (${shift>0?'+':''}${shift}반음)`,t:'ok'});
-        }else{
-          const fifths=parseInt(file.xmlDoc.querySelector('key fifths')?.textContent||'0');
-          const cs=((fifths*7)%12+12)%12;
-          const s=PitchCore.nearestShift(cs,selKey,direction);
-          const doc=transposeDoc(file.xmlDoc,s,selKey);
-          updatedFiles.push(commitFile(file,doc));
-          lines.push({m:`✓ ${base(file)} → ${keyNames[selKey]} (${s>0?'+':''}${s}반음)`,t:'ok'});
         }
+        downloadBlob(await zip.generateAsync({type:'blob'}),'transposed_12keys.zip');
+        lines.push({m:`✅ ${targets.length}개 파일 × 12조 = ${count}개 .mxl을 ZIP으로 내려받았습니다. 열린 악보는 바뀌지 않았습니다.`,t:'ok'});
+        setLog(lines);
+      }else{
+        for(const {file} of targetFiles(files,activeFile,scope)){
+          if(mode==='semitone'){
+            const doc=transposeDoc(file.xmlDoc,semi,null);
+            updatedFiles.push(commitFile(file,doc));
+            lines.push({m:`✓ ${base(file)} → ${semi>0?'+':''}${semi} 반음`,t:'ok'});
+          }else if(mode==='interval'){
+            const s=computeIntervalSemis(ivNum,ivQual);
+            if(s===undefined){lines.push({m:`❌ 지원하지 않는 조합`,t:'err'});updatedFiles.push(file);continue}
+            const shift=s*ivDir;
+            const doc=transposeDoc(file.xmlDoc,shift,null);
+            updatedFiles.push(commitFile(file,doc));
+            const qLabel=INTERVAL_QUALITIES.find(q=>q.id===ivQual)?.label||ivQual;
+            const nLabel=INTERVAL_NUMBERS.find(n=>n.id===ivNum)?.label||ivNum;
+            lines.push({m:`✓ ${base(file)} → ${ivDir>0?'↑':'↓'} ${qLabel} ${nLabel} (${shift>0?'+':''}${shift}반음)`,t:'ok'});
+          }else{
+            const fifths=parseInt(file.xmlDoc.querySelector('key fifths')?.textContent||'0');
+            const cs=((fifths*7)%12+12)%12;
+            const s=PitchCore.nearestShift(cs,selKey,direction);
+            const doc=transposeDoc(file.xmlDoc,s,selKey);
+            updatedFiles.push(commitFile(file,doc));
+            lines.push({m:`✓ ${base(file)} → ${keyNames[selKey]} (${s>0?'+':''}${s}반음)`,t:'ok'});
+          }
+        }
+        onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('조옮김',files,scope));
+        lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
       }
-      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('조옮김',files,scope));
-      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
   },[files,activeFile,scope,mode,spelling,selKey,direction,semi,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
@@ -680,6 +696,10 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
         <Chip on={direction==='up'} onClick={()=>setDirection('up')}>위로</Chip>
         <Chip on={direction==='down'} onClick={()=>setDirection('down')}>아래로</Chip>
       </div>
+    </div>}
+
+    {mode==='all12' && <div className="card"><div className="card__title">📦 12개 조 ZIP</div>
+      <p className="card__text">12개 조로 변환한 .mxl을 ZIP으로 내려받습니다. 열린 악보는 바뀌지 않습니다. 원래 조에서 가까운 쪽으로 옮기며 철자 선택을 따릅니다.</p>
     </div>}
 
     {mode==='semitone' && <div className="card"><div className="card__title">↕️ 반음 이동</div>
