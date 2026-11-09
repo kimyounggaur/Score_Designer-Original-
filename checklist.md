@@ -52,3 +52,11 @@ Phase 0~8을 순서대로 수행합니다. Phase 9는 선택 확장 지침으로
 - [x] A-7 · Ossia 유효 attributes 누적·코어 조옮김 (완료 기준 2개)
 - [x] A-8 · 변환 적용 대상 토글(기본 열린 파일 전체)과 대상 파일 표기 (완료 기준 3개)
 - [x] A-9 · all12 조옮김을 12개 .mxl ZIP 산출로 변경 (완료 기준 2개)
+- [x] A-10 · Phase A 회귀 확인과 문서 동기화 (완료 기준 3개)
+
+Phase A 종료 체크리스트 (기준 문서 4.3)
+
+- [x] 1.1 표의 P0-1, P0-2, P0-3, P0-4, P0-5, P0-7, P0-8, P0-9, P1-11, P1-12, P2-4에 대응하는 E2E 또는 단위 테스트 통과 (대응표: context-notes.md `## Phase A 요약`)
+- [x] mxl-studio.html에 음표를 쓰는 MIDI 기반 코드 없음 (`midiToNote`는 StatsPanel·InstrumentPanel 표시용만)
+- [x] 변환 기본 범위 '전체' 유지, '현재 파일' 옵션 동작, all12 ZIP 산출
+- [x] README·README-TESTING·checklist·context-notes·매뉴얼 동기화 (PDF·SVG 재생성 포함)

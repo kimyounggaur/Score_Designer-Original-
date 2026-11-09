@@ -201,3 +201,49 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 같이 고친 기존 버그: 음정 이동에서 음정을 해석하지 못하면 결과 배열에 파일을 넣지 않아 목록에서 빠질 수 있던 경로를 원본 유지로 바꿨습니다.
 - 매뉴얼(manual/·MXL-Studio-사용자설명서/ 두 사본)과 퀵스타트: 적용 대상 토글, 조옮김 방향·12개 장조 ZIP, 마디별 조바꿈 방향·단조 이름, 카포 구간별 원래 악보 기준, 음역대 옥타브 이동·철자 유지, 음자리표 파트·보표, 화성 쌓기 철자·속성 이어받기, 코드 자리바꿈 베이스 철자, Ossia attributes 이어받기 문구와 갱신일(2026-11-09). PDF·SVG 재생성은 A-10.
 - 검증: 01-transpose 5개(새 all12: ZIP 엔트리 12개, 각 엔트리 `META-INF/container.xml`+`score.xml`·파싱 성공·rootfile, 조표 12종, Db는 fifths −5·첫 음 D♭, 실행 전후 xmlString·xmlDoc 직렬화·history 길이 불변), 14-a11y-controls, 06-export-mxl, 단위 142개 통과.
+
+## 2026-11-09 · A-10
+- 코드 수정 없이 검증·기록만 했습니다(테스트 1건을 픽스처로 옮긴 것 제외).
+- `grep -n "transposeNote\|midiToNote\|PC_STEP_ALTER\|fifthsUpBySemi\|measures\[" mxl-studio.html` 결과: 195행 `midiToNote` 정의, 825행 InstrumentPanel 미리보기(표 표시), 2948·2988행 StatsPanel 최저음·최고음 표기. 모두 표시 목적이며 `transposeNote`·`PC_STEP_ALTER`·`fifthsUpBySemi`·`measures[` 인덱스 접근은 0건입니다.
+- 테스트 안 합성 XML 정리: Phase A에서 만든 합성 악보는 모두 픽스처(f10·f11·f12)로 두었고, transpose-core 단위 테스트에 문자열로 있던 C/E 한 마디 악보는 f11의 4마디(C/E)를 쓰도록 바꿨습니다. measure-core 단위 테스트의 음표 없는 구조 조각(중복·비숫자 마디 번호, 보표별 clef 누적)은 악보가 아니라 파서 경계 사례라 테스트 안에 그대로 두었습니다.
+- 전체 검증: 단위 142개 통과(10파일). E2E 111개 중 107개 통과(chromium 100, mobile 7), 4개 제외(시각 3·모바일 너비 1), 6.1분. Studio09 기준(80 통과/4 제외) 이상입니다. axe 네 장면 serious/critical 0.
+- 문서: README 검증 현황 표·코어 10개·픽스처 12개·설계 문서 4번, README-TESTING 픽스처 표(f10·f11·f12)·태그 범위·결과, docs/verification-report.md에 Phase A 재검증 절 추가.
+- `npm run docs:build`: PyMuPDF 1.28.2(`scripts/requirements-docs.txt`)를 설치해 실행했습니다. 설명서 10쪽·퀵스타트 4쪽 PDF·SVG를 재생성하고 전 페이지를 이미지로 확인했습니다. Linux에 Malgun Gothic이 없어 한글은 Noto Sans CJK로 들어갑니다(Windows에서 다시 생성하면 원래 글꼴). 내용이 그대로인 업데이트 안내 PDF·SVG는 글꼴만 바뀌는 변경이라 되돌렸습니다.
+
+## Phase A 요약
+기준 문서 `MXL-Studio10-PhaseA-변환정확도-바이브코딩-프롬프트.md`, 브랜치 `phase-a/transform-accuracy`, 커밋 A-1~A-10.
+
+### 1.1 표 항목과 검증
+| ID | 해결 | 검증 |
+|---|---|---|
+| P0-1 | 적용 대상 토글(기본 전체·현재 파일), 로그·히스토리 라벨에 대상 표기 | e2e 23-scope 2개 |
+| P0-2 | 카포 구간마다 원본 대비 −프렛, 조표 일치, 코드 root·bass 이조 | panels/03-capo 3개 |
+| P0-3 | 음역대·음자리표 옥타브 이동은 `<octave>`만 변경 | panels/04-range, panels/09-clef, 단위 shiftNoteOctave |
+| P0-4 | 조바꿈·특정 조: 가까운 쪽 기본, 위로/아래로, 조표 기준 철자, 단조 | panels/02-keychange 3개, panels/01-transpose 3개, 단위 transposePartRange·nearestShift |
+| P0-5 | all12 → 파일마다 .mxl 12개 ZIP, 열린 악보 불변 | panels/01-transpose all12 |
+| P0-7 | 자리바꿈 베이스를 근음 철자에서 계산(E/G♯, B7/D♯, A♭m/C♭) | panels/15-chordtools 2개, 단위 bassForInversion |
+| P0-8 | 화성 쌓기 조표 기준 철자, voice·staff·time-modification 등 복사 | panels/14-harmony 4개, 단위 diatonicThird·syncAccidental |
+| P0-9 | Ossia 시작 마디의 유효 attributes 보충 | panels/08-ossia 2개, 단위 effectiveAttributes |
+| P1-11 | 카포·마디별 템포를 마디 number 기준으로 통일(못갖춘마디 0) | panels/07-tempochange, panels/03-capo, 단위 measuresByNumber·segments |
+| P1-12 | 음자리표 파트·보표 선택 | panels/09-clef 2개 |
+| P2-4 | MIDI 기반 음표 계산 제거, 패널 안 중복 표 삭제 | A-10 grep, 단위 pitch-core·measure-core |
+
+### 제거된 함수·표 (mxl-studio.html)
+`transposeNote`(MIDI 기반 조옮김), `getDiaThirdAbove`·`getDiaThirdBelow`, `KIND_INTERVALS`, `STEP_SEMI`, `PC_STEP_ALTER`, 카포의 `fifthsUpBySemi`, OssiaPanel 내부 `directChild`·`cloneEl`. 대신 PitchCore·MeasureCore·TransposeCore.transposePartRange를 씁니다.
+
+### 바뀐 기대값
+- panels/02-keychange 기존 테스트: C→G 3마디 첫 음 G4 → **G3**(항상 상행하던 동작이 기대값이었음, 가까운 쪽 −5반음).
+- 프롬프트 문서 정정: `keySignatureAlter(6,'B')` = **0**(F♯장조의 B는 제자리음), `keyInterval(0,7,7)` → `keyInterval(0,1,7)`(목표 조와 반음 수 일치).
+- 카포 결과 조표: 프롬프트의 preferFlat=true 대신 `keyFifthsAfter` 기본 표(C♭장조 회피). C장조 기준 결과는 같음.
+- 음역대 로그 수치: 옥타브 이동 횟수 → "N개 음표 이동, M개 범위 밖 유지".
+- 화성 쌓기 다이어토닉 모드에서 조표 밖 음: F♯ → A(이전 A♯). 자리바꿈 베이스: E/A♭·B7/E♭ → E/G♯·B7/D♯.
+- all12: 열린 악보 1개 커밋 → ZIP 다운로드, 열린 악보·히스토리 불변. 조 이름 표는 파일마다 자기 mode 기준.
+
+### 남은 문제
+- 화성 쌓기 단조는 자연단음계 기준입니다. 화성단음계(이끈음) 3도 옵션은 없습니다.
+- 같은 마디 앞선 임시표는 같은 보표의 문서 순서로 판단합니다. 다성부에서 backup으로 시간이 되돌아가는 경우, 붙임줄로 넘어온 임시표, 마디를 넘는 확인 임시표는 반영하지 않습니다.
+- 마디 중간 조바꿈은 마디 단위로 근사합니다(`keyFifthsAt`은 그 마디의 마지막 조표를 반환).
+- 파트별 조표가 다른 합주보(이조 악기 포함)의 마디별 조바꿈은 첫 파트 기준 반음 수를 모든 파트에 적용하고 각 파트 조표는 `keyFifthsAfter`로 정하는 분기 경로입니다. 픽스처가 단일 파트(f05)뿐이라 합주보 E2E는 없습니다.
+- HTML의 `STEP_TO_SEMI`·`SEMI_TO_STEP`·`KEY_FIFTHS`·`DIATONIC_SCALES`는 UI·표시용으로 1벌씩 남아 있습니다(코어 내부 표와 값이 같음). 이후 PitchCore 참조로 바꿀 수 있습니다.
+- 설명서 화면 이미지는 Studio09 화면입니다(적용 대상 토글·방향 칩 없음). Linux 시각 기준 이미지 3장도 여전히 없습니다.
+- main 병합 전 GitHub CI(Linux Playwright Chromium)에서 한 번 더 확인해야 합니다. main에 푸시하면 Pages 배포가 실행됩니다.

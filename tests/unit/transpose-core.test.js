@@ -109,10 +109,14 @@ describe('TransposeCore.transposePartRange',()=>{
     expect(result.keys).toBe(2);
   });
   it('transposes chord roots and bass notes in the range',()=>{
-    const doc=parse('<score-partwise><part id="P1"><measure number="1"><attributes><key><fifths>0</fifths></key></attributes><harmony><root><root-step>C</root-step></root><kind>major</kind><bass><bass-step>E</bass-step></bass></harmony><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration></note></measure></part></score-partwise>');
-    core.transposePartRange(part(doc),1,1,-2,{startFifths:0,targetFifths:-2});
-    expect(doc.querySelector('root-step').textContent+doc.querySelector('root-alter').textContent).toBe('B-1');
-    expect(doc.querySelector('bass-step').textContent).toBe('D');
-    expect(doc.querySelector('bass-alter')).toBeNull();
+    const doc=fixture('f11-chords-inversion.musicxml');const p1=part(doc);
+    const result=core.transposePartRange(p1,4,4,-2,{startFifths:0,targetFifths:-2});
+    const m4=p1.querySelector('measure[number="4"]');
+    expect(m4.querySelector('root-step').textContent+m4.querySelector('root-alter').textContent).toBe('B-1');
+    expect(m4.querySelector('bass-step').textContent).toBe('D');
+    expect(m4.querySelector('bass-alter')).toBeNull();
+    expect(spelled(m4)).toEqual(['Bb3']);
+    expect(result).toMatchObject({harmonies:1,measures:1,insertedKey:true});
+    expect(p1.querySelector('measure[number="1"] root-step').textContent).toBe('E');
   });
 });
