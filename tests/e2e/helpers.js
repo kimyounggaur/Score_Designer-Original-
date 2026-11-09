@@ -83,3 +83,16 @@ export async function getPitchAt(page, { measure = 1, noteIdx = 0 } = {}) {
     };
   }, { measure, noteIdx });
 }
+
+// 활성 파일 음표를 철자 문자열('F#/4', 'Bb/3', 'E/5')로 읽습니다. measure를 주면 그 번호 마디만, part를 주면 그 파트만.
+export async function getPitches(page, { measure, part } = {}) {
+  return page.evaluate(({ measure, part }) => {
+    const state = window.__mxlGetState?.();
+    const doc = state?.files?.[state.activeFile || 0]?.xmlDoc;
+    const partSelector = part ? `part[id="${part}"]` : 'part';
+    const measureSelector = measure === undefined ? 'measure' : `measure[number="${measure}"]`;
+    const signs = { '-2': 'bb', '-1': 'b', '0': '', '1': '#', '2': '##' };
+    return Array.from(doc?.querySelectorAll(`${partSelector} > ${measureSelector} > note > pitch`) || [], (pitch) =>
+      `${pitch.querySelector('step').textContent}${signs[String(Number(pitch.querySelector('alter')?.textContent || 0))]}/${pitch.querySelector('octave').textContent}`);
+  }, { measure, part });
+}

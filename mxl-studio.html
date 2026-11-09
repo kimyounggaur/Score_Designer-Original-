@@ -692,21 +692,24 @@ function RangePanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
     let low,high;
     if(instr==='custom'){low=parseNoteStr(customLow);high=parseNoteStr(customHigh);if(!low||!high){notify('올바른 음표 형식을 입력해주세요','warn');return}}
     else{low={step:range.low.step,octave:range.low.oct,alter:0};high={step:range.high.step,octave:range.high.oct,alter:0}}
-    const lm=noteToMidi(low.step,low.alter,low.octave),hm=noteToMidi(high.step,high.alter,high.octave);
+    const lm=PitchCore.pitchToMidi(low),hm=PitchCore.pitchToMidi(high);
+    if(lm>hm){notify('최저음이 최고음보다 높습니다.','warn');return}
     setLog([]);showProgress('음역대 조정 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[];const updatedFiles=[];
       for(const file of files){
-        const doc=cloneDoc(file.xmlDoc);let adj=0;
+        const doc=cloneDoc(file.xmlDoc);let moved=0,skipped=0;
         doc.querySelectorAll('note').forEach(note=>{
-          const p=getNotePitch(note);if(!p)return;
-          let midi=noteToMidi(p.step,p.alter,p.octave);
-          while(midi<lm){midi+=12;adj++}while(midi>hm){midi-=12;adj++}
-          if(midi<lm||midi>hm)return;
-          const np=midiToNote(midi);setNotePitch(note,np.step,np.alter,np.octave);
+          const pitch=PitchCore.readPitch(note);if(!pitch)return;
+          // 옥타브만 옮겨 철자(step·alter)와 임시표를 보존합니다.
+          const midi=PitchCore.pitchToMidi(pitch);let octaves=0;
+          while(midi+octaves*12<lm)octaves++;
+          while(midi+octaves*12>hm)octaves--;
+          if(midi+octaves*12<lm){skipped++;return}
+          if(PitchCore.shiftNoteOctave(note,octaves))moved++;
         });
         updatedFiles.push(commitFile(file,doc));
-        lines.push({m:`✓ ${file.name}: ${adj}개 음표 조정`,t:'ok'});
+        lines.push({m:`✓ ${file.name}: ${moved}개 음표 이동, ${skipped}개 범위 밖 유지`,t:'ok'});
       }
       onFilesUpdate(updatedFiles,'음역대 자동 조정');
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
@@ -3101,16 +3104,40 @@ function StatsPanel({files,activeFile=0,showProgress,hideProgress}){
    ============================================================== */
 const CLEF_SYMBOLS={treble:'𝄞',bass:'𝄢',alto:'𝄡',tenor:'𝄡',neutral:'𝄥'};
 
+function applyClefConfig(doc,clef,cfg){
+  let sign=xmlChild(clef,'sign');
+  if(!sign){sign=doc.createElement('sign');clef.insertBefore(sign,clef.firstChild);}
+  sign.textContent=cfg.sign;
+  let line=xmlChild(clef,'line');
+  if(cfg.sign==='percussion')line?.remove();
+  else{
+    if(!line){line=doc.createElement('line');clef.insertBefore(line,sign.nextSibling);}
+    line.textContent=String(cfg.line);
+  }
+  // 옥타브 음자리표 표기(8vb 등)는 이전 음자리표에 묶인 정보이므로 제거합니다.
+  xmlChild(clef,'clef-octave-change')?.remove();
+}
+
 function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [targetClef,setTargetClef]=useState('treble');
   const [autoTranspose,setAutoTranspose]=useState(true);
+  const [targetPart,setTargetPart]=useState('all');
+  const [targetStaff,setTargetStaff]=useState('all');
   const [log,setLog]=useState([]);
 
   const currentClef=useMemo(()=>{
     if(!files.length)return null;
     return getCurrentClef(activeDoc(files,activeFile));
   },[files,activeFile]);
+  const partInfo=useMemo(()=>getPartInfo(activeDoc(files,activeFile)),[files,activeFile]);
+  const staffCount=useMemo(()=>{
+    if(targetPart==='all')return 1;
+    const part=Array.from(activeDoc(files,activeFile)?.querySelectorAll('score-partwise > part')||[]).find(element=>element.getAttribute('id')===targetPart);
+    return Math.max(1,...Array.from(part?.querySelectorAll('attributes > staves')||[],staves=>Number(staves.textContent)||1));
+  },[files,activeFile,targetPart]);
+  useEffect(()=>{if(targetPart!=='all'&&!partInfo.some(part=>part.id===targetPart))setTargetPart('all');},[partInfo,targetPart]);
+  useEffect(()=>{setTargetStaff('all');},[targetPart]);
 
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
@@ -3119,48 +3146,36 @@ function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
     try{
       const lines=[];
       const cfg=CLEF_CONFIGS.find(c=>c.id===targetClef);
+      const onTargetStaff=note=>targetStaff==='all'||xmlText(note,'staff','1')===targetStaff;
+      const isTargetClef=clef=>targetStaff==='all'||(clef.getAttribute('number')||'1')===targetStaff;
       const updatedFiles=files.map(file=>{
         const doc=cloneDoc(file.xmlDoc);
-
-        // Compute octave shift to bring notes into the new clef's range
-        let semiShift=0;
-        if(autoTranspose&&cfg.center!==null){
-          const pitchedNotes=[...doc.querySelectorAll('note')].filter(n=>!n.querySelector('rest')&&getNotePitch(n));
-          if(pitchedNotes.length>0){
-            const avgMidi=pitchedNotes.reduce((s,n)=>{
-              const p=getNotePitch(n);return s+noteToMidi(p.step,p.alter,p.octave);
-            },0)/pitchedNotes.length;
-            semiShift=Math.round((cfg.center-avgMidi)/12)*12;
+        const parts=Array.from(doc.querySelectorAll('score-partwise > part')).filter(part=>targetPart==='all'||part.getAttribute('id')===targetPart);
+        if(!parts.length){lines.push({m:`⚠ ${file.name}: 대상 파트(${targetPart})가 없어 건너뜁니다.`,t:'warn'});return file;}
+        const shifts=[];
+        for(const part of parts){
+          // 대상 보표 음표의 평균 높이로 옥타브 수를 정하고, 옥타브만 옮겨 철자를 보존합니다.
+          const notes=Array.from(part.querySelectorAll('note')).filter(note=>PitchCore.readPitch(note)&&onTargetStaff(note));
+          let octaves=0;
+          if(autoTranspose&&cfg.center!==null&&notes.length){
+            const average=notes.reduce((sum,note)=>sum+PitchCore.pitchToMidi(PitchCore.readPitch(note)),0)/notes.length;
+            octaves=Math.round((cfg.center-average)/12);
           }
-        }
-
-        // Apply octave transposition to all pitched notes
-        if(semiShift!==0){
-          doc.querySelectorAll('note').forEach(note=>{
-            const p=getNotePitch(note);if(!p)return;
-            const np=transposeNote(p.step,p.alter,p.octave,semiShift);
-            setNotePitch(note,np.step,np.alter,np.octave);
-            let acc=note.querySelector('accidental');
-            if(acc){if(np.alter===1)acc.textContent='sharp';else if(np.alter===-1)acc.textContent='flat';else acc.remove();}
+          if(octaves){notes.forEach(note=>PitchCore.shiftNoteOctave(note,octaves));shifts.push(`${part.getAttribute('id')} ${octaves>0?'+':''}${octaves}옥타브`);}
+          // 기존 음자리표만 바꾸고, 대상 보표에 음자리표가 하나도 없으면 첫 마디에 만듭니다.
+          let changed=0;
+          part.querySelectorAll('attributes').forEach(attributes=>{
+            xmlChildren(attributes,'clef').filter(isTargetClef).forEach(clef=>{applyClefConfig(doc,clef,cfg);changed++;});
           });
-        }
-
-        // Update clef element in every attributes block
-        doc.querySelectorAll('attributes').forEach(attr=>{
-          let clefEl=attr.querySelector('clef');
-          if(!clefEl){clefEl=doc.createElement('clef');attr.appendChild(clefEl);}
-          let signEl=clefEl.querySelector('sign');
-          if(!signEl){signEl=doc.createElement('sign');clefEl.insertBefore(signEl,clefEl.firstChild);}
-          signEl.textContent=cfg.sign;
-          let lineEl=clefEl.querySelector('line');
-          if(cfg.sign==='percussion'){if(lineEl)lineEl.remove();}
-          else{
-            if(!lineEl){lineEl=doc.createElement('line');clefEl.appendChild(lineEl);}
-            lineEl.textContent=cfg.line;
+          const firstMeasure=xmlChild(part,'measure');
+          if(!changed&&firstMeasure){
+            const clef=doc.createElement('clef');
+            if(targetStaff!=='all')clef.setAttribute('number',targetStaff);
+            applyClefConfig(doc,clef,cfg);
+            MeasureCore.insertAttributesChild(MeasureCore.leadingAttributes(firstMeasure,true),clef);
           }
-        });
-
-        const shiftStr=semiShift!==0?` (${semiShift>0?'+':''}${semiShift}반음 이동)`:'';
+        }
+        const shiftStr=shifts.length?` (${shifts.join(', ')})`:'';
         lines.push({m:`✓ ${file.name} → ${cfg.label}${shiftStr}`,t:'ok'});
         return commitFile(file,doc);
       });
@@ -3168,7 +3183,7 @@ function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,targetClef,autoTranspose,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,targetClef,autoTranspose,targetPart,targetStaff,showProgress,hideProgress,onFilesUpdate]);
 
   const currentCfg=CLEF_CONFIGS.find(c=>c.id===currentClef);
 
@@ -3202,13 +3217,28 @@ function ClefPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate})
       </div>
     </div>
 
+    {partInfo.length>0&&<div className="card">
+      <div className="card__title">🎯 대상 파트</div>
+      <select className="form-select" aria-label="음자리표를 바꿀 파트" value={targetPart} onChange={e=>setTargetPart(e.target.value)}>
+        <option value="all">모든 파트</option>
+        {partInfo.map(part=><option key={part.id} value={part.id}>{part.label} ({part.id})</option>)}
+      </select>
+      {staffCount>1&&<>
+        <label className="form-label">보표</label>
+        <div className="chip-group">
+          <Chip on={targetStaff==='all'} onClick={()=>setTargetStaff('all')}>전체 보표</Chip>
+          {Array.from({length:staffCount},(_,i)=>String(i+1)).map(number=><Chip key={number} on={targetStaff===number} onClick={()=>setTargetStaff(number)}>{number}번 보표</Chip>)}
+        </div>
+      </>}
+    </div>}
+
     <div className="card">
       <div className="toggle-row">
         <div className="card__title">🔀 음역대 자동 조옮김</div>
         <Toggle label="음자리표에 맞게 옥타브 자동 이동" on={autoTranspose} onClick={()=>setAutoTranspose(v=>!v)}/>
       </div>
       {autoTranspose&&targetClef!=='neutral'&&(
-        <div className="card__text">모든 음표를 새 음자리표 중심 음역대로 옥타브 단위 자동 이동합니다.</div>
+        <div className="card__text">대상 파트·보표의 음표를 새 음자리표 중심 음역대로 옥타브 단위 이동합니다. 음이름과 임시표는 그대로 둡니다.</div>
       )}
     </div>
 

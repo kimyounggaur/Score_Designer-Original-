@@ -44,3 +44,4 @@ Phase 0~8을 순서대로 수행합니다. Phase 9는 선택 확장 지침으로
 기준 문서: `MXL-Studio10-PhaseA-변환정확도-바이브코딩-프롬프트.md`. A-1부터 순서대로 수행합니다.
 
 - [x] A-1 · pitch-core·measure-core 신설과 transpose-core export 보강 (완료 기준 3개)
+- [x] A-2 · 음역대·음자리표 옥타브 이동 철자 보존, 음자리표 파트·보표 선택 (완료 기준 3개)
