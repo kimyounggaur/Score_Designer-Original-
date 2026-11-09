@@ -342,3 +342,13 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 설명서: 로마 숫자 분석 행과 분석 안내 문장.
 - 검증: 단위 179, 19·24·01·18·15·20 스펙, 스모크 7 통과.
 
+## 2026-11-10 · A2-9
+- transpose-core: `tonicFifths({step,alter})`(−7~7 밖 null)와 `keyFifthsForTonic(tonic,mode)`(단조는 −3)를 추가·공개했습니다. `transposeDocument`는 마디 자식을 문서 순서로 돌며 모든 `attributes > key`를 number별로 갱신하고(공통 key는 보표별 상태를 지움), 음표·코드는 자기 `<staff>`의 조(number=staff → 1번 → 공통)로 keyInterval을 정합니다. `options.interval={diatonic,chromatic}`이 있으면 모든 음표에 그 간격을 쓰고, 조표는 옮긴 으뜸음의 조표(범위 밖이면 keyFifthsAfter)입니다. 같은 마디 안에서 조표가 바뀌면 그 뒤 음표부터 새 조를 씁니다(예전에는 마디 첫 key 하나로 마디 전체).
+- `transposePartRange`: 1번(또는 number 없는) key는 기존 규칙, 그 밖의 보표 key도 갱신합니다. 시작 조와 같은 fifths면 같은 목표(특정 조 선택 시 이명동음이 보표마다 갈리지 않게), 아니면 자기 fifths 기준 keyFifthsAfter이고, 그 보표 음표 철자도 그 조로 정합니다.
+- 조옮김 패널: 음정 모드가 `transposeDoc(doc,chromatic,null,{interval:{diatonic:(ivNum−1)×방향,chromatic}})`로 넘깁니다(`transposeDoc` 네 번째 인자 extra). 1·4·5·8도는 Perfect(P)·A·d·AA·dd 칩(id 유지), 완전음정에서 minor가 남아 있으면 major로 되돌립니다(칩 클릭과 effect 둘 다). `computeIntervalSemis`는 완전음정 minor를 undefined로 둡니다. 로그·현재 설정은 `↑ 감5도 (+6반음, 온음계 +4)` 형식의 한글 이름입니다.
+- 통계: 기본 분석 마디 = 첫 파트 마디 수(MeasureCore.firstPart), 파트 수를 `마디 N · 파트 P개` 안내 줄로, 음표·쉼표 라벨 '(전체 파트)'. 작곡 스타일 제목 '(첫 파트 선율 기준)', 음표 라벨 '(첫 파트)'. 최저·최고음은 실제 음표 철자(fmtNote가 겹올림·겹내림도 표시). 조성 상위는 첫 key의 fifths·mode로 묶어 `keyDisplayName`(기존 `keyIndexOfFifths` 재사용 — 같은 이름의 함수가 이미 있어 새로 만들지 않음)으로 Am 등 단조 이름을 씁니다.
+- 바뀐 기대값: 20-stats 기존 테스트의 타일 라벨 '총 음표' → '음표 (전체 파트)'.
+- 픽스처 f15-two-staff-keys 추가, 01-fixtures 등록. transpose-core 스크립트 ?v=3.
+- 테스트: 단위 transpose +6(tonicFifths·단조, f15 두 조표·D3, 감5도 G♭·−6 / 증4도 F♯·6, 으뜸음 조표 범위 밖 폴백, 구간 조옮김 두 조표, 보표별 다른 조 철자). E2E 01-transpose +2(감5도 G♭/4·조표 −6·로그, 3도 단 → 4도 완전 복귀), 20-stats +2(f02 마디 4·파트 2개·두 분석 마디 4, f04 Am).
+- 검증: 단위 185, 01·20·01-fixtures·02·03·05·08·03-transpose-harmony·23 스펙, 스모크 7 통과.
+

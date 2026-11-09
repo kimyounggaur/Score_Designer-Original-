@@ -1,7 +1,7 @@
 import {test,expect} from '@playwright/test';
 import {readFile} from 'node:fs/promises';
 import path from 'node:path';
-import {openApp,uploadFixture,runPanel,getDocQuery,getPitchAt,getPitches,fixturesDir} from '../helpers.js';
+import {openApp,uploadFixture,runPanel,openPanel,getDocQuery,getPitchAt,getPitches,fixturesDir} from '../helpers.js';
 test('@panels transpose: validates the resulting score',async({page})=>{
   test.setTimeout(30000);await openApp(page);
   await runPanel(page,{id:'transpose',before:()=>uploadFixture(page,'f04-minor-harmony.musicxml'),action:async panel=>{await panel.getByRole('button',{name:'Bm',exact:true}).click();await panel.getByRole('button',{name:/변환 실행/}).click();},expect:async panel=>{await expect.poll(()=>getDocQuery(page,'key fifths')).toMatchObject({text:'2'});await expect.poll(()=>getDocQuery(page,'harmony root-step')).toMatchObject({text:'B'});}});
@@ -81,3 +81,31 @@ test('@panels transpose all 12 keys keeps same-stem files in separate folders (N
     expect(names.filter(name=>name.startsWith('f01-basic (2)/'))).toHaveLength(12);
   }});
 });
+// C06·N4: 음정 이동은 온음계 간격을 지킵니다(C에서 감5도 ↑는 G♭). 완전음정에는 장·단 칩이 없습니다.
+test('@panels transpose: diminished fifth keeps the diatonic spelling',async({page})=>{
+  test.setTimeout(30000);await openApp(page);await uploadFixture(page,'f01-basic.musicxml');
+  const panel=await openPanel(page,'transpose');
+  await panel.getByRole('button',{name:'음정 이동 (Interval)',exact:true}).click();
+  await panel.getByRole('button',{name:'5th',exact:true}).click();
+  await expect(panel.getByRole('button',{name:'Perfect (P)',exact:true})).toBeVisible();
+  await expect(panel.getByRole('button',{name:'Major (M)',exact:true})).toHaveCount(0);
+  await expect(panel.getByRole('button',{name:'Minor (m)',exact:true})).toHaveCount(0);
+  await panel.getByRole('button',{name:'Diminished (d)',exact:true}).click();
+  await panel.getByRole('button',{name:'↑ 위로',exact:true}).click();
+  await expect(panel.locator('.card__text').filter({hasText:'현재 설정'})).toContainText('감5도 = +6 반음, 온음계 +4');
+  await panel.getByRole('button',{name:/변환 실행/}).click();
+  await expect.poll(async()=>(await getPitches(page,{measure:1}))[0]).toBe('Gb/4');
+  expect(await page.evaluate(()=>window.__mxlGetState().files[0].xmlDoc.querySelector('key fifths').textContent)).toBe('-6');
+  await expect(panel.locator('.result-log')).toContainText('↑ 감5도 (+6반음, 온음계 +4)');
+});
+test('@panels transpose: switching to a perfect interval drops a minor quality',async({page})=>{
+  test.setTimeout(30000);await openApp(page);await uploadFixture(page,'f01-basic.musicxml');
+  const panel=await openPanel(page,'transpose');
+  await panel.getByRole('button',{name:'음정 이동 (Interval)',exact:true}).click();
+  await panel.getByRole('button',{name:'3rd',exact:true}).click();
+  await panel.getByRole('button',{name:'Minor (m)',exact:true}).click();
+  await panel.getByRole('button',{name:'4th',exact:true}).click();
+  await expect(panel.getByRole('button',{name:'Perfect (P)',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(panel.locator('.card__text').filter({hasText:'현재 설정'})).toContainText('완전4도 = +5 반음, 온음계 +3');
+});
+

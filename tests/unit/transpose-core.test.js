@@ -120,3 +120,58 @@ describe('TransposeCore.transposePartRange',()=>{
     expect(p1.querySelector('measure[number="1"] root-step').textContent).toBe('E');
   });
 });
+
+describe('tonic fifths, interval transposition and per-staff keys (C05, C06)',()=>{
+  const pitches=(doc,selector='note')=>Array.from(doc.querySelectorAll(selector),note=>{const p=note.querySelector('pitch');const alter=Number(p.querySelector('alter')?.textContent||0);return `${p.querySelector('step').textContent}${alter>0?'#'.repeat(alter):'b'.repeat(-alter)}${p.querySelector('octave').textContent}`;});
+  it('maps a major tonic spelling to its key signature',()=>{
+    expect(core.tonicFifths({step:'C',alter:0})).toBe(0);
+    expect(core.tonicFifths({step:'G'})).toBe(1);
+    expect(core.tonicFifths({step:'F'})).toBe(-1);
+    expect(core.tonicFifths({step:'F',alter:1})).toBe(6);
+    expect(core.tonicFifths({step:'G',alter:-1})).toBe(-6);
+    expect(core.tonicFifths({step:'C',alter:-1})).toBe(-7);
+    expect(core.tonicFifths({step:'C',alter:1})).toBe(7);
+    expect(core.tonicFifths({step:'G',alter:1})).toBeNull();
+    expect(core.keyFifthsForTonic({step:'A',alter:0},'minor')).toBe(0);
+    expect(core.keyFifthsForTonic({step:'E',alter:-1},'minor')).toBe(-6);
+  });
+  it('updates every staff key and spells each staff from its own key',()=>{
+    const doc=fixture('f15-two-staff-keys.musicxml');
+    const result=core.transposeDocument(doc,2);
+    expect(doc.querySelector('key[number="1"] fifths').textContent).toBe('2');
+    expect(doc.querySelector('key[number="2"] fifths').textContent).toBe('2');
+    expect(result.keys).toBe(2);
+    expect(pitches(doc)).toEqual(['D4','F#4','A4','D5','D3']);
+  });
+  it('keeps the diatonic distance of an interval: diminished fifth up from C is G flat',()=>{
+    const flat=fixture('f01-basic.musicxml');
+    core.transposeDocument(flat,6,{interval:{diatonic:4,chromatic:6}});
+    expect(pitches(flat)[0]).toBe('Gb4');
+    expect(flat.querySelector('key fifths').textContent).toBe('-6');
+    const sharp=fixture('f01-basic.musicxml');
+    core.transposeDocument(sharp,6,{interval:{diatonic:3,chromatic:6}});
+    expect(pitches(sharp)[0]).toBe('F#4');
+    expect(sharp.querySelector('key fifths').textContent).toBe('6');
+  });
+  it('falls back to keyFifthsAfter when the transposed tonic has no key signature',()=>{
+    const doc=parse('<score-partwise><part id="P1"><measure number="1"><attributes><key><fifths>6</fifths></key></attributes><note><pitch><step>F</step><alter>1</alter><octave>4</octave></pitch><duration>1</duration></note></measure></part></score-partwise>');
+    core.transposeDocument(doc,2,{interval:{diatonic:1,chromatic:2}});
+    expect(pitches(doc)).toEqual(['G#4']);
+    expect(doc.querySelector('key fifths').textContent).toBe(String(core.keyFifthsAfter(6,2)));
+  });
+  it('updates both staff keys in a part range',()=>{
+    const doc=fixture('f15-two-staff-keys.musicxml');
+    const result=core.transposePartRange(doc.querySelector('part'),1,1,2);
+    expect(Array.from(doc.querySelectorAll('key fifths'),node=>node.textContent)).toEqual(['2','2']);
+    expect(result.keys).toBe(2);
+    expect(pitches(doc)).toEqual(['D4','F#4','A4','D5','D3']);
+  });
+  it('spells a staff with a different key from that key',()=>{
+    const doc=parse('<score-partwise><part id="P1"><measure number="1"><attributes><divisions>1</divisions><key number="1"><fifths>0</fifths></key><key number="2"><fifths>-1</fifths></key><staves>2</staves></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><staff>1</staff></note><note><pitch><step>B</step><alter>-1</alter><octave>2</octave></pitch><duration>1</duration><staff>2</staff></note></measure></part></score-partwise>');
+    core.transposeDocument(doc,1);
+    expect(Array.from(doc.querySelectorAll('key fifths'),node=>node.textContent)).toEqual([String(core.keyFifthsAfter(0,1)),String(core.keyFifthsAfter(-1,1))]);
+    // 1번 보표 C장조 → D♭장조, 2번 보표 F장조 → F♯장조(기본 철자). B♭2는 F♯장조에서 B2입니다.
+    expect(Array.from(doc.querySelectorAll('key fifths'),node=>node.textContent)).toEqual(['-5','6']);
+    expect(pitches(doc)).toEqual(['Db4','B2']);
+  });
+});

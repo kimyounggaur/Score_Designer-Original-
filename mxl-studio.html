@@ -35,7 +35,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="chord-tools-core.js?v=2"></script>
 <script src="chord-symbol-core.js?v=1"></script>
 <script src="history-core.js?v=2"></script>
-<script src="transpose-core.js?v=2"></script>
+<script src="transpose-core.js?v=3"></script>
 <script src="pitch-core.js?v=1"></script>
 <script src="measure-core.js?v=1"></script>
 <script src="numbering-core.js?v=1"></script>
@@ -187,7 +187,12 @@ const NAV = [
    ============================================================== */
 function noteToMidi(step,alter,octave){return(octave+1)*12+STEP_TO_SEMI[step]+(alter||0)}
 function midiToNote(midi){const o=Math.floor(midi/12)-1;const s=((midi%12)+12)%12;const i=SEMI_TO_STEP[s];return{step:i.step,alter:i.alter,octave:o}}
-function fmtNote(n){return n?n.step+(n.alter===1?'#':n.alter===-1?'♭':'')+n.octave:'-'}
+function fmtNote(n){return n?n.step+(n.alter>0?'#'.repeat(n.alter):n.alter<0?'♭'.repeat(-n.alter):'')+n.octave:'-'}
+// 조표 fifths와 mode로 조 이름을 붙입니다. KEY_NAMES·MINOR_KEY_NAMES는 keyIndexOfFifths(나란한조 장조 으뜸음 pc) 인덱스를 함께 씁니다.
+function keyDisplayName(fifths,mode){
+  const index=keyIndexOfFifths(fifths);
+  return (mode==='minor'?MINOR_KEY_NAMES:KEY_NAMES)[index]??String(fifths);
+}
 function parseNoteStr(s){const m=s.match(/^([A-G])([#b]?)(\d+)$/);if(!m)return null;return{step:m[1],alter:m[2]==='#'?1:m[2]==='b'?-1:0,octave:parseInt(m[3])}}
 function cloneDoc(d){return new DOMParser().parseFromString(new XMLSerializer().serializeToString(d),'text/xml')}
 const MAX_FILE_BYTES=20*1024*1024;
@@ -658,13 +663,26 @@ const INTERVAL_NUMBERS=[
   {id:2,label:'2nd'},{id:3,label:'3rd'},{id:4,label:'4th'},
   {id:5,label:'5th'},{id:6,label:'6th'},{id:7,label:'7th'},{id:8,label:'Octave'},
 ];
+// 완전음정(1·4·5·8도)의 품질 칩: id는 그대로 두고 'major'를 완전(P)으로 표시합니다. 단(m)은 없습니다(N4·D11).
+const PERFECT_INTERVAL_NUMBERS=new Set([1,4,5,8]);
+const INTERVAL_QUALITIES_PERFECT=[
+  {id:'major',label:'Perfect (P)'},{id:'augmented',label:'Augmented (A)'},{id:'diminished',label:'Diminished (d)'},
+  {id:'double-augmented',label:'Double Aug. (AA)'},{id:'double-diminished',label:'Double Dim. (dd)'},
+];
+const intervalQualitiesFor=num=>PERFECT_INTERVAL_NUMBERS.has(num)?INTERVAL_QUALITIES_PERFECT:INTERVAL_QUALITIES;
+const INTERVAL_QUALITY_KO={augmented:'증',minor:'단',diminished:'감','double-augmented':'겹증','double-diminished':'겹감'};
+function intervalNameKo(num,qual){
+  const quality=qual==='major'?(PERFECT_INTERVAL_NUMBERS.has(num)?'완전':'장'):INTERVAL_QUALITY_KO[qual]||qual;
+  return `${quality}${num}도`;
+}
 function computeIntervalSemis(num,qual){
   if(num in INTERVAL_BASE_MAJOR){
     const b=INTERVAL_BASE_MAJOR[num];
     return({major:b,minor:b-1,augmented:b+1,diminished:b-2,'double-augmented':b+2,'double-diminished':b-3})[qual];
   }
   const b=INTERVAL_BASE_PERFECT[num];
-  return({major:b,minor:b-1,augmented:b+1,diminished:b-1,'double-augmented':b+2,'double-diminished':b-2})[qual];
+  // 완전음정에는 단(minor)이 없습니다. 예전에는 −1(감음정)으로 계산했습니다.
+  return({major:b,augmented:b+1,diminished:b-1,'double-augmented':b+2,'double-diminished':b-2})[qual];
 }
 
 function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
@@ -680,6 +698,8 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
   const [ivNum,setIvNum]=useState(3);
   const [ivQual,setIvQual]=useState('major');
   const [ivDir,setIvDir]=useState(1);
+  // 완전음정으로 바꿨는데 단(minor)이 남아 있으면 완전으로 되돌립니다.
+  useEffect(()=>{if(PERFECT_INTERVAL_NUMBERS.has(ivNum)&&ivQual==='minor')setIvQual('major');},[ivNum,ivQual]);
   const [log,setLog]=useState([]);
 
   const run=useCallback(async()=>{
@@ -717,12 +737,11 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
           }else if(mode==='interval'){
             const s=computeIntervalSemis(ivNum,ivQual);
             if(s===undefined){lines.push({m:`❌ 지원하지 않는 조합`,t:'err'});updatedFiles.push(file);continue}
-            const shift=s*ivDir;
-            const doc=transposeDoc(file.xmlDoc,shift,null);
+            // 반음 수와 함께 온음계 간격을 넘겨 감5도 ↑가 C→G♭처럼 음이름 간격을 지킵니다(C06, D11).
+            const diatonic=(ivNum-1)*ivDir,chromatic=s*ivDir;
+            const doc=transposeDoc(file.xmlDoc,chromatic,null,{interval:{diatonic,chromatic}});
             updatedFiles.push(commitFile(file,doc));
-            const qLabel=INTERVAL_QUALITIES.find(q=>q.id===ivQual)?.label||ivQual;
-            const nLabel=INTERVAL_NUMBERS.find(n=>n.id===ivNum)?.label||ivNum;
-            lines.push({m:`✓ ${base(file)} → ${ivDir>0?'↑':'↓'} ${qLabel} ${nLabel} (${shift>0?'+':''}${shift}반음)`,t:'ok'});
+            lines.push({m:`✓ ${base(file)} → ${ivDir>0?'↑':'↓'} ${intervalNameKo(ivNum,ivQual)} (${chromatic>0?'+':''}${chromatic}반음, 온음계 ${diatonic>0?'+':''}${diatonic})`,t:'ok'});
           }else{
             const fifths=parseInt(file.xmlDoc.querySelector('key fifths')?.textContent||'0');
             const cs=((fifths*7)%12+12)%12;
@@ -739,12 +758,12 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
     hideProgress();
   },[files,activeFile,scope,mode,spelling,selKey,direction,semi,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
 
-  function transposeDoc(xmlDoc,semitones,targetKeyIdx){
+  function transposeDoc(xmlDoc,semitones,targetKeyIdx,extra={}){
     const doc=cloneDoc(xmlDoc);
     if(!window.TransposeCore)throw new Error('조옮김 모듈을 불러오지 못했습니다.');
     const targetFifths=targetKeyIdx==null?undefined:KEY_FIFTHS[targetKeyIdx];
     const preferFlat=spelling==='flat'?true:spelling==='sharp'?false:targetFifths==null?undefined:targetFifths<0;
-    window.TransposeCore.transposeDocument(doc,semitones,{preferFlat,targetFifths});
+    window.TransposeCore.transposeDocument(doc,semitones,{preferFlat,targetFifths,...extra});
     return doc;
   }
 
@@ -790,18 +809,18 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
     {mode==='interval' && <div className="card"><div className="card__title">🎼 음정 (Interval) 이동</div>
       <label className="form-label">음정 수 (Interval Number)</label>
       <div className="chip-group">
-        {INTERVAL_NUMBERS.map(n=><Chip key={n.id} on={ivNum===n.id} onClick={()=>setIvNum(n.id)}>{n.label}</Chip>)}
+        {INTERVAL_NUMBERS.map(n=><Chip key={n.id} on={ivNum===n.id} onClick={()=>{setIvNum(n.id);if(PERFECT_INTERVAL_NUMBERS.has(n.id)&&ivQual==='minor')setIvQual('major');}}>{n.label}</Chip>)}
       </div>
       <label className="form-label">음정 종류 (Quality)</label>
       <div className="chip-group">
-        {INTERVAL_QUALITIES.map(q=><Chip key={q.id} on={ivQual===q.id} onClick={()=>setIvQual(q.id)}>{q.label}</Chip>)}
+        {intervalQualitiesFor(ivNum).map(q=><Chip key={q.id} on={ivQual===q.id} onClick={()=>setIvQual(q.id)}>{q.label}</Chip>)}
       </div>
       <label className="form-label">방향</label>
       <div className="chip-group">
         <Chip on={ivDir===1} onClick={()=>setIvDir(1)}>↑ 위로</Chip>
         <Chip on={ivDir===-1} onClick={()=>setIvDir(-1)}>↓ 아래로</Chip>
       </div>
-      <div className="card__text">현재 설정: {ivDir>0?'↑':'↓'} {INTERVAL_QUALITIES.find(q=>q.id===ivQual)?.label} {INTERVAL_NUMBERS.find(n=>n.id===ivNum)?.label} = {(()=>{const s=computeIntervalSemis(ivNum,ivQual);return s===undefined?'—':`${s*ivDir>0?'+':''}${s*ivDir} 반음`})()}</div>
+      <div className="card__text">현재 설정: {ivDir>0?'↑':'↓'} {intervalNameKo(ivNum,ivQual)} = {(()=>{const s=computeIntervalSemis(ivNum,ivQual);if(s===undefined)return '—';const diatonic=(ivNum-1)*ivDir;return `${s*ivDir>0?'+':''}${s*ivDir} 반음, 온음계 ${diatonic>0?'+':''}${diatonic}`})()}</div>
     </div>}
 
     <div className="card"><div className="card__title">철자 선택</div><div className="chip-group">
@@ -3001,21 +3020,23 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     showProgress('통계 분석 중...');await new Promise(r=>setTimeout(r,50));
     const nc={C:0,D:0,E:0,F:0,G:0,A:0,B:0};const rc={};
-    let tn=0,tr=0,tm=0,lo=127,hi=0;
+    let tn=0,tr=0,tm=0,tp=0,lo=127,hi=0,loN=null,hiN=null;
     const rKo={whole:'온음표',half:'2분음표',quarter:'4분음표',eighth:'8분음표','16th':'16분음표','32nd':'32분음표',
       '점whole':'점온음표','점half':'점2분음표','점quarter':'점4분음표','점eighth':'점8분음표'};
     for(const {file} of targetFiles(files,activeFile,scope)){
-      const doc=file.xmlDoc;tm+=doc.querySelectorAll('measure').length;
+      // 마디 수는 첫 파트 기준(B09). 음표·쉼표는 전체 파트 합계입니다.
+      const doc=file.xmlDoc;tm+=xmlChildren(window.MeasureCore.firstPart(doc),'measure').length;
+      tp+=xmlChildren(doc.documentElement,'part').filter(part=>xmlChildren(part,'measure').length).length;
       doc.querySelectorAll('note').forEach(note=>{
         if(note.querySelector('rest')){tr++;return}
         const p=getNotePitch(note);if(!p)return;tn++;nc[p.step]=(nc[p.step]||0)+1;
-        const midi=noteToMidi(p.step,p.alter,p.octave);if(midi<lo)lo=midi;if(midi>hi)hi=midi;
+        // 최저·최고음은 악보에 적힌 철자 그대로 보여 줍니다(N6).
+        const midi=noteToMidi(p.step,p.alter,p.octave);if(midi<lo){lo=midi;loN=p;}if(midi>hi){hi=midi;hiN=p;}
         const te=note.querySelector('type');if(te){let rn=te.textContent;if(note.querySelector('dot'))rn='점'+rn;rc[rn]=(rc[rn]||0)+1}
       });
     }
-    const loN=lo<127?midiToNote(lo):null;const hiN=hi>0?midiToNote(hi):null;
     const rcDisplay={};Object.entries(rc).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>{rcDisplay[rKo[k]||k]=v});
-    setBasicData({fileCount:targetFiles(files,activeFile,scope).length,totalNotes:tn,totalRests:tr,totalMeasures:tm,
+    setBasicData({fileCount:targetFiles(files,activeFile,scope).length,totalNotes:tn,totalRests:tr,totalMeasures:tm,totalParts:tp,
       lowest:fmtNote(loN),highest:fmtNote(hiN),noteCounts:nc,rhythmCounts:rcDisplay});
     hideProgress();
   },[files,activeFile,scope,showProgress,hideProgress]);
@@ -3025,10 +3046,12 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
     showProgress('작곡 스타일 분석 중...');await new Promise(r=>setTimeout(r,50));
     const allIv={},allProg={},phrases=[];
     let tn=0,tm=0,steps=0,leaps=0,reps=0;
-    const ksc={},tsc={},tempos=[];let rMin=127,rMax=0;
+    const ksc={},tsc={},tempos=[];let rMin=127,rMax=0,rMinN=null,rMaxN=null;
     for(const {file} of targetFiles(files,activeFile,scope)){
-      const doc=file.xmlDoc;const measures=doc.querySelectorAll('part:first-of-type > measure');tm+=measures.length;
-      const ks=doc.querySelector('key fifths');if(ks){const k=ks.textContent;ksc[k]=(ksc[k]||0)+1}
+      const doc=file.xmlDoc;const measures=xmlChildren(window.MeasureCore.firstPart(doc),'measure');tm+=measures.length;
+      // 조성은 첫 조표의 fifths와 mode로 분류합니다(A단조가 C로 잡히던 C08).
+      const firstKey=doc.querySelector('key');const ks=xmlChild(firstKey,'fifths');
+      if(ks){const k=`${parseInt(ks.textContent,10)||0}|${xmlChild(firstKey,'mode')?.textContent.trim()==='minor'?'minor':'major'}`;ksc[k]=(ksc[k]||0)+1}
       const ts=doc.querySelector('time');if(ts){const sig=(ts.querySelector('beats')?.textContent||'?')+'/'+(ts.querySelector('beat-type')?.textContent||'?');tsc[sig]=(tsc[sig]||0)+1}
       const snd=doc.querySelector('sound[tempo]');if(snd)tempos.push(parseFloat(snd.getAttribute('tempo')));
       let prevChord=null,pLen=0,fifths=0;
@@ -3036,7 +3059,7 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
         for(const attributes of xmlChildren(measure,'attributes')){const keys=xmlChildren(attributes,'key');const key=keys.find(k=>!k.hasAttribute('number')||k.getAttribute('number')==='1')||keys[0];const value=xmlChild(key,'fifths');if(value)fifths=parseInt(value.textContent,10)||0;}
         measure.querySelectorAll('note').forEach(note=>{if(note.querySelector('rest')){if(pLen>0){phrases.push(pLen);pLen=0}return}
           tn++;pLen++;const p=getNotePitch(note);if(!p)return;
-          const midi=noteToMidi(p.step,p.alter,p.octave);if(midi<rMin)rMin=midi;if(midi>rMax)rMax=midi;
+          const midi=noteToMidi(p.step,p.alter,p.octave);if(midi<rMin){rMin=midi;rMinN=p;}if(midi>rMax){rMax=midi;rMaxN=p;}
           ns.push(midi%12)});
         const chord=window.ChordToolsCore.detectChordFromPitchClasses(ns,{fifths})?.symbol;if(chord&&prevChord){const pr=prevChord+' → '+chord;allProg[pr]=(allProg[pr]||0)+1}if(chord)prevChord=chord;
       });if(pLen>0)phrases.push(pLen);
@@ -3051,10 +3074,10 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
     const avgTm=tempos.length?(tempos.reduce((a,b)=>a+b,0)/tempos.length).toFixed(0):'-';
     const topProg={};Object.entries(allProg).sort((a,b)=>b[1]-a[1]).slice(0,10).forEach(([k,v])=>topProg[k]=v);
     const pBk={};phrases.forEach(l=>{const b=l<=4?'1-4':l<=8?'5-8':l<=12?'9-12':l<=16?'13-16':'17+';pBk[b]=(pBk[b]||0)+1});
-    const topKeys=Object.entries(ksc).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>{const idx=KEY_FIFTHS.indexOf(parseInt(k));return{name:idx>=0?KEY_NAMES[idx]:k,count:v}});
+    const topKeys=Object.entries(ksc).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>{const [fifths,mode]=k.split('|');return{name:keyDisplayName(Number(fifths),mode),count:v}});
     const topTime=Object.entries(tsc).sort((a,b)=>b[1]-a[1]).slice(0,5);
     setComposerData({fileCount:targetFiles(files,activeFile,scope).length,totalNotes:tn,totalMeasures:tm,avgTempo:avgTm,
-      lowest:fmtNote(rMin<127?midiToNote(rMin):null),highest:fmtNote(rMax>0?midiToNote(rMax):null),
+      lowest:fmtNote(rMinN),highest:fmtNote(rMaxN),
       avgPhrase:avgPh,stepPct:(steps/move*100).toFixed(1),leapPct:(leaps/move*100).toFixed(1),repPct:(reps/move*100).toFixed(1),
       topKeys,topTime,intervals:allIv,progressions:topProg,phraseBuckets:pBk});
     hideProgress();
@@ -3069,11 +3092,12 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
     </div>
 
     {basicData && <div>
+      <p className="stats-caption">마디 {basicData.totalMeasures} · 파트 {basicData.totalParts}개 (마디는 첫 파트 기준, 음표·쉼표는 전체 파트 합계)</p>
       <div className="stats-row">
         <div className="stat-tile"><div className="stat-tile__value">{basicData.fileCount}</div><div className="stat-tile__label">파일 수</div></div>
-        <div className="stat-tile"><div className="stat-tile__value">{basicData.totalNotes}</div><div className="stat-tile__label">총 음표</div></div>
-        <div className="stat-tile"><div className="stat-tile__value">{basicData.totalRests}</div><div className="stat-tile__label">총 쉼표</div></div>
-        <div className="stat-tile"><div className="stat-tile__value">{basicData.totalMeasures}</div><div className="stat-tile__label">총 마디</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{basicData.totalNotes}</div><div className="stat-tile__label">음표 (전체 파트)</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{basicData.totalRests}</div><div className="stat-tile__label">쉼표 (전체 파트)</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{basicData.totalMeasures}</div><div className="stat-tile__label">마디</div></div>
         <div className="stat-tile"><div className="stat-tile__value">{basicData.lowest}</div><div className="stat-tile__label">최저음</div></div>
         <div className="stat-tile"><div className="stat-tile__value">{basicData.highest}</div><div className="stat-tile__label">최고음</div></div>
       </div>
@@ -3084,10 +3108,11 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
     </div>}
 
     {composerData && <div>
+      <h3 className="stats-heading">작곡 스타일 (첫 파트 선율 기준)</h3>
       <div className="stats-row">
         <div className="stat-tile"><div className="stat-tile__value">{composerData.fileCount}</div><div className="stat-tile__label">분석 곡 수</div></div>
-        <div className="stat-tile"><div className="stat-tile__value">{composerData.totalNotes}</div><div className="stat-tile__label">총 음표</div></div>
-        <div className="stat-tile"><div className="stat-tile__value">{composerData.totalMeasures}</div><div className="stat-tile__label">총 마디</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{composerData.totalNotes}</div><div className="stat-tile__label">음표 (첫 파트)</div></div>
+        <div className="stat-tile"><div className="stat-tile__value">{composerData.totalMeasures}</div><div className="stat-tile__label">마디</div></div>
         <div className="stat-tile"><div className="stat-tile__value">{composerData.avgTempo}</div><div className="stat-tile__label">평균 BPM</div></div>
         <div className="stat-tile"><div className="stat-tile__value">{composerData.lowest}–{composerData.highest}</div><div className="stat-tile__label">음역대</div></div>
         <div className="stat-tile"><div className="stat-tile__value">{composerData.avgPhrase}</div><div className="stat-tile__label">평균 프레이즈</div></div>

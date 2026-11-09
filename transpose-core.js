@@ -29,6 +29,34 @@
     return DEFAULT_FIFTHS[target];
   }
   function preferFlatForKey(fifths){return fifths<0;}
+  // 장조 으뜸음 철자 → 조표 fifths(C 0, G 1, F −1, F♯ 6, G♭ −6). −7~7 밖이면 null.
+  const STEP_FIFTHS={C:0,D:2,E:4,F:-1,G:1,A:3,B:5};
+  function tonicFifths({step,alter=0}={}){
+    if(!(step in STEP_FIFTHS))return null;
+    const value=STEP_FIFTHS[step]+7*(Number(alter)||0);
+    return value>=-7&&value<=7?value:null;
+  }
+  // 으뜸음과 mode로 조표를 구합니다(단조는 나란한조 장조보다 3칸 아래).
+  function keyFifthsForTonic(tonic,mode){
+    const major=tonicFifths(tonic);
+    if(major===null)return null;
+    const value=major-(mode==='minor'?3:0);
+    return value>=-7&&value<=7?value:null;
+  }
+  function validInterval(interval){
+    return interval&&Number.isFinite(Number(interval.diatonic))&&Number.isFinite(Number(interval.chromatic))
+      ?{diatonic:Number(interval.diatonic),chromatic:Number(interval.chromatic)}:null;
+  }
+  // key 요소의 number("1"·"2" …). 없으면 모든 보표에 적용되는 공통 조표입니다.
+  function keyNumberOf(key){const raw=key.getAttribute('number');return raw===null||raw.trim()===''?null:raw.trim();}
+  function staffOf(element){return Array.from(element.children).find(child=>child.localName==='staff')?.textContent.trim()||'1';}
+  // 보표별 조 상태: 그 보표 번호의 key → 1번 key → 공통 key 순서로 찾습니다.
+  function keyStateFor(states,staff){return states.byStaff.get(staff)??states.byStaff.get('1')??states.shared;}
+  function readKeyState(key,previous){
+    const fifthsEl=Array.from(key.children).find(child=>child.localName==='fifths');
+    const modeEl=Array.from(key.children).find(child=>child.localName==='mode');
+    return {fifths:fifthsEl?Number(fifthsEl.textContent)||0:previous.fifths,mode:modeEl?.textContent.trim()||previous.mode,fifthsEl};
+  }
   function keyTonic(fifths,mode='major'){
     const step=STEPS[mod(fifths*4+(mode==='minor'?5:0),7)];
     const pc=mod(fifths*7+(mode==='minor'?9:0),12);
@@ -121,11 +149,23 @@
     const from=Number(fromNumber),to=Number(toNumber);
     const result={notes:0,harmonies:0,keys:0,measures:0,insertedKey:false,startFifths:null,targetFifths:null};
     let shownFifths=0,shownMode='major',interval=null,mode='major',started=false;
+    // 1번이 아닌 보표의 조표(number="2" 등)도 옮깁니다. 시작 조와 같은 fifths면 같은 목표, 아니면 자기 fifths 기준
+    // keyFifthsAfter이고, 그 보표 음표의 철자도 그 조로 정합니다.
+    const staffKeys=new Map();
+    const otherKeysOf=measure=>Array.from(measure.querySelectorAll(':scope > attributes > key')).filter(key=>{const number=keyNumberOf(key);return number!==null&&number!=='1';});
+    const staffTarget=state=>result.targetFifths!==null&&state.fifths===result.startFifths?result.targetFifths:keyFifthsAfter(state.fifths,semitones,options.preferFlat);
+    const staffInterval=state=>keyInterval(state.fifths,staffTarget(state),semitones,state.mode);
     for(const measure of childElements(partEl,'measure')){
       const number=measureNumberOf(measure);
       if(Number.isFinite(number)&&number>to)break;
       const key=firstKeyOf(measure),keyFifths=key?.querySelector('fifths');
       const inRange=Number.isFinite(number)&&number>=from;
+      if(key&&keyNumberOf(key)===null)staffKeys.clear();
+      const others=otherKeysOf(measure).filter(other=>other!==key).map(other=>{
+        const staff=keyNumberOf(other),state=readKeyState(other,staffKeys.get(staff)||{fifths:shownFifths,mode:shownMode});
+        staffKeys.set(staff,{fifths:state.fifths,mode:state.mode});
+        return state;
+      });
       if(!inRange){
         if(keyFifths){shownFifths=Number(keyFifths.textContent)||0;shownMode=key.querySelector('mode')?.textContent||shownMode;}
         continue;
@@ -146,33 +186,55 @@
         interval=keyInterval(fifths,target,semitones,mode);
         keyFifths.textContent=String(target);result.keys++;
       }
+      for(const state of others)if(state.fifthsEl){state.fifthsEl.textContent=String(staffTarget(state));result.keys++;}
       if(!interval.diatonic&&!interval.chromatic)continue;
-      for(const note of measure.querySelectorAll('note'))if(transposeNoteElement(note,interval))result.notes++;
+      for(const note of measure.querySelectorAll('note')){
+        const staffState=staffKeys.get(staffOf(note));
+        if(transposeNoteElement(note,staffState?staffInterval(staffState):interval))result.notes++;
+      }
       result.harmonies+=transposeMeasureHarmonies(measure,semitones,{interval});
     }
     return result;
   }
+  // options.interval={diatonic,chromatic}: 모든 음표를 이 온음계 간격으로 옮깁니다(감5도 ↑는 C→G♭).
+  //   조표 목표는 옮긴 으뜸음의 조표, 그 조표가 −7~7 밖이면 keyFifthsAfter로 폴백합니다.
+  // options 없음: 음표 철자는 그 음표 보표의 조표(number=staff → 1번 → 공통) 기준 keyInterval입니다.
+  // 모든 attributes > key를 number별로 따로 갱신합니다(보표별 조표가 [2,0]으로 남던 C05).
+  // Sounding pitch = written pitch + instrument transpose. Shifting written notes by the same interval
+  // while preserving <transpose> preserves this relation; metadata is always preserved.
   function transposeDocument(xmlDoc,semitones,options={}){
     if(!Number.isInteger(semitones))throw new Error('반음 수는 정수여야 합니다.');
     const result={notes:0,harmonies:0,keys:0,parts:0};
+    const fixed=validInterval(options.interval);
     const originalFirstFifths=Number(xmlDoc.querySelector('key fifths')?.textContent||0);
+    const targetFor=({fifths,mode})=>{
+      if(fixed)return keyFifthsForTonic(transposePitch({...keyTonic(fifths,mode),octave:4},fixed),mode)??keyFifthsAfter(fifths,semitones,options.preferFlat);
+      return Number.isFinite(options.targetFifths)&&fifths===originalFirstFifths?Number(options.targetFifths):keyFifthsAfter(fifths,semitones,options.preferFlat);
+    };
+    const intervalFor=state=>fixed||keyInterval(state.fifths,targetFor(state),semitones,state.mode);
     for(const part of xmlDoc.querySelectorAll('score-partwise > part')){
       result.parts++;
-      let fifths=Number(part.querySelector('key fifths')?.textContent||0),mode=part.querySelector('key mode')?.textContent||'major';
+      const firstKey=part.querySelector('key');
+      const states={shared:{fifths:Number(firstKey?.querySelector('fifths')?.textContent||0),mode:firstKey?.querySelector('mode')?.textContent||'major'},byStaff:new Map()};
       for(const measure of part.querySelectorAll(':scope > measure')){
-        const key=measure.querySelector('attributes > key');
-        if(key){fifths=Number(key.querySelector('fifths')?.textContent||0);mode=key.querySelector('mode')?.textContent||mode;}
-        const target=Number.isFinite(options.targetFifths)&&fifths===originalFirstFifths?options.targetFifths:keyFifthsAfter(fifths,semitones,options.preferFlat);
-        const interval=keyInterval(fifths,target,semitones,mode);
-        for(const note of measure.querySelectorAll('note'))if(transposeNoteElement(note,interval))result.notes++;
-        result.harmonies+=transposeMeasureHarmonies(measure,semitones,{interval});
-        if(key?.querySelector('fifths')){key.querySelector('fifths').textContent=String(target);result.keys++;}
-        // Sounding pitch = written pitch + instrument transpose. Shifting written notes
-        // by the same interval while preserving <transpose> preserves this relation.
-        // respectInstrumentTranspose defaults true; metadata is always preserved.
+        for(const child of Array.from(measure.children)){
+          if(child.localName==='attributes'){
+            for(const key of childElements(child,'key')){
+              const number=keyNumberOf(key);
+              const state=readKeyState(key,number===null?states.shared:(states.byStaff.get(number)||states.shared));
+              const clean={fifths:state.fifths,mode:state.mode};
+              if(number===null){states.shared=clean;states.byStaff.clear();}else states.byStaff.set(number,clean);
+              if(state.fifthsEl){state.fifthsEl.textContent=String(targetFor(clean));result.keys++;}
+            }
+          }else if(child.localName==='note'){
+            if(transposeNoteElement(child,intervalFor(keyStateFor(states,staffOf(child)))))result.notes++;
+          }else if(child.localName==='harmony'){
+            if(transposeHarmony(child,semitones,{interval:intervalFor(keyStateFor(states,staffOf(child)))}))result.harmonies++;
+          }
+        }
       }
     }
     return result;
   }
-  global.TransposeCore={transposeHarmony,transposeMeasureHarmonies,transposeDocHarmonies,transposeMeasureRange,intervalFromSemitones,transposePitch,keyFifthsAfter,preferFlatForKey,keyTonic,keyInterval,transposePartRange,transposeDocument};
+  global.TransposeCore={transposeHarmony,transposeMeasureHarmonies,transposeDocHarmonies,transposeMeasureRange,intervalFromSemitones,transposePitch,keyFifthsAfter,preferFlatForKey,keyTonic,keyInterval,transposePartRange,transposeDocument,tonicFifths,keyFifthsForTonic};
 })(window);

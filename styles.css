@@ -1539,6 +1539,19 @@ body {
   margin: 10px 0;
 }
 
+/* 통계: 집계 기준 안내(마디는 첫 파트, 음표는 전체 파트)와 작곡 스타일 제목 */
+.stats-caption {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.stats-heading {
+  margin: 14px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
 .stat-tile {
   background: var(--bg-grouped);
   border-radius: var(--radius-md);
