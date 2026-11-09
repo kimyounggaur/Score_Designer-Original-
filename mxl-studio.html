@@ -32,17 +32,17 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script crossorigin="anonymous" integrity="sha384-ku9eM40vVDsFUiERorrdlHlF0LIhdfn716M7TntM72Uo98T7LWiogD3hNenPx8Q0" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script crossorigin="anonymous" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script crossorigin="anonymous" integrity="sha384-fg0GMOE+ryaeFG8a+kaykJwFk/KI5rLyPkxfxxHjlfBbC8HkEuNcl44thRQD6MzE" src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
-<script src="chord-tools-core.js"></script>
+<script src="chord-tools-core.js?v=2"></script>
 <script src="chord-symbol-core.js?v=1"></script>
 <script src="history-core.js?v=2"></script>
 <script src="transpose-core.js?v=2"></script>
 <script src="pitch-core.js?v=1"></script>
 <script src="measure-core.js?v=1"></script>
 <script src="numbering-core.js?v=1"></script>
-<script src="playback-core.js?v=1"></script>
-<script src="roman-analysis-core.js"></script>
+<script src="playback-core.js?v=2"></script>
+<script src="roman-analysis-core.js?v=2"></script>
 <script src="share-session-core.js?v=1"></script>
-<script src="session-store-core.js?v=1"></script>
+<script src="session-store-core.js?v=2"></script>
 </head>
 <body>
 <div id="root"><div id="boot" class="boot" role="status">
@@ -60,7 +60,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
   ================================================================
 -->
 <script type="text/babel" data-presets="react">
-const missingLibraries=['React','ReactDOM','opensheetmusicdisplay','JSZip','HistoryCore','PitchCore','MeasureCore','NumberingCore'].filter(name=>!window[name]);
+const missingLibraries=['React','ReactDOM','opensheetmusicdisplay','JSZip','HistoryCore','PitchCore','MeasureCore','NumberingCore','ChordToolsCore','RomanAnalysis'].filter(name=>!window[name]);
 if(missingLibraries.length){
   document.getElementById('boot-status').textContent='필수 라이브러리('+missingLibraries.join(', ')+')를 불러오지 못했습니다. 네트워크를 확인하고 새로고침하세요.';
   throw new Error('필수 라이브러리 로드 실패: '+missingLibraries.join(', '));
@@ -456,23 +456,20 @@ function formatSeconds(sec){
   return `${m}:${String(s%60).padStart(2,'0')}`;
 }
 
-function detectChord(semiArr){
-  if(!semiArr.length)return null;
-  const u=[...new Set(semiArr.map(n=>n%12))].sort((a,b)=>a-b);
-  if(u.length<2)return SEMI_TO_STEP[u[0]].step;
-  let best=null,bestS=-1;
-  for(const root of u){
-    const iv=u.map(n=>(n-root+12)%12);const h=s=>iv.includes(s);
-    let q='',sc=0;
-    if(h(4)&&h(7)){q='';sc=3;if(h(11)){q='maj7';sc=4}else if(h(10)){q='7';sc=4}}
-    else if(h(3)&&h(7)){q='m';sc=3;if(h(10)){q='m7';sc=4}}
-    else if(h(3)&&h(6)){q='dim';sc=2;if(h(10)){q='m7♭5';sc=3}}
-    else if(h(4)&&h(8)){q='aug';sc=2}
-    else if(h(5)&&h(7)){q='sus4';sc=2}
-    else if(h(7)){q='5';sc=1}
-    if(sc>bestS){bestS=sc;const rn=SEMI_TO_STEP[root];best=rn.step+(rn.alter===1?'#':rn.alter===-1?'♭':'')+q}
+// RomanAnalysis.analyzeVerticalities 행(박 단위)을 마디별로 묶습니다. 같은 번호가 반복돼도 마디 순서(measureIndex)로 나눕니다.
+function groupVerticalities(rows){
+  const groups=[];
+  for(const row of rows||[]){
+    const last=groups[groups.length-1];
+    if(last&&last.measureIndex===row.measureIndex)last.beats.push(row);
+    else groups.push({measure:row.measure,measureIndex:row.measureIndex,beats:[row]});
   }
-  return best||'?';
+  return groups;
+}
+// 코드를 확정하지 않은 박의 이유(C02): 음이 3개 미만이거나 화음 패턴에 맞지 않음.
+function unsettledChordReason(row){
+  const count=row?.pitchClasses?.length||0;
+  return count<3?`음이 ${count}개라`:'화음 패턴에 맞지 않아';
 }
 
 const parseChordSymbol=text=>window.ChordSymbolCore.parse(text);
@@ -2418,24 +2415,24 @@ function ChordToolsPanel({files,activeFile=0,scope='all',showProgress,hideProgre
     try{
       const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
       for(const {file} of targetFiles(files,activeFile,scope)){
-        const doc=cloneDoc(file.xmlDoc);let ins=0;
+        const doc=cloneDoc(file.xmlDoc);let ins=0;const unsettled=[];
         if(replaceExisting)window.ChordToolsCore.preserveNoChordHarmonies(doc);
-        const parts=doc.querySelectorAll('part');
-        const mc=parts[0]?.querySelectorAll('measure')?.length||0;
-        for(let m=0;m<mc;m++){
-          const ns=[];
-          parts.forEach(part=>{const meas=part.querySelectorAll('measure')[m];if(!meas)return;
-            meas.querySelectorAll('note').forEach(note=>{if(note.querySelector('rest'))return;
-              const p=getNotePitch(note);if(!p)return;ns.push(noteToMidi(p.step,p.alter,p.octave)%12)})});
-          const chord=detectChord(ns);if(!chord||chord==='?')continue;
-          const meas=parts[0].querySelectorAll('measure')[m];if(!meas)continue;
+        // 박 단위 수직 분석에서 마디마다 첫 박의 확정 코드만 넣습니다(마디당 1개).
+        // 분석 행의 measureIndex로 같은 문서의 마디를 찾으므로 못갖춘마디·반복 번호도 어긋나지 않습니다.
+        const measures=xmlChildren(window.MeasureCore.firstPart(doc),'measure');
+        for(const {measure:number,measureIndex,beats} of groupVerticalities(window.RomanAnalysis.analyzeVerticalities(doc))){
+          const first=beats[0];
+          if(!first.chord){unsettled.push(`⚠ 마디 ${number}: ${unsettledChordReason(first)} 코드를 확정하지 않았습니다`);continue;}
+          const meas=measures[measureIndex];if(!meas)continue;
           if(window.ChordToolsCore.measureHasNoChordHarmony(meas))continue;
           if(!replaceExisting&&meas.querySelector('harmony'))continue;
-          const parsed=parseChordSymbol(chord);if(!parsed)continue;
+          const parsed=parseChordSymbol(first.chord.symbol);if(!parsed)continue;
           const harm=doc.createElement('harmony');ChordSymbolCore.apply(harm,parsed);
-          const fn=meas.querySelector('note');if(fn)meas.insertBefore(harm,fn);else meas.appendChild(harm);ins++;
+          const fn=xmlChild(meas,'note');if(fn)meas.insertBefore(harm,fn);else meas.appendChild(harm);ins++;
         }
         updatedFiles.push(commitFile(file,doc));
+        unsettled.slice(0,10).forEach(m=>lines.push({m,t:'warn'}));
+        if(unsettled.length>10)lines.push({m:`⚠ … 그 밖에 ${unsettled.length-10}마디도 코드를 확정하지 않았습니다`,t:'warn'});
         lines.push({m:`✓ ${file.name}: ${ins}마디 코드 삽입`,t:'ok'});
       }
       onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('코드 분석 및 삽입',files,scope));
@@ -2512,7 +2509,7 @@ function ChordToolsPanel({files,activeFile=0,scope='all',showProgress,hideProgre
       <div className="btn-row"><button className="btn btn--primary" onClick={runReplace}>▶ 코드 일괄 변경</button></div>
     </div>
     <div className="card"><div className="card__title">🎸 코드 자동 분석 & 삽입</div>
-      <div className="card__text">수직적 음표를 마디 단위로 분석하여 코드를 악보 상단에 자동 삽입합니다.</div>
+      <div className="card__text">마디마다 첫 박에 함께 울리는 음으로 코드를 판정해 악보 위에 넣습니다(마디당 1개). 음이 3개 미만이거나 화음 패턴에 맞지 않는 마디는 건너뛰고 로그에 이유를 남깁니다.</div>
       <div className="chip-group"><Chip on={replaceExisting} onClick={()=>setReplaceExisting(!replaceExisting)}>기존 코드 덮어쓰기</Chip></div>
       <div className="btn-row"><button className="btn btn--primary" onClick={runAutoInsert}>▶ 코드 분석 & 삽입</button></div>
     </div>
@@ -2805,20 +2802,20 @@ function ChordsPanel({files,activeFile=0,scope='all',showProgress,hideProgress})
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('코드 분석 중...');await new Promise(r=>setTimeout(r,50));
     const lines=[scopeLogLine(files,activeFile,scope)];
-    for(const {file} of targetFiles(files,activeFile,scope)){
-      lines.push({m:`── ${file.name} ──`,t:'info'});
-      const parts=file.xmlDoc.querySelectorAll('part');
-      const mc=parts[0]?.querySelectorAll('measure')?.length||0;
-      for(let m=0;m<mc;m++){
-        const ns=[];
-        parts.forEach(part=>{const meas=part.querySelectorAll('measure')[m];if(!meas)return;
-          meas.querySelectorAll('note').forEach(note=>{if(note.querySelector('rest'))return;
-            const p=getNotePitch(note);if(!p)return;ns.push(noteToMidi(p.step,p.alter,p.octave)%12)})});
-        const chord=detectChord(ns);
-        if(chord)lines.push({m:`  마디 ${m+1}: ${chord}`});
+    try{
+      for(const {file} of targetFiles(files,activeFile,scope)){
+        lines.push({m:`── ${file.name} ──`,t:'info'});
+        // 박(onset)마다 함께 울리는 음으로 판정하고, 마디는 number 속성으로 적습니다(C15·C18).
+        const rows=window.RomanAnalysis.analyzeVerticalities(file.xmlDoc);
+        if(!rows.length){lines.push({m:'  (음표 없음)',t:'warn'});continue;}
+        for(const {measure,beats} of groupVerticalities(rows))
+          lines.push({m:`  마디 ${measure}: ${beats.map(row=>`${row.beat}박 ${row.chord?.symbol||'?'}`).join(' · ')}`});
+        const settled=rows.filter(row=>row.chord).length;
+        lines.push({m:`  박 ${rows.length}개 중 ${settled}개 코드 확정 (?: 음이 3개 미만이거나 화음 패턴에 맞지 않음)`,t:settled?'ok':'warn'});
       }
-    }
-    lines.push({m:'✅ 분석 완료',t:'ok'});setLog(lines);hideProgress();
+      lines.push({m:'✅ 분석 완료',t:'ok'});
+    }catch(e){lines.push({m:'❌ '+e.message,t:'err'});}
+    setLog(lines);hideProgress();
   },[files,activeFile,scope,showProgress,hideProgress]);
 
   const runIdentify=useCallback(async()=>{
@@ -2838,7 +2835,7 @@ function ChordsPanel({files,activeFile=0,scope='all',showProgress,hideProgress})
             seen.push(cs);tally[cs]=(tally[cs]||0)+1;grandTally[cs]=(grandTally[cs]||0)+1;count++;grandTotal++;
           });
         });
-        if(seen.length)lines.push({m:`  마디 ${m+1}: ${seen.join(', ')}`});
+        if(seen.length){const number=window.MeasureCore.measureNumber(parts[0].querySelectorAll('measure')[m]);lines.push({m:`  마디 ${Number.isFinite(number)?number:m+1}: ${seen.join(', ')}`});}
       }
       if(!count){lines.push({m:'  (코드 기호 없음)',t:'warn'});continue}
       const sorted=Object.entries(tally).sort((a,b)=>b[1]-a[1]);
@@ -2854,7 +2851,7 @@ function ChordsPanel({files,activeFile=0,scope='all',showProgress,hideProgress})
 
   return <div>
     <h2 className="panel__heading">코드 분석</h2>
-    <p className="panel__description">악보에 존재하는 코드 기호(harmony)를 파악하거나, 수직 음향을 분석해 마디별 코드를 추출합니다.</p>
+    <p className="panel__description">악보에 있는 코드 기호(harmony)를 파악하거나, 박마다 함께 울리는 음을 분석해 코드를 찾습니다. 음이 3개 이상이거나 완전5도 두 음일 때만 확정하고 나머지는 ?로 표시합니다.</p>
     <div className="btn-row">
       <button className="btn btn--primary" onClick={runIdentify}>🔖 코드 기호 파악</button>
       <button className="btn btn--secondary" onClick={run}>▶ 수직 음향 분석</button>
@@ -2931,7 +2928,7 @@ function RomanAnalysisPanel({files,activeFile=0,scope='all',showProgress,hidePro
 
   return <div>
     <h2 className="panel__heading">로마 숫자 분석</h2>
-    <p className="panel__description">첫 조표를 기준으로 마디별 수직 음향을 로마 숫자 화성으로 해석하고 종지를 요약합니다.</p>
+    <p className="panel__description">마디별 수직 음향을 로마 숫자 화성으로 해석하고 종지를 요약합니다. 음이 3개 이상 겹치는 박만 화음으로 확정합니다.</p>
     <div className="btn-row">
       <button className="btn btn--primary" onClick={runAnalysis} disabled={!files.length}>
         {keyInfo?`${keyInfo.mode==='minor'?keyInfo.keyName.toLowerCase():keyInfo.keyName}${keyInfo.mode==='minor'?'단조':'장조'} 분석 시작`:'로마 숫자 분석 시작'}
@@ -3023,13 +3020,14 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
       const ks=doc.querySelector('key fifths');if(ks){const k=ks.textContent;ksc[k]=(ksc[k]||0)+1}
       const ts=doc.querySelector('time');if(ts){const sig=(ts.querySelector('beats')?.textContent||'?')+'/'+(ts.querySelector('beat-type')?.textContent||'?');tsc[sig]=(tsc[sig]||0)+1}
       const snd=doc.querySelector('sound[tempo]');if(snd)tempos.push(parseFloat(snd.getAttribute('tempo')));
-      let prevChord=null,pLen=0;
+      let prevChord=null,pLen=0,fifths=0;
       measures.forEach(measure=>{const ns=[];
+        for(const attributes of xmlChildren(measure,'attributes')){const keys=xmlChildren(attributes,'key');const key=keys.find(k=>!k.hasAttribute('number')||k.getAttribute('number')==='1')||keys[0];const value=xmlChild(key,'fifths');if(value)fifths=parseInt(value.textContent,10)||0;}
         measure.querySelectorAll('note').forEach(note=>{if(note.querySelector('rest')){if(pLen>0){phrases.push(pLen);pLen=0}return}
           tn++;pLen++;const p=getNotePitch(note);if(!p)return;
           const midi=noteToMidi(p.step,p.alter,p.octave);if(midi<rMin)rMin=midi;if(midi>rMax)rMax=midi;
           ns.push(midi%12)});
-        const chord=detectChord(ns);if(chord&&prevChord){const pr=prevChord+' → '+chord;allProg[pr]=(allProg[pr]||0)+1}if(chord)prevChord=chord;
+        const chord=window.ChordToolsCore.detectChordFromPitchClasses(ns,{fifths})?.symbol;if(chord&&prevChord){const pr=prevChord+' → '+chord;allProg[pr]=(allProg[pr]||0)+1}if(chord)prevChord=chord;
       });if(pLen>0)phrases.push(pLen);
       let pm=null;doc.querySelectorAll('part:first-of-type note').forEach(note=>{
         if(note.querySelector('rest')||note.querySelector('chord'))return;

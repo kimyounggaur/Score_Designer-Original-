@@ -322,3 +322,13 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 설명서: 자동저장 실패 안내·JSON 내보내기·구세션 이전 보호.
 - 검증: 단위 162, 12-session-modal 10(chromium·mobile), 22·05·axe 8, 스모크 7 통과.
 
+## 2026-11-10 · A2-7
+- chord-tools-core: `detectChordFromPitchClasses(pcs,{fifths,bass})`, `spellPitchClass(pc,fifths)`, `chordSymbolText({root,quality})`, `CHORD_PATTERNS`를 추가했습니다. 1음·완전5도가 아닌 2음은 null, 완전5도 2음은 `5`(근음은 위로 완전5도가 되는 음), 3음 이상은 패턴의 모든 음이 들어 있는 후보만 고르고 (음 수 많은 것 → 베이스가 근음 → 입력 첫 음이 근음 → 근음 pc 작은 것 → 패턴 순서)로 고릅니다. 품질 이름은 설계표대로 `M`이고 기호 접미사는 기존 출력과 같습니다(M→''). 철자는 PitchCore.keySignatureAlter로 조표 안의 음을 고르고, 아니면 fifths<0이면 ♭입니다. ChordSymbolCore가 모든 기호를 다시 읽는 왕복 테스트를 넣었습니다.
+- roman-analysis-core: `identifyChord(set,{bass})`는 3음 미만이면 `{rootSemi:null,quality:'unknown',chordName:'C(단음)'|'C·G'}`, 정확 일치가 없으면 모든 패턴 음 포함 후보만(없으면 `C?`, rootSemi null). 점수 폴백(`scorePattern`)은 지웠습니다. `romanForChord`는 unknown·rootSemi null이면 '?'(설계 2.2의 A2-8 항목이지만 rootSemi null 때문에 지금 넣음). `analyzeVerticalities(doc,{fifthsByMeasure})`는 `collectMeasureBeats`를 그대로 쓰고 행에 measure(number)·measureIndex·beat·start·fifths·bass·pitchClasses·chord를 담습니다. fifths는 옵션이 없으면 첫 파트 조표를 문서 순서로 따라가며, 단위 테스트로 `MeasureCore.keyFifthsAt`과 같음을 확인했습니다. 그래서 패널은 맵을 따로 만들지 않습니다.
+- 앱: `detectChord` 삭제(SEMI_TO_STEP은 midiToNote 등에서 계속 사용). 수직 음향 분석은 `마디 {number}: {박}박 {코드|?} · …`와 파일별 `박 N개 중 M개 코드 확정` 요약(프롬프트 형식에 '박' 글자를 더함). 코드 분석 & 삽입은 마디마다 첫 박의 확정 코드만 넣고, 미확정은 `⚠ 마디 {number}: 음이 {n}개라|화음 패턴에 맞지 않아 코드를 확정하지 않았습니다`(파일당 10줄까지, 나머지는 개수). 마디 찾기는 프롬프트의 `measuresByNumber` 대신 분석 행의 `measureIndex`로 같은 문서의 마디를 찾습니다(같은 번호가 반복돼도 정확). 통계 진행 요약은 마디 조표로 판정하고 null은 건너뜁니다. 코드 기호 파악의 마디 표기도 number로 바꿨습니다. 로마 숫자·코드 분석·코드 도구 설명 문구를 갱신했습니다.
+- 캐시: 내용이 바뀐 코어 스크립트 쿼리를 올렸습니다(chord-tools ?v=2, roman ?v=2, playback ?v=2(A2-5), session-store ?v=2(A2-6)). ChordToolsCore·RomanAnalysis를 필수 라이브러리 목록에 넣었습니다(NumberingCore와 같은 방식).
+- 바뀐 기대값: 24 B01은 f02 대신 f04를 두 번째 파일로 씁니다. f02는 박마다 옥타브 유니슨이라 이제 로마 숫자가 '?'이고 삽입할 것이 없습니다(의도된 변경, 4.2 함정 표).
+- 테스트: 단위 chord-tools +7(프롬프트 13케이스 포함, 동점 규칙, PitchCore 없을 때, ChordSymbolCore 왕복), roman +4(단음·2음·클러스터 unknown, 유니슨 박 '?', f12 박 3개·f03 첫 행 0·f04 Am Dm E7 Am, 마디별 조표 철자 G#/A♭와 keyFifthsAt 일치). E2E 18-chords +3(f03 마디 0, f02 '?'·삽입 0 = 확정 마디 수, f04 덮어쓰기 삽입 Am Dm E7 Am).
+- 설명서: 코드 분석·코드 도구·로마 숫자 분석 행.
+- 검증: 단위 173, 15·18·19·20·24·23·20-lazy·07·01 스펙, 스모크 7 통과. `grep -n "function detectChord" mxl-studio.html` 0건.
+

@@ -62,14 +62,15 @@
     return a.every((value,index)=>value===b[index]);
   }
 
-  function scorePattern(intervals,pattern){
-    return intervals.filter(interval=>pattern.intervals.includes(interval)).length;
-  }
-
-  function identifyChord(pitchClassSet){
-    const pitchClasses=[...pitchClassSet].map(normSemi).sort((a,b)=>a-b);
+  // 음이 3개 미만이면 화음으로 확정하지 않습니다(단음·유니슨이 C°7이 되던 C01).
+  // 정확히 일치하는 패턴이 없으면 "패턴의 모든 음이 들어 있는" 후보만 고르고, 없으면 unknown입니다.
+  function identifyChord(pitchClassSet,{bass=null}={}){
+    const pitchClasses=[...new Set([...pitchClassSet].map(normSemi))].sort((a,b)=>a-b);
     if(!pitchClasses.length)return null;
-    let bestFallback={root:pitchClasses[0], quality:'unknown', score:-1, suffix:'', patternSize:0};
+    if(pitchClasses.length<3){
+      const chordName=pitchClasses.length===1?PC_NAMES[pitchClasses[0]]+'(단음)':pitchClasses.map(pc=>PC_NAMES[pc]).join('·');
+      return {rootSemi:null,quality:'unknown',suffix:'',chordName,pitchClasses};
+    }
     for(let root=0;root<12;root++){
       const intervals=pitchClasses.map(pc=>normSemi(pc-root)).sort((a,b)=>a-b);
       const exact=QUALITY_PATTERNS.find(pattern=>sameSet(intervals,pattern.intervals));
@@ -82,29 +83,36 @@
           pitchClasses,
         };
       }
-      QUALITY_PATTERNS.forEach(pattern=>{
-        const score=scorePattern(intervals,pattern);
-        const rootBonus=pitchClassSet.has(root)?0.25:0;
-        const total=score+rootBonus;
-        if(
-          total>bestFallback.score||
-          (total===bestFallback.score&&pattern.intervals.length>bestFallback.patternSize)
-        ){
-          bestFallback={root, quality:pattern.quality, score:total, suffix:pattern.suffix, patternSize:pattern.intervals.length};
-        }
+    }
+    const bassPc=bass===null||bass===undefined||!Number.isFinite(Number(bass))?null:normSemi(bass);
+    const candidates=[];
+    pitchClasses.forEach(root=>{
+      const intervals=new Set(pitchClasses.map(pc=>normSemi(pc-root)));
+      QUALITY_PATTERNS.forEach((pattern,patternIndex)=>{
+        if(pattern.intervals.every(interval=>intervals.has(interval)))candidates.push({root,pattern,patternIndex});
       });
+    });
+    candidates.sort((x,y)=>
+      y.pattern.intervals.length-x.pattern.intervals.length||
+      Number(y.root===bassPc)-Number(x.root===bassPc)||
+      x.root-y.root||
+      x.patternIndex-y.patternIndex);
+    const best=candidates[0];
+    if(!best){
+      const root=bassPc??pitchClasses[0];
+      return {rootSemi:null,quality:'unknown',suffix:'',chordName:PC_NAMES[root]+'?',pitchClasses};
     }
     return {
-      rootSemi:bestFallback.root,
-      quality:bestFallback.quality,
-      suffix:bestFallback.suffix,
-      chordName:PC_NAMES[bestFallback.root]+(bestFallback.quality==='unknown'?'?':bestFallback.suffix),
+      rootSemi:best.root,
+      quality:best.pattern.quality,
+      suffix:best.pattern.suffix,
+      chordName:PC_NAMES[best.root]+best.pattern.suffix,
       pitchClasses,
     };
   }
 
   function romanForChord(chord,tonicSemi,mode='major',bass){
-    if(!chord)return {roman:'?',rootRoman:'?',degree:null,inversion:0};
+    if(!chord||chord.quality==='unknown'||chord.rootSemi===null||chord.rootSemi===undefined)return {roman:'?',rootRoman:'?',degree:null,inversion:0};
     const relative=normSemi(chord.rootSemi-tonicSemi);
     let degreeIndex=(mode==='minor'?DIATONIC_SCALES_MINOR.natural:DIATONIC_SCALES[0]).indexOf(relative);
     if(mode==='minor'&&relative===11)degreeIndex=6;
@@ -195,7 +203,7 @@
     for(let i=0;i<firstMeasures.length;i++){
       const number=measureNumber(firstMeasures[i],i);
       collectMeasureBeats(parts,i).forEach(beatInfo=>{
-        const chord=identifyChord(beatInfo.pitchClasses);
+        const chord=identifyChord(beatInfo.pitchClasses,{bass:beatInfo.bass});
         const roman=romanForChord(chord,key.tonicSemi,key.mode,beatInfo.bass);
         rows.push({
           measure:number,
@@ -234,6 +242,50 @@
       cadenceCounts,
       progressions:summarizeProgressions(rows),
     };
+  }
+
+  // 첫 파트 조표(number 없는 key 또는 number="1")를 문서 순서로 따라가 마디 번호별 fifths를 돌려줍니다.
+  // MeasureCore.keyFifthsAt(첫 파트, 번호)와 같은 값입니다(번호가 숫자인 마디 기준).
+  function primaryKeyOf(attributes){
+    const keys=xmlChildren(attributes,'key');
+    return keys.find(key=>!key.hasAttribute('number')||key.getAttribute('number')==='1')||keys[0]||null;
+  }
+  function trackFifths(measures){
+    let fifths=0;
+    return measures.map(measure=>{
+      for(const attributes of xmlChildren(measure,'attributes')){
+        const key=primaryKeyOf(attributes),value=xmlChild(key,'fifths');
+        if(value)fifths=parseInt(value.textContent.trim(),10)||0;
+      }
+      return fifths;
+    });
+  }
+
+  // 박(onset)마다 함께 울리는 음으로 코드를 판정합니다(D10). 코드 판정은 ChordToolsCore를 씁니다.
+  // fifthsByMeasure: 마디 번호 → fifths(Map·객체·함수). 없으면 첫 파트 조표를 따라갑니다.
+  function analyzeVerticalities(xmlDoc,{fifthsByMeasure}={}){
+    const parts=getPlayablePartElements(xmlDoc);
+    const measures=xmlChildren(parts[0],'measure');
+    const tracked=trackFifths(measures);
+    const detect=global.ChordToolsCore?.detectChordFromPitchClasses;
+    const lookup=number=>{
+      if(!fifthsByMeasure)return undefined;
+      if(fifthsByMeasure instanceof Map)return fifthsByMeasure.get(number);
+      if(typeof fifthsByMeasure==='function')return fifthsByMeasure(number);
+      return fifthsByMeasure[number];
+    };
+    const rows=[];
+    measures.forEach((measure,index)=>{
+      const number=measureNumber(measure,index);
+      const given=lookup(number);
+      const fifths=given!==null&&given!==undefined&&Number.isFinite(Number(given))?Number(given):tracked[index];
+      collectMeasureBeats(parts,index).forEach(beatInfo=>{
+        const pitchClasses=[...beatInfo.pitchClasses];
+        const chord=typeof detect==='function'?detect(pitchClasses,{fifths,bass:beatInfo.bass}):null;
+        rows.push({measure:number,measureIndex:index,beat:beatInfo.beat,start:beatInfo.start,fifths,bass:beatInfo.bass,pitchClasses,chord});
+      });
+    });
+    return rows;
   }
 
   function insertRomanNumerals(xmlDoc,rows){
@@ -277,6 +329,7 @@
     getKeyInfo,
     identifyChord,
     collectMeasureBeats,
+    analyzeVerticalities,
     DIATONIC_SCALES_MINOR,
   };
 })(window);

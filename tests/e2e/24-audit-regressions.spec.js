@@ -27,9 +27,10 @@ const fileSummary = (page, index) => page.evaluate((i) => {
 }, index);
 
 // B01: 현재 파일 범위에서 두 번째 파일에 로마 숫자를 삽입하면 첫 파일 내용으로 덮어쓰던 회귀(Phase A A-8).
+// 두 번째 파일은 화음이 확정되는 f04를 씁니다(A2-7부터 f02의 옥타브 유니슨 박은 화음이 아니라 삽입할 로마 숫자가 없음).
 test('@panels B01 roman insert with active scope keeps the other file', async ({ page }) => {
   await openApp(page);
-  await uploadMany(page, ['f01-basic.musicxml', 'f02-two-parts.musicxml']);
+  await uploadMany(page, ['f01-basic.musicxml', 'f04-minor-harmony.musicxml']);
   await page.evaluate(() => window.__mxlSetActiveFile(1));
   const before0 = await fileSummary(page, 0);
   const panel = await openPanel(page, 'roman');
@@ -37,15 +38,15 @@ test('@panels B01 roman insert with active scope keeps the other file', async ({
   await panel.getByRole('button', { name: '악보에 삽입', exact: true }).click();
   await expect(panel.locator('.result-log')).toContainText('적용 완료');
   const names = await page.evaluate(() => window.__mxlGetState().files.map((file) => file.name));
-  expect(names).toEqual(['f01-basic.musicxml', 'f02-two-parts.musicxml']);
+  expect(names).toEqual(['f01-basic.musicxml', 'f04-minor-harmony.musicxml']);
   const after1 = await fileSummary(page, 1);
-  expect(after1.parts).toBe(2);
-  expect(after1.notes).toBe(32);
-  expect(after1.romans).toBeGreaterThan(0);
+  expect(after1.parts).toBe(1);
+  expect(after1.notes).toBe(13);
+  expect(after1.romans).toBe(4);
   const after0 = await fileSummary(page, 0);
   expect(after0.xml).toBe(before0.xml);
   expect(after0.romans).toBe(0);
-  await expect(panel.locator('.result-log')).toContainText('f02-two-parts.musicxml');
+  await expect(panel.locator('.result-log')).toContainText('f04-minor-harmony.musicxml');
   await expect(page.locator('.score-error')).toHaveCount(0);
 });
 

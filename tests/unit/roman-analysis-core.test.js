@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import '../../pitch-core.js';
+import '../../measure-core.js';
+import '../../chord-tools-core.js';
 import '../../roman-analysis-core.js';
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
@@ -100,3 +103,39 @@ describe('minor keys, inversions and secondary dominants',()=>{
     const ending=window.RomanAnalysis.detectRomanNumeral(score([tonic,dominant]));expect(ending.cadenceCounts['반종지 (HC)']).toBe(1);
   });
 });
+
+describe('chord identification needs three pitch classes (C01, C15, C18)',()=>{
+  const fixture=name=>new DOMParser().parseFromString(readFileSync(path.resolve('tests/fixtures',name),'utf8'),'text/xml');
+  it('keeps single notes and dyads unknown instead of forcing a seventh chord',()=>{
+    expect(window.RomanAnalysis.identifyChord(new Set([0]))).toEqual(expect.objectContaining({quality:'unknown',rootSemi:null,chordName:'C(단음)'}));
+    expect(window.RomanAnalysis.identifyChord(new Set([0,7]))).toEqual(expect.objectContaining({quality:'unknown',rootSemi:null,chordName:'C·G'}));
+    expect(window.RomanAnalysis.identifyChord(new Set([0,4,7])).chordName).toBe('C');
+    expect(window.RomanAnalysis.identifyChord(new Set([0,1,2]))).toEqual(expect.objectContaining({quality:'unknown',rootSemi:null,chordName:'C?'}));
+    expect(window.RomanAnalysis.identifyChord(new Set([0,2,4,7]),{bass:0})).toEqual(expect.objectContaining({quality:'M',rootSemi:0}));
+  });
+  it('turns a unison beat into ? rather than a chord in roman analysis',()=>{
+    const doc=new DOMParser().parseFromString('<score-partwise><part id="P1"><measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key></attributes><note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note><note><chord/><pitch><step>C</step><octave>5</octave></pitch><duration>4</duration></note></measure></part></score-partwise>','text/xml');
+    const row=window.RomanAnalysis.detectRomanNumeral(doc).rows[0];
+    expect(row.roman).toBe('?');expect(row.degree).toBeNull();expect(row.chordName).toBe('C(단음)');
+  });
+  it('analyzes verticalities per onset with printed measure numbers',()=>{
+    const piano=window.RomanAnalysis.analyzeVerticalities(fixture('f12-piano-voices.musicxml')).filter(row=>row.measure===1);
+    expect(piano.map(row=>row.beat)).toEqual(['1','2','3']);
+    expect(piano.map(row=>row.pitchClasses.length)).toEqual([2,2,2]);
+    expect(piano.map(row=>row.chord?.symbol??null)).toEqual([null,null,'C5']);
+    const pickup=window.RomanAnalysis.analyzeVerticalities(fixture('f03-pickup.musicxml'));
+    expect(pickup[0]).toEqual(expect.objectContaining({measure:0,beat:'1',chord:null}));
+    const minor=window.RomanAnalysis.analyzeVerticalities(fixture('f04-minor-harmony.musicxml'));
+    expect(minor.map(row=>row.chord?.symbol)).toEqual(['Am','Dm','E7','Am']);
+  });
+  it('spells chords with each measure key, matching MeasureCore.keyFifthsAt',()=>{
+    const doc=fixture('f10-keychange-clef.musicxml');
+    const rows=window.RomanAnalysis.analyzeVerticalities(doc);
+    const part=window.MeasureCore.firstPart(doc);
+    for(const row of rows)expect(row.fifths).toBe(window.MeasureCore.keyFifthsAt(part,row.measure));
+    const flats=new DOMParser().parseFromString('<score-partwise><part id="P1"><measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key></attributes><note><pitch><step>G</step><alter>1</alter><octave>3</octave></pitch><duration>4</duration></note><note><chord/><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note><note><chord/><pitch><step>D</step><alter>1</alter><octave>4</octave></pitch><duration>4</duration></note></measure><measure number="2"><attributes><key><fifths>-4</fifths></key></attributes><note><pitch><step>A</step><alter>-1</alter><octave>3</octave></pitch><duration>4</duration></note><note><chord/><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note><note><chord/><pitch><step>E</step><alter>-1</alter><octave>4</octave></pitch><duration>4</duration></note></measure></part></score-partwise>','text/xml');
+    expect(window.RomanAnalysis.analyzeVerticalities(flats).map(row=>row.chord.symbol)).toEqual(['G#','A♭']);
+    expect(window.RomanAnalysis.analyzeVerticalities(flats,{fifthsByMeasure:new Map([[1,-4]])})[0].chord.symbol).toBe('A♭');
+  });
+});
+
