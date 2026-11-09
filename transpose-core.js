@@ -91,6 +91,67 @@
     }
     return result;
   }
+  const ATTRIBUTE_ORDER=['footnote','level','divisions','key','time','staves','part-symbol','instruments','clef','staff-details','transpose','for-part','directive','measure-style'];
+  const measureNumberOf=measure=>{const raw=measure.getAttribute('number');return raw==null||raw.trim()===''?NaN:Number(raw);};
+  const childElements=(element,name)=>Array.from(element?.children||[]).filter(child=>child.localName===name);
+  function firstKeyOf(measure){
+    const keys=Array.from(measure.querySelectorAll(':scope > attributes > key'));
+    return keys.find(key=>!key.hasAttribute('number')||key.getAttribute('number')==='1')||keys[0]||null;
+  }
+  function insertLeadingKey(measure,fifths,mode){
+    const doc=measure.ownerDocument;
+    let attributes=null;
+    for(const child of Array.from(measure.children)){
+      if(child.localName==='attributes'){attributes=child;break;}
+      if(['note','backup','forward'].includes(child.localName))break;
+    }
+    if(!attributes){attributes=doc.createElement('attributes');measure.insertBefore(attributes,Array.from(measure.children).find(child=>child.localName!=='print')||null);}
+    const key=doc.createElement('key'),fifthsEl=doc.createElement('fifths'),modeEl=doc.createElement('mode');
+    fifthsEl.textContent=String(fifths);modeEl.textContent=mode||'major';key.append(fifthsEl,modeEl);
+    const rank=ATTRIBUTE_ORDER.indexOf('key');
+    attributes.insertBefore(key,Array.from(attributes.children).find(child=>ATTRIBUTE_ORDER.indexOf(child.localName)>rank)||null);
+    return key;
+  }
+  // 한 파트의 [from,to] 번호 마디를 semitones만큼 옮깁니다. 음표 철자는 그 시점 조표 기준 음정(keyInterval)으로 정합니다.
+  // options.startFifths/startMode: 구간 시작 시점의 원래 조. 앞 구간이 이미 바뀐 문서에서도 원본 기준을 쓰기 위해 받습니다.
+  // options.targetFifths: 시작 조의 목표 조표(없으면 keyFifthsAfter). 구간 안의 기존 조바꿈은 같은 반음 수만큼 옮겨 상대 관계를 유지합니다.
+  // options.ensureKey(기본 true): 시작 마디에 key가 없고 그 앞에 표기된 조표가 목표와 다르면 key를 삽입합니다.
+  function transposePartRange(partEl,fromNumber,toNumber,semitones,options={}){
+    if(!Number.isInteger(semitones))throw new Error('반음 수는 정수여야 합니다.');
+    const from=Number(fromNumber),to=Number(toNumber);
+    const result={notes:0,harmonies:0,keys:0,measures:0,insertedKey:false,startFifths:null,targetFifths:null};
+    let shownFifths=0,shownMode='major',interval=null,mode='major',started=false;
+    for(const measure of childElements(partEl,'measure')){
+      const number=measureNumberOf(measure);
+      if(Number.isFinite(number)&&number>to)break;
+      const key=firstKeyOf(measure),keyFifths=key?.querySelector('fifths');
+      const inRange=Number.isFinite(number)&&number>=from;
+      if(!inRange){
+        if(keyFifths){shownFifths=Number(keyFifths.textContent)||0;shownMode=key.querySelector('mode')?.textContent||shownMode;}
+        continue;
+      }
+      result.measures++;
+      if(!started){
+        const startFifths=Number.isFinite(options.startFifths)?Number(options.startFifths):keyFifths?Number(keyFifths.textContent)||0:shownFifths;
+        mode=options.startMode||key?.querySelector('mode')?.textContent||shownMode;
+        const target=Number.isFinite(options.targetFifths)?Number(options.targetFifths):keyFifthsAfter(startFifths,semitones,options.preferFlat);
+        interval=keyInterval(startFifths,target,semitones,mode);
+        result.startFifths=startFifths;result.targetFifths=target;
+        if(keyFifths){keyFifths.textContent=String(target);result.keys++;}
+        else if(options.ensureKey!==false&&shownFifths!==target){insertLeadingKey(measure,target,mode);result.keys++;result.insertedKey=true;}
+        started=true;
+      }else if(keyFifths){
+        const fifths=Number(keyFifths.textContent)||0;mode=key.querySelector('mode')?.textContent||mode;
+        const target=keyFifthsAfter(fifths,semitones,options.preferFlat);
+        interval=keyInterval(fifths,target,semitones,mode);
+        keyFifths.textContent=String(target);result.keys++;
+      }
+      if(!interval.diatonic&&!interval.chromatic)continue;
+      for(const note of measure.querySelectorAll('note'))if(transposeNoteElement(note,interval))result.notes++;
+      result.harmonies+=transposeMeasureHarmonies(measure,semitones,{interval});
+    }
+    return result;
+  }
   function transposeDocument(xmlDoc,semitones,options={}){
     if(!Number.isInteger(semitones))throw new Error('반음 수는 정수여야 합니다.');
     const result={notes:0,harmonies:0,keys:0,parts:0};
@@ -113,5 +174,5 @@
     }
     return result;
   }
-  global.TransposeCore={transposeHarmony,transposeMeasureHarmonies,transposeDocHarmonies,transposeMeasureRange,intervalFromSemitones,transposePitch,keyFifthsAfter,preferFlatForKey,keyTonic,keyInterval,transposeDocument};
+  global.TransposeCore={transposeHarmony,transposeMeasureHarmonies,transposeDocHarmonies,transposeMeasureRange,intervalFromSemitones,transposePitch,keyFifthsAfter,preferFlatForKey,keyTonic,keyInterval,transposePartRange,transposeDocument};
 })(window);
