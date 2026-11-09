@@ -60,3 +60,7 @@ Phase A 종료 체크리스트 (기준 문서 4.3)
 - [x] mxl-studio.html에 음표를 쓰는 MIDI 기반 코드 없음 (`midiToNote`는 StatsPanel·InstrumentPanel 표시용만)
 - [x] 변환 기본 범위 '전체' 유지, '현재 파일' 옵션 동작, all12 ZIP 산출
 - [x] README·README-TESTING·checklist·context-notes·매뉴얼 동기화 (PDF·SVG 재생성 포함)
+
+## Phase A2 · 검수 대응 (기준 문서 `MXL-Studio10-PhaseA2-검수대응-바이브코딩-프롬프트.md`, 브랜치 `phase-a2/audit-fixes`)
+
+- [x] A2-1 · 범위 병합 결과 검증, 로마 숫자 삽입(B01)·파트 추출(B02) 파일별 처리 (완료 기준 3개)

@@ -213,6 +213,12 @@ function commitFile(file, doc, extra){
   committedFiles.add(committed);
   return committed;
 }
+// 업로드·세션·공유·작업 기록 복원처럼 xmlString을 파싱해 xmlDoc을 만든 파일도 둘이 일치하므로 같은 대우를 합니다.
+// 등록하지 않으면 다른 파일을 변환할 때 이 파일까지 다시 직렬화되어 xmlString 형식과 객체가 바뀝니다.
+function trustParsedFile(file){
+  if(file&&typeof file==='object')committedFiles.add(file);
+  return file;
+}
 // 적용 대상: scope가 'active'면 현재 파일만, 그 외에는 열린 파일 전체(기본).
 function targetFiles(files,activeFile,scope){
   const list=Array.from(files||[]);
@@ -220,7 +226,9 @@ function targetFiles(files,activeFile,scope){
   return list.map((file,index)=>({file,index}));
 }
 // 대상 파일의 결과를 원래 자리에 넣습니다. 대상이 아닌 파일은 같은 객체를 그대로 둡니다.
+// results[i]는 targets[i]의 결과여야 합니다. 길이가 다르면 다른 파일을 덮어쓸 수 있으므로 커밋 전에 막습니다.
 function mergeTargets(files,targets,results){
+  if(results.length!==targets.length)throw new Error('내부 오류: 적용 대상 '+targets.length+'개와 결과 '+results.length+'개가 다릅니다.');
   const out=Array.from(files||[]);
   targets.forEach(({index},i)=>{if(results[i])out[index]=results[i];});
   return out;
@@ -263,14 +271,14 @@ function hydrateSessionFiles(session){
     const xmlString=file.xml||file.xmlString||'';
     const xmlDoc=new DOMParser().parseFromString(xmlString,'text/xml');
     const ossiaMxml=validOssia(file.ossiaMxml);
-    return {
+    return trustParsedFile({
       ossiaMxml,
       ossiaMeta:ossiaMxml?file.ossiaMeta:undefined,
       name:file.name||file.sourceName||'복원된 악보.musicxml',
       sourceName:file.sourceName||file.name,
       xmlString,
       xmlDoc,
-    };
+    });
   }).filter(file=>file.xmlString&&!file.xmlDoc.querySelector('parsererror'));
 }
 function formatBytes(value){
@@ -1765,10 +1773,19 @@ function PartsPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
       if(!keep.length){setLog([{m:'❌ 최소 1개 파트는 유지해야 합니다.',t:'err'}]);hideProgress();return;}
       for(const {file} of targetFiles(files,activeFile,scope)){
         const doc=cloneDoc(file.xmlDoc);
-        doc.querySelectorAll('part-list score-part').forEach(sp=>{if(!keep.includes(sp.getAttribute('id')))sp.remove()});
-        doc.querySelectorAll('part').forEach(p=>{if(!keep.includes(p.getAttribute('id')))p.remove()});
+        // 파일마다 파트 ID를 다시 검증합니다. 유지할 파트가 없는 파일은 비우지 않고 그대로 둡니다.
+        const ids=Array.from(doc.querySelectorAll('part-list score-part')).map(sp=>sp.getAttribute('id'));
+        const keepHere=keep.filter(id=>ids.includes(id));
+        if(!keepHere.length){
+          updatedFiles.push(file);
+          lines.push({m:`⚠ ${file.name}: 유지할 파트(${keep.join(', ')})가 없어 건너뜁니다. 이 파일의 파트: ${ids.join(', ')||'-'}`,t:'warn'});
+          continue;
+        }
+        let removed=0;
+        doc.querySelectorAll('part-list score-part').forEach(sp=>{if(!keepHere.includes(sp.getAttribute('id'))){sp.remove();removed++}});
+        doc.querySelectorAll('part').forEach(p=>{if(!keepHere.includes(p.getAttribute('id')))p.remove()});
         updatedFiles.push(commitFile(file,doc));
-        lines.push({m:`✓ ${file.name}: ${keep.length}파트 유지`,t:'ok'});
+        lines.push({m:`✓ ${file.name}: ${keepHere.length}파트 유지 (${removed}파트 제거)`,t:'ok'});
       }
       onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('파트 추출',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
@@ -1779,6 +1796,7 @@ function PartsPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
   return <div>
     <h2 className="panel__heading">파트 추출 / 삭제</h2>
     <p className="panel__description">원하는 파트만 남기고 나머지를 삭제합니다. 전역 히스토리에서 실행 취소할 수 있습니다.</p>
+    {files.length>1 && <p className="card__text">전체 적용 시 파트 ID가 현재 파일과 다른 악보는 건너뜁니다.</p>}
     <div className="card"><div className="card__title">🎼 파트 목록</div>
       {!parts.length?<div className="card__text">파일을 업로드하면 파트 목록이 표시됩니다.</div>:
       <div className="parts-list">{parts.map(p=>
@@ -2854,20 +2872,27 @@ function RomanAnalysisPanel({files,activeFile=0,scope='all',showProgress,hidePro
     showProgress('로마 숫자를 악보에 삽입 중...');
     await new Promise(r=>setTimeout(r,50));
     try{
-      const doc=cloneDoc(file.xmlDoc);
-      const source=window.RomanAnalysis.detectRomanNumeral(doc);
-      const count=window.RomanAnalysis.insertRomanNumerals(doc,source.rows);
-      const xmlString=new XMLSerializer().serializeToString(doc);
-      const updatedFiles=files.map((f,i)=>i===fileIndex?commitFile(f,doc):f);
-      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('로마 숫자 삽입',files,scope));
-      setAnalysis(window.RomanAnalysis.detectRomanNumeral(doc));
-      setLog([{m:`${count}개 마디에 로마 숫자를 삽입했습니다.`,t:'ok'}]);
+      // 결과 배열은 targetFiles 순서·길이와 같아야 합니다(현재 파일 범위에서 다른 파일을 덮어쓰던 회귀 수정).
+      const targets=targetFiles(files,activeFile,scope);
+      const updatedFiles=[];const lines=[scopeLogLine(files,activeFile,scope)];
+      let activeDocAfter=null;
+      for(const {file:target,index} of targets){
+        const doc=cloneDoc(target.xmlDoc);
+        const source=window.RomanAnalysis.detectRomanNumeral(doc);
+        const count=window.RomanAnalysis.insertRomanNumerals(doc,source.rows);
+        updatedFiles.push(commitFile(target,doc));
+        if(index===fileIndex)activeDocAfter=doc;
+        lines.push({m:`✓ ${target.name}: ${count}개 마디에 로마 숫자 삽입`,t:'ok'});
+      }
+      onFilesUpdate(mergeTargets(files,targets,updatedFiles),scopeLabel('로마 숫자 삽입',files,scope));
+      if(activeDocAfter)setAnalysis(window.RomanAnalysis.detectRomanNumeral(activeDocAfter));
+      lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){
-      setLog([{m:e.message,t:'err'}]);
+      setLog([{m:'❌ '+e.message,t:'err'}]);
     }finally{
       hideProgress();
     }
-  },[files,activeFile,scope,file,fileIndex,onFilesUpdate,showProgress,hideProgress]);
+  },[files,activeFile,scope,fileIndex,onFilesUpdate,showProgress,hideProgress]);
 
   return <div>
     <h2 className="panel__heading">로마 숫자 분석</h2>
@@ -4101,7 +4126,7 @@ function App(){
 
   const restoreHistoryAt=useCallback((newIdx,notice)=>{
     if(newIdx<0||newIdx>=history.length)return;
-    const restored=GlobalHistoryCore.restoreHistoryFiles(history[newIdx]);
+    const restored=GlobalHistoryCore.restoreHistoryFiles(history[newIdx]).map(trustParsedFile);
     historyStateRef.current={history:historyStateRef.current.history,index:newIdx};
     setHistoryIndex(newIdx);
     setFiles(restored);
@@ -4220,14 +4245,14 @@ function App(){
         if(cancelled||!shared?.xml)return;
         const xmlDoc=new DOMParser().parseFromString(shared.xml,'text/xml');
         if(xmlDoc.querySelector('parsererror'))throw new Error('공유 악보 XML을 읽을 수 없습니다.');
-        const restored=[{
+        const restored=[trustParsedFile({
           name:shared.name||'공유 악보.musicxml',
           sourceName:shared.sourceName||shared.name||'공유 악보.musicxml',
           xmlString:shared.xml,
           xmlDoc,
           ossiaMxml:validOssia(shared.ossiaMxml),
           ossiaMeta:shared.ossiaMeta,
-        }];
+        })];
         setFiles(restored);
         setActiveFile(0);
         pushHistory(restored,'공유 악보 불러오기');
@@ -4350,7 +4375,7 @@ function App(){
           if(xmlDoc.querySelector('parsererror'))throw new Error('XML 파싱 오류입니다. 파일을 확인하세요.');
           if(xmlDoc.documentElement.localName!=='score-partwise'||!xmlDoc.querySelector('part'))throw new Error('지원하는 MusicXML 악보가 아닙니다.');
           const name=uniqueFileName(file.name,used);
-          newFiles.push({name,sourceName:file.name,xmlDoc,xmlString});
+          newFiles.push(trustParsedFile({name,sourceName:file.name,xmlDoc,xmlString}));
           if(name!==file.name)lines.push({m:`중복 이름을 ${name}(으)로 변경했습니다.`,t:'info'});
         }catch(error){lines.push({m:`${file.name}: ${error.message}`,t:'err'});}
       }

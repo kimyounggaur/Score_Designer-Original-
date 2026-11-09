@@ -247,3 +247,15 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - HTML의 `STEP_TO_SEMI`·`SEMI_TO_STEP`·`KEY_FIFTHS`·`DIATONIC_SCALES`는 UI·표시용으로 1벌씩 남아 있습니다(코어 내부 표와 값이 같음). 이후 PitchCore 참조로 바꿀 수 있습니다.
 - 설명서 화면 이미지는 Studio09 화면입니다(적용 대상 토글·방향 칩 없음). Linux 시각 기준 이미지 3장도 여전히 없습니다.
 - main 병합 전 GitHub CI(Linux Playwright Chromium)에서 한 번 더 확인해야 합니다. main에 푸시하면 Pages 배포가 실행됩니다.
+
+## 2026-11-09 · Phase A2 시작
+- 근거: 2026-11-09 외부 검수 보고서「악보 디자이너 전체 기능 검수」(B01~B10, C01~C18). 프롬프트 문서 작성 전에 모든 B·C 항목을 b605c7e 소스와 대조해 원인 줄 번호를 확인했습니다(문서 1장).
+- 작업자 결정 기본값 D1~D12는 프롬프트 문서 0.2절에 있습니다. 사용자가 "이 프롬프트대로 스스로 승인하며 개발"을 지시했습니다.
+
+## 2026-11-09 · A2-1
+- **B01은 Phase A A-8의 회귀입니다.** A-8에서 RomanAnalysisPanel.insertIntoScore만 `files.map((f,i)=>i===fileIndex?commitFile(f,doc):f)`(파일 전체 길이 배열)를 `mergeTargets`에 넘겼습니다. `mergeTargets`는 `results[i]`를 `targets[i]`의 결과로 보므로 현재 파일 범위(대상 1개)에서 두 번째 파일을 고르면 `results[0]`(첫 파일)이 그 자리에 들어가 첫 파일이 두 번 보이고 활성 파일 내용이 사라졌습니다. 다른 패널과 같은 `targetFiles` 순회 구조로 바꿨습니다.
+- `mergeTargets`가 `results.length!==targets.length`면 예외를 던집니다(N2). 모든 패널은 try/catch에서 로그로 보여주므로 커밋되지 않습니다. 기존 21패널·23-scope 스펙이 모두 통과해 다른 패널에는 같은 버그가 없음을 확인했습니다.
+- PartsPanel: 파일마다 `score-part` ID를 다시 읽어 `keepHere=keep∩ids`를 쓰고, 비면 원본 그대로 두고 경고합니다(B02, 결정 D2). 로그는 실제 유지·제거 수를 적습니다. 파일이 2개 이상이면 패널에 안내 문구가 보입니다.
+- 추가 수정(N7, 보고서에 없음): 업로드·세션 복원·공유 불러오기·작업 기록 복원으로 만든 파일 객체가 `committedFiles`에 없어서, 다른 파일을 변환할 때 `updateFiles`가 이 파일들까지 다시 직렬화했습니다(내용은 같지만 xmlString 형식과 객체가 바뀜). B01 회귀 테스트의 "다른 파일 xmlString 불변" 단언에서 드러났습니다. `trustParsedFile(file)`로 네 생성 지점의 객체를 등록합니다. xmlString을 파싱해 만든 xmlDoc이라 둘이 일치하고, xmlDoc을 제자리에서 바꾸는 코드가 없음을 grep으로 확인했습니다(StatsPanel의 두 곳은 읽기 전용).
+- 픽스처 f13-part-p99(Flute, 파트 ID P99, 8음표). 새 회귀 스펙 tests/e2e/24-audit-regressions.spec.js(@panels): B01·B02.
+- 검증: 단위 142, 24·23·10-parts·19-roman·21-history·12-session-modal·02-share·08-upload·01-fixtures 27개, 스모크 7, @panels 60 모두 통과.
