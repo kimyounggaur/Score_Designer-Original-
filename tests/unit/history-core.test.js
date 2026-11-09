@@ -83,4 +83,13 @@ describe('serialized history snapshots',()=>{
     const state=window.HistoryCore.pushHistoryEntry([],-1,[{name:'a',xmlDoc:{value:'data'}}],'test',1,{serialize:doc=>doc.value});
     expect(window.HistoryCore.restoreHistoryFiles(state.history[0],{parse:xml=>({parsed:xml})})[0].xmlDoc).toEqual({parsed:'data'});
   });
+  it('keeps the numbering lyric backup in string snapshots so undo can still restore lyrics', () => {
+    const backup = { version: 1, entries: [{ part: 'P1', measure: 0, note: 0, chord: 0, lyrics: ['<lyric number="1"><text>아</text></lyric>'] }] };
+    const file = { name: 'a.xml', sourceName: 'a.xml', xmlDoc: parseXml('<score-partwise/>'), lyricBackup: backup };
+    const state = window.HistoryCore.pushHistoryEntry([], -1, [file], '숫자 악보 생성', 1);
+    expect(state.history[0].files[0].lyricBackup).toBe(backup);
+    const restored = window.HistoryCore.restoreHistoryFiles(state.history[0]);
+    expect(restored[0].lyricBackup).toBe(backup);
+    expect(restored[0].xmlString).toBe('<score-partwise/>');
+  });
 });

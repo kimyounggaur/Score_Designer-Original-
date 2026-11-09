@@ -270,3 +270,18 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 픽스처 f14-dotted-metronome(6/8, 점4분음표=60, sound 90). 06-tempo +2(300 BPM 후 duration 전부 1, 점4분음표 환산 80), 07-tempochange +2(−60 거부·기록 불변, f14 마디별 120 → per-minute 80).
 - 설명서 두 사본: 템포 조절(환산·길이 불변), 마디별 템포(20~400). 퀵스타트에는 템포 문구가 없습니다.
 - 검증: 단위 142, 06·07·01-fixtures 21개, 스모크 7, 17-playback·22-autosave 3개 통과.
+
+## 2026-11-09 · A2-3
+- 새 코어 `numbering-core.js`(`window.NumberingCore`): `octaveDots`, `noteToNumStr`, `fifthsForMeasure`, `removeGeneratedLyrics`, `removeUserLyrics`, `countGeneratedLyrics`, `backupLyrics`, `restoreLyrics`, `generateNumberLyrics`. 부팅 검사 `missingLibraries`에 추가. 단위 테스트 10개.
+- HTML에서 `noteToNumStr`·`getKeyRoot`와 이것만 쓰던 `SOLFEGE_KR`·`STEP_TO_NUM`·`DIATONIC_SCALES`를 삭제했습니다.
+- 생성 가사에 `name="mxl-studio-number"` 표식(결정 D3). 다시 만들면 표식 가사만 지우고 새로 만들어 쌓이지 않습니다(E37).
+- 원본 가사 백업은 파일 객체 `lyricBackup`(문자열 직렬화, 불변)에 둡니다. `commitFile`이 파일 필드를 펼쳐 복사하므로 다른 패널이 커밋해도 남습니다(B04). 처음 생성할 때만 백업하고, 다시 만들 때는 기존 백업을 유지합니다. 백업 키는 (파트 id, 마디 위치, chord가 아닌 음표 순번, chord 안 순번)이라 화성 쌓기로 chord 음표가 추가돼도 흔들리지 않습니다.
+- 복원: 백업이 있으면 생성 가사 제거 후 복원, 백업 없이 생성 가사만 있으면(기존 가사 유지 모드로 만든 경우) 생성 가사만 제거, 둘 다 없으면 파일을 그대로 두고 ⚠ 로그.
+- **프롬프트와 다르게 정한 것 1**: 4.2절은 히스토리에 새 필드를 넣지 말라고 했지만, 숫자 생성 → 색깔 악보 → 실행 취소 순서에서 백업이 사라지면 B04와 같은 결과가 됩니다. history-core 스냅샷에 `lyricBackup`을 참조로 담고(`history-core.js?v=2`), 세션·공유 직렬화에는 넣지 않았습니다. 설명서·패널에 "열린 탭에서만 유지"로 안내합니다.
+- **프롬프트와 다르게 정한 것 2**: 이동 도법은 반음(pitch class) 기반에서 음이름 문자·조표 기반으로 바꿨습니다. A장조의 C는 이전 '#2'(B♯ 해석)에서 '♭3'으로, F장조의 B♭은 '4'입니다. 프롬프트 단위 기대값이 이 방식을 전제로 합니다. 고정 도법·한국어 계이름은 옥타브 3~5 범위에서 이전과 같은 문자열을 냅니다.
+- 이동 도법 조표는 파트·마디를 문서 순서로 따라가며 추적합니다(마디 중간 조바꿈 포함, C03). `fifthsForMeasure`는 마디 시작 시점 조표를 돌려줍니다(MeasureCore.keyFifthsAt은 마디의 마지막 조표라 위임하지 않음).
+- 옥타브 점은 기준 옥타브(기본 4, 패널에서 2~6 선택)에서 떨어진 만큼 최대 3개(결정 D4, C04).
+- '숫자 (도=1)' 칩과 'solfege' 모드 제거, 고정 도법 기본(결정 D5, N1). 미리보기에 C3·C6 추가.
+- 추가 발견 N8(이번에 고치지 않음): NotationPanel(악보 표기 변환)도 `baselineRef`로 "처음 상태에서 다시 적용"을 합니다. 다른 패널이 커밋하면 기준선이 바뀌어 '원본 복원'이 처음 상태로 돌아가지 못합니다. 보고서에 없던 항목이라 남은 문제로 둡니다. 따라서 A2-11의 `baselineRef` grep 확인 범위는 NumberingPanel로 한정합니다.
+- 테스트: 16-numbering +3(B04 색깔 악보 뒤 복원 '원본 가사 3개 복원', E37 2회 생성 후 총 10개, C03·C04 f10 이동 도법 '5˙'·'6˙'·기준 옥타브 3에서 '˙1'), history-core +1.
+- 검증: 단위 153, 16·20·13·21 스펙 7개, 스모크 7, 07·12·02 스펙 7개 통과.

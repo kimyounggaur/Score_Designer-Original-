@@ -34,10 +34,11 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script crossorigin="anonymous" integrity="sha384-fg0GMOE+ryaeFG8a+kaykJwFk/KI5rLyPkxfxxHjlfBbC8HkEuNcl44thRQD6MzE" src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 <script src="chord-tools-core.js"></script>
 <script src="chord-symbol-core.js?v=1"></script>
-<script src="history-core.js?v=1"></script>
+<script src="history-core.js?v=2"></script>
 <script src="transpose-core.js?v=2"></script>
 <script src="pitch-core.js?v=1"></script>
 <script src="measure-core.js?v=1"></script>
+<script src="numbering-core.js?v=1"></script>
 <script src="playback-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 <script src="share-session-core.js?v=1"></script>
@@ -59,7 +60,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
   ================================================================
 -->
 <script type="text/babel" data-presets="react">
-const missingLibraries=['React','ReactDOM','opensheetmusicdisplay','JSZip','HistoryCore','PitchCore','MeasureCore'].filter(name=>!window[name]);
+const missingLibraries=['React','ReactDOM','opensheetmusicdisplay','JSZip','HistoryCore','PitchCore','MeasureCore','NumberingCore'].filter(name=>!window[name]);
 if(missingLibraries.length){
   document.getElementById('boot-status').textContent='필수 라이브러리('+missingLibraries.join(', ')+')를 불러오지 못했습니다. 네트워크를 확인하고 새로고침하세요.';
   throw new Error('필수 라이브러리 로드 실패: '+missingLibraries.join(', '));
@@ -80,8 +81,6 @@ const KEY_NAMES = ['C','D♭','D','E♭','E','F','F#/G♭','G','A♭','A','B♭'
 const MINOR_KEY_NAMES=['Am','B♭m','Bm','Cm','C♯m','Dm','D♯m','Em','Fm','F♯m','Gm','G♯m'];
 const KEY_FIFTHS = [0,-5,2,-3,4,-1,6,1,-4,3,-2,5];
 const NOTE_COLORS = {C:'#e74c3c',D:'#f39c12',E:'#eab308',F:'#22c55e',G:'#3b82f6',A:'#6366f1',B:'#a855f7'};
-const SOLFEGE_KR = ['도','레','미','파','솔','라','시'];
-const STEP_TO_NUM = {C:1,D:2,E:3,F:4,G:5,A:6,B:7};
 
 const CLEF_CONFIGS = [
   {id:'treble', sign:'G',          line:2, label:'G 음자리표',      sub:'트레블 (바이올린)',  center:71},
@@ -161,11 +160,6 @@ const TEMPO_PRESETS = [
   {name:'Presto',min:170,max:210,bpm:186},{name:'Prestissimo',min:210,max:300,bpm:220},
 ];
 
-const DIATONIC_SCALES = {
-  0:[0,2,4,5,7,9,11],1:[1,3,5,6,8,10,0],2:[2,4,6,7,9,11,1],3:[3,5,7,8,10,0,2],
-  4:[4,6,8,9,11,1,3],5:[5,7,9,10,0,2,4],6:[6,8,10,11,1,3,5],7:[7,9,11,0,2,4,6],
-  8:[8,10,0,1,3,5,7],9:[9,11,1,2,4,6,8],10:[10,0,2,3,5,7,9],11:[11,1,3,4,6,8,10]
-};
 
 const NAV = [
   {section:'파일 관리',items:[{id:'upload',icon:'📂',label:'파일 업로드'}]},
@@ -386,7 +380,6 @@ function formatSeconds(sec){
   const m=Math.floor(s/60);
   return `${m}:${String(s%60).padStart(2,'0')}`;
 }
-function getKeyRoot(doc){const f=parseInt(doc.querySelector('key fifths')?.textContent||'0');const i=KEY_FIFTHS.indexOf(f);return i>=0?i:0}
 
 function detectChord(semiArr){
   if(!semiArr.length)return null;
@@ -410,27 +403,6 @@ function detectChord(semiArr){
 const parseChordSymbol=text=>window.ChordSymbolCore.parse(text);
 const harmonyToString=harmony=>window.ChordSymbolCore.toString(harmony);
 
-function noteToNumStr(step,alter,oct,keyRoot,mode,showOct,showSharp){
-  if(mode==='korean'){
-    let n=SOLFEGE_KR[STEP_TO_NUM[step]-1];
-    if(alter===1&&showSharp)n='#'+n;else if(alter===-1&&showSharp)n='♭'+n;
-    if(showOct){if(oct>=5)n='˙'+n;else if(oct<=3)n=n+'˙'}
-    return n;
-  }
-  let num=STEP_TO_NUM[step],acc='';
-  if(mode==='movable'){
-    const midi12=(STEP_TO_SEMI[step]+(alter||0)+12)%12;
-    const sc=DIATONIC_SCALES[keyRoot]||DIATONIC_SCALES[0];
-    const idx=sc.indexOf(midi12);
-    if(idx>=0)num=idx+1;
-    else{for(let d=1;d<=2;d++){const b=sc.indexOf((midi12-d+12)%12);if(b>=0){num=b+1;acc='#';break}
-      const a=sc.indexOf((midi12+d)%12);if(a>=0){num=a+1;acc='♭';break}}}
-  }else{if(alter===1)acc='#';else if(alter===-1)acc='♭'}
-  if(!showSharp)acc='';
-  let r=acc+String(num);
-  if(showOct){if(oct>=5)r='˙'+r;else if(oct<=3)r=r+'˙'}
-  return r;
-}
 
 function printScore(name){
   const previous=document.title;
@@ -2538,80 +2510,65 @@ function ChordToolsPanel({files,activeFile=0,scope='all',showProgress,hideProgre
    ============================================================== */
 function NumberingPanel({files,activeFile=0,scope='all',showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
-  const [mode,setMode]=useState('solfege');
+  const [mode,setMode]=useState('fixed');
   const [showOct,setShowOct]=useState(true);
   const [showSharp,setShowSharp]=useState(false);
   const [keepLyrics,setKeepLyrics]=useState(false);
+  const [baseOctave,setBaseOctave]=useState(4);
   const [log,setLog]=useState([]);
-  const baselineRef=useRef(null);
-  const lastOutRef=useRef(null);
-
-  useEffect(()=>{
-    if(files===lastOutRef.current||files.length===lastOutRef.current?.length&&files.every((file,index)=>file.xmlDoc===lastOutRef.current[index].xmlDoc))return;
-    baselineRef.current=files;
-  },[files,activeFile]);
 
   const preview=useMemo(()=>{
     if(mode==='original')return[];
-    const ex=[{s:'C',a:0,o:4},{s:'D',a:0,o:4},{s:'E',a:0,o:4},{s:'F',a:0,o:4},{s:'G',a:0,o:4},{s:'A',a:0,o:4},{s:'B',a:0,o:4},{s:'C',a:0,o:5},{s:'F',a:1,o:4}];
-    return ex.map(n=>({note:n.s+(n.a===1?'#':n.a===-1?'♭':'')+n.o,num:noteToNumStr(n.s,n.a,n.o,0,mode,showOct,showSharp)}));
-  },[mode,showOct,showSharp]);
+    const ex=[{s:'C',a:0,o:4},{s:'D',a:0,o:4},{s:'E',a:0,o:4},{s:'F',a:0,o:4},{s:'G',a:0,o:4},{s:'A',a:0,o:4},{s:'B',a:0,o:4},{s:'F',a:1,o:4},{s:'C',a:0,o:3},{s:'C',a:0,o:5},{s:'C',a:0,o:6}];
+    return ex.map(n=>({note:n.s+(n.a===1?'#':n.a===-1?'♭':'')+n.o,num:NumberingCore.noteToNumStr(n.s,n.a,n.o,{fifths:0,mode,showOct,showSharp,baseOctave})}));
+  },[mode,showOct,showSharp,baseOctave]);
 
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress(mode==='original'?'기존 가사 복원 중...':'숫자 악보 생성 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
-      const baseline=baselineRef.current||files;
-      if(!baselineRef.current)baselineRef.current=baseline;
-      for(const {file,index:fi} of targetFiles(files,activeFile,scope)){
+      for(const {file} of targetFiles(files,activeFile,scope)){
+        const doc=cloneDoc(file.xmlDoc);
         if(mode==='original'){
-          const baseDoc=baseline[fi]?.xmlDoc;
-          if(!baseDoc){lines.push({m:`⚠ ${file.name}: 원본 정보 없음`,t:'warn'});updatedFiles.push(file);continue}
-          const doc=cloneDoc(file.xmlDoc);
-          const baseNotes=baseDoc.querySelectorAll('note');
-          const curNotes=doc.querySelectorAll('note');
-          let cnt=0;
-          curNotes.forEach((note,i)=>{
-            note.querySelectorAll('lyric').forEach(l=>l.remove());
-            const src=baseNotes[i];if(!src)return;
-            src.querySelectorAll('lyric').forEach(origLyric=>{
-              note.appendChild(doc.importNode(origLyric,true));cnt++;
-            });
-          });
-          updatedFiles.push(commitFile(file,doc));
-          lines.push({m:`✓ ${file.name}: ${cnt}개 원본 가사 복원`,t:'ok'});
+          // 원본 가사 백업은 파일 객체(lyricBackup)에 있어 다른 패널이 커밋해도 남습니다.
+          const generated=NumberingCore.removeGeneratedLyrics(doc);
+          if(file.lyricBackup){
+            const {restored,missing}=NumberingCore.restoreLyrics(doc,file.lyricBackup);
+            updatedFiles.push(commitFile(file,doc,{lyricBackup:undefined}));
+            lines.push({m:`✓ ${file.name}: 원본 가사 ${restored}개 복원${missing?`, ${missing}개는 음표를 찾지 못함`:''}`,t:missing?'warn':'ok'});
+          }else if(generated){
+            updatedFiles.push(commitFile(file,doc));
+            lines.push({m:`✓ ${file.name}: 숫자 가사 ${generated}개 제거 (원본 가사는 그대로 있었습니다)`,t:'ok'});
+          }else{
+            updatedFiles.push(file);
+            lines.push({m:`⚠ ${file.name}: 숫자 악보를 만든 기록이 없어 복원할 원본 가사가 없습니다`,t:'warn'});
+          }
           continue;
         }
-        const doc=cloneDoc(file.xmlDoc);const kr=getKeyRoot(doc);let cnt=0;
-        doc.querySelectorAll('note').forEach(note=>{
-          if(note.querySelector('rest'))return;
-          const p=getNotePitch(note);if(!p)return;
-          const numStr=noteToNumStr(p.step,p.alter,p.octave,kr,mode,showOct,showSharp);
-          let ln=1;
-          if(keepLyrics){note.querySelectorAll('lyric').forEach(l=>{const n=parseInt(l.getAttribute('number')||'1');if(n>=ln)ln=n+1})}
-          else note.querySelectorAll('lyric').forEach(l=>l.remove());
-          const lyric=doc.createElement('lyric');lyric.setAttribute('number',String(ln));
-          const syl=doc.createElement('syllabic');syl.textContent='single';lyric.appendChild(syl);
-          const txt=doc.createElement('text');txt.textContent=numStr;lyric.appendChild(txt);
-          note.appendChild(lyric);cnt++;
-        });
-        updatedFiles.push(commitFile(file,doc));
-        lines.push({m:`✓ ${file.name}: ${cnt}개 숫자 삽입`,t:'ok'});
+        NumberingCore.removeGeneratedLyrics(doc);
+        // 처음 만들 때만 원본 가사를 백업합니다. 다시 만들면 기존 백업을 유지하고 생성 가사만 바꿉니다.
+        let backup=file.lyricBackup;
+        if(!keepLyrics){
+          if(!backup)backup=NumberingCore.backupLyrics(doc);
+          NumberingCore.removeUserLyrics(doc);
+        }
+        const {count}=NumberingCore.generateNumberLyrics(doc,{mode,showOct,showSharp,keepLyrics,baseOctave});
+        updatedFiles.push(commitFile(file,doc,{lyricBackup:backup}));
+        lines.push({m:`✓ ${file.name}: ${count}개 숫자 삽입`,t:'ok'});
       }
-      lastOutRef.current=mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles);
-      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('숫자 악보 생성',files,scope));
+      onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel(mode==='original'?'숫자 악보 원본 가사 복원':'숫자 악보 생성',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+e.message,t:'err'}])}
     hideProgress();
-  },[files,activeFile,scope,mode,showOct,showSharp,keepLyrics,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,mode,showOct,showSharp,keepLyrics,baseOctave,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">숫자 악보</h2>
-    <p className="panel__description">음높이를 숫자로 변환하여 가사(Lyric) 위치에 삽입합니다.</p>
+    <p className="panel__description">음높이를 숫자로 변환하여 가사(Lyric) 위치에 삽입합니다. 이동 도법은 마디마다 그 시점의 조표를 따릅니다.</p>
+    <p className="card__text">원본 가사 백업은 이 브라우저 탭 안에서만 유지됩니다. 세션 저장·공유·새로고침 뒤에는 복원할 수 없습니다.</p>
     <div className="card"><div className="card__title">🔢 번호 체계</div>
       <div className="chip-group">
-        <Chip on={mode==='solfege'} onClick={()=>setMode('solfege')}>숫자 (도=1)</Chip>
         <Chip on={mode==='fixed'} onClick={()=>setMode('fixed')}>고정 도법 (C=1)</Chip>
         <Chip on={mode==='movable'} onClick={()=>setMode('movable')}>이동 도법</Chip>
         <Chip on={mode==='korean'} onClick={()=>setMode('korean')}>한국어 계이름</Chip>
@@ -2623,6 +2580,13 @@ function NumberingPanel({files,activeFile=0,scope='all',showProgress,hideProgres
         <Chip on={showOct} onClick={()=>setShowOct(!showOct)}>옥타브 점 표시</Chip>
         <Chip on={showSharp} onClick={()=>setShowSharp(!showSharp)}># / ♭ 표시</Chip>
         <Chip on={keepLyrics} onClick={()=>setKeepLyrics(!keepLyrics)}>기존 가사 유지</Chip>
+      </div>
+      <div className="toggle-row section-gap">
+        <span className="card__text">기준 옥타브 (점 없음)</span>
+        <select className="form-select" aria-label="기준 옥타브" value={baseOctave} disabled={!showOct}
+          onChange={e=>setBaseOctave(Number(e.target.value))}>
+          {[2,3,4,5,6].map(octave=><option key={octave} value={octave}>{`${octave}옥타브 (C${octave})`}</option>)}
+        </select>
       </div>
     </div>
     <div className="card"><div className="card__title">👁️ 미리보기</div>
