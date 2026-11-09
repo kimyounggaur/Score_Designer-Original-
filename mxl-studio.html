@@ -326,8 +326,6 @@ function formatSeconds(sec){
   return `${m}:${String(s%60).padStart(2,'0')}`;
 }
 function getKeyRoot(doc){const f=parseInt(doc.querySelector('key fifths')?.textContent||'0');const i=KEY_FIFTHS.indexOf(f);return i>=0?i:0}
-function getDiaThirdAbove(midi,kr){const pc=((midi%12)+12)%12;const sc=DIATONIC_SCALES[kr]||DIATONIC_SCALES[0];const idx=sc.indexOf(pc);if(idx===-1)return midi+4;const tpc=sc[(idx+2)%7];let t=Math.floor(midi/12)*12+tpc;if(t<=midi)t+=12;if(t-midi>5)t-=12;return t}
-function getDiaThirdBelow(midi,kr){const pc=((midi%12)+12)%12;const sc=DIATONIC_SCALES[kr]||DIATONIC_SCALES[0];const idx=sc.indexOf(pc);if(idx===-1)return midi-4;const tpc=sc[((idx-2)%7+7)%7];let t=Math.floor(midi/12)*12+tpc;if(t>=midi)t-=12;if(midi-t>5)t+=12;return t}
 
 function detectChord(semiArr){
   if(!semiArr.length)return null;
@@ -2191,6 +2189,21 @@ function ColorPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}
 /* ==============================================================
    PANEL: HARMONY STACKING
    ============================================================== */
+// 원음과 같은 시간·성부·보표를 갖는 화음 음표. 붙임줄은 유지하고 셋잇단·슬러·아티큘레이션은 원음에만 둡니다.
+function buildChordNote(doc,source,pitch){
+  const note=doc.createElement('note');
+  note.appendChild(doc.createElement('chord'));
+  const pitchEl=doc.createElement('pitch');
+  const step=doc.createElement('step');step.textContent=pitch.step;pitchEl.appendChild(step);
+  if(pitch.alter){const alter=doc.createElement('alter');alter.textContent=String(pitch.alter);pitchEl.appendChild(alter);}
+  const octave=doc.createElement('octave');octave.textContent=String(pitch.octave);pitchEl.appendChild(octave);
+  note.appendChild(pitchEl);
+  for(const tag of ['duration','tie','voice','type','dot','time-modification','stem','staff'])xmlChildren(source,tag).forEach(child=>note.appendChild(child.cloneNode(true)));
+  const tied=Array.from(source.querySelectorAll(':scope > notations > tied'));
+  if(tied.length){const notations=doc.createElement('notations');tied.forEach(tie=>notations.appendChild(tie.cloneNode(true)));note.appendChild(notations);}
+  return note;
+}
+
 function HarmonyPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdate}){
   const notify=useNotify();
   const [mode,setMode]=useState('up');
@@ -2201,11 +2214,12 @@ function HarmonyPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdat
   const preview=useMemo(()=>{
     const notes=['C4','D4','E4','F4','G4','A4','B4'];
     const doUp=mode==='up'||mode==='both',doDown=mode==='down'||mode==='both';
+    const third=(pitch,direction)=>chromatic?PitchCore.chromaticThird(pitch,direction):PitchCore.diatonicThird(pitch,0,direction);
     return notes.map(n=>{
-      const p=parseNoteStr(n);const midi=noteToMidi(p.step,p.alter,p.octave);
+      const p=parseNoteStr(n);
       const r=[n];
-      if(doUp)r.push(fmtNote(midiToNote(chromatic?midi+4:getDiaThirdAbove(midi,0))));
-      if(doDown)r.unshift(fmtNote(midiToNote(chromatic?midi-4:getDiaThirdBelow(midi,0))));
+      if(doUp)r.push(fmtNote(third(p,'above')));
+      if(doDown)r.unshift(fmtNote(third(p,'below')));
       return{base:n,notes:r};
     });
   },[mode,chromatic]);
@@ -2213,33 +2227,31 @@ function HarmonyPanel({files,activeFile=0,showProgress,hideProgress,onFilesUpdat
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('화성 쌓기 중...');await new Promise(r=>setTimeout(r,50));
-    const doUp=mode==='up'||mode==='both',doDown=mode==='down'||mode==='both';
+    const directions=[...(mode==='up'||mode==='both'?['above']:[]),...(mode==='down'||mode==='both'?['below']:[])];
     try{
       const lines=[];const updatedFiles=[];
       for(const file of files){
-        const doc=cloneDoc(file.xmlDoc);const kr=getKeyRoot(doc);let added=0;
-        const parts=doc.querySelectorAll('part');
-        const tParts=target==='first'?[parts[0]]:Array.from(parts);
-        tParts.forEach(part=>{if(!part)return;
-          part.querySelectorAll('note').forEach(note=>{
-            if(note.querySelector('rest')||note.querySelector('chord'))return;
-            const p=getNotePitch(note);if(!p)return;
-            const midi=noteToMidi(p.step,p.alter,p.octave);
-            const addCN=newMidi=>{
-              const nn=midiToNote(newMidi);const cn=doc.createElement('note');
-              cn.appendChild(doc.createElement('chord'));
-              const pi=doc.createElement('pitch');const st=doc.createElement('step');st.textContent=nn.step;pi.appendChild(st);
-              if(nn.alter!==0){const al=doc.createElement('alter');al.textContent=nn.alter;pi.appendChild(al)}
-              const oc=doc.createElement('octave');oc.textContent=nn.octave;pi.appendChild(oc);cn.appendChild(pi);
-              const dur=note.querySelector('duration');if(dur){const d=doc.createElement('duration');d.textContent=dur.textContent;cn.appendChild(d)}
-              const typ=note.querySelector('type');if(typ){const t=doc.createElement('type');t.textContent=typ.textContent;cn.appendChild(t)}
-              if(note.nextSibling)note.parentNode.insertBefore(cn,note.nextSibling);else note.parentNode.appendChild(cn);
-              added++;
-            };
-            if(doUp)addCN(chromatic?midi+4:getDiaThirdAbove(midi,kr));
-            if(doDown)addCN(chromatic?midi-4:getDiaThirdBelow(midi,kr));
-          });
-        });
+        const doc=cloneDoc(file.xmlDoc);let added=0;
+        const parts=Array.from(doc.querySelectorAll('score-partwise > part'));
+        for(const part of target==='first'?parts.slice(0,1):parts){
+          // 마디를 따라 현재 조표를 추적하고, 그 조표로 3도 음의 철자를 정합니다.
+          let fifths=0;
+          for(const measure of xmlChildren(part,'measure')){
+            for(const node of Array.from(measure.children)){
+              if(node.localName==='attributes'){const value=node.querySelector('key fifths');if(value)fifths=Number(value.textContent)||0;continue;}
+              if(node.localName!=='note'||['rest','chord','grace','cue','unpitched'].some(tag=>xmlChild(node,tag)))continue;
+              const pitch=PitchCore.readPitch(node);if(!pitch)continue;
+              let anchor=node;
+              for(const direction of directions){
+                const next=chromatic?PitchCore.chromaticThird(pitch,direction):PitchCore.diatonicThird(pitch,fifths,direction);
+                const chordNote=buildChordNote(doc,node,next);
+                measure.insertBefore(chordNote,anchor.nextSibling);
+                PitchCore.syncAccidental(chordNote,fifths);
+                anchor=chordNote;added++;
+              }
+            }
+          }
+        }
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name}: ${added}개 화음 추가`,t:'ok'});
       }
