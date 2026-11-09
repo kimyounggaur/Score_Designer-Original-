@@ -35,7 +35,9 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="chord-tools-core.js"></script>
 <script src="chord-symbol-core.js?v=1"></script>
 <script src="history-core.js?v=1"></script>
-<script src="transpose-core.js?v=1"></script>
+<script src="transpose-core.js?v=2"></script>
+<script src="pitch-core.js?v=1"></script>
+<script src="measure-core.js?v=1"></script>
 <script src="playback-core.js?v=1"></script>
 <script src="roman-analysis-core.js"></script>
 <script src="share-session-core.js?v=1"></script>
@@ -57,7 +59,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
   ================================================================
 -->
 <script type="text/babel" data-presets="react">
-const missingLibraries=['React','ReactDOM','opensheetmusicdisplay','JSZip','HistoryCore'].filter(name=>!window[name]);
+const missingLibraries=['React','ReactDOM','opensheetmusicdisplay','JSZip','HistoryCore','PitchCore','MeasureCore'].filter(name=>!window[name]);
 if(missingLibraries.length){
   document.getElementById('boot-status').textContent='필수 라이브러리('+missingLibraries.join(', ')+')를 불러오지 못했습니다. 네트워크를 확인하고 새로고침하세요.';
   throw new Error('필수 라이브러리 로드 실패: '+missingLibraries.join(', '));

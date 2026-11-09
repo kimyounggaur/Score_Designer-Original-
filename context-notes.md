@@ -130,3 +130,17 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 
 ## 2026-09-03 · P8-2
 두 이전 프롬프트 문서에 스냅샷 경고와 완료 상태표를 추가했습니다. README·테스트 가이드·검증 보고서에 8개 코어, 21개 패널, 태그, 실측, 문서 관계, 배포 주소와 Linux 기준 이미지 대기를 기록했습니다. 사용자 확인 저장소는 kimyounggaur/Score_Designer-Original-, Pages는 https://kimyounggaur.github.io/Score_Designer-Original-/mxl-studio.html 입니다.
+
+## 2026-11-09 · Phase A 시작 (Studio10)
+- 근거: 2026-11-09 심층 분석의 P0-1~P0-5, P0-7~P0-9, P1-11, P1-12, P2-4. 사용자 확정 사항은 all12 모드 존치와 변환 기본 범위 '열린 파일 전체' 유지입니다.
+- 작업 환경: Linux 샌드박스, Node 22, Chrome for Testing 153. CDN(cdnjs·jsdelivr) 차단 환경이라 npm에서 받은 동일 바이트 파일(SRI 6개 일치 확인)을 로컬 HTTPS 미러로 제공하고 `--host-resolver-rules`로 연결해 E2E를 실행했습니다. 저장소 설정은 바꾸지 않았습니다.
+- 기준선: 단위 84개 통과, E2E 80 통과 / 4 skip. 처음에는 12-session-modal의 JSON 다운로드 파일명이 `download`로 나와 2개가 실패했는데, 원인은 샌드박스에 UTF-8 로캘이 없어 Chrome이 한글 파일명을 버리는 것이었습니다(`LANG=C.UTF-8`에서 정상). 앱 결함이 아닙니다.
+
+## 2026-11-09 · A-1
+- `pitch-core.js`(PitchCore): readPitch, pitchToMidi, addInterval, shiftOctave, shiftNoteOctave, nearestShift, keySignatureAlter, accidentalName, insertNoteChild, alterInEffect, syncAccidental, diatonicThird, chromaticThird, CHORD_TONES, bassForInversion.
+- `measure-core.js`(MeasureCore): measureNumber, firstPart, measuresByNumber({map,duplicates}), measureNumbers, keyFifthsAt, modeAt, effectiveAttributes, insertAttributesChild, leadingAttributes, segments.
+- transpose-core에 keyTonic·keyInterval export 추가(기존 시그니처 불변). HTML에 두 코어를 로드하고 부팅 검사(missingLibraries)에 포함했습니다. Pages 배포는 `/*-core.js` 패턴이라 별도 수정이 필요 없습니다.
+- 프롬프트 문서의 기대값 2건을 정정했습니다. F♯장조(fifths 6)에서 B는 제자리음이므로 keySignatureAlter(6,'B')=0이고, `keyInterval(0,7,7)`은 목표 조와 반음 수가 모순이어서 `keyInterval(0,1,7)`(C→G)로 바꿨습니다.
+- syncAccidental은 같은 마디·같은 보표의 앞선 음표 변화표까지 고려합니다. 다성부에서 backup 이후 시간 역전은 문서 순서로 근사합니다. cautionary·editorial·parentheses 임시표는 지우지 않습니다.
+- 픽스처 f10-keychange-clef.musicxml(3마디 3♯·F음자리표)을 A-10 예정보다 먼저 추가하고 @fixtures 렌더 목록에 넣었습니다.
+- 검증: 단위 137개 통과(10파일), @smoke·@fixtures·@robustness 23개 통과.

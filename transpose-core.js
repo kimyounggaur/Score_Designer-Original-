@@ -113,5 +113,5 @@
     }
     return result;
   }
-  global.TransposeCore={transposeHarmony,transposeMeasureHarmonies,transposeDocHarmonies,transposeMeasureRange,intervalFromSemitones,transposePitch,keyFifthsAfter,preferFlatForKey,transposeDocument};
+  global.TransposeCore={transposeHarmony,transposeMeasureHarmonies,transposeDocHarmonies,transposeMeasureRange,intervalFromSemitones,transposePitch,keyFifthsAfter,preferFlatForKey,keyTonic,keyInterval,transposeDocument};
 })(window);

@@ -58,6 +58,13 @@ describe('Diatonic spelling and instrument relationships',()=>{
     const doc=fixture('f07-enharmonic.musicxml');core.transposeDocument(doc,1);
     expect(spelled(doc).slice(0,7)).toEqual(['G','A','B','C','D','E','F#']);expect(spelled(doc).some(p=>p.includes('##'))).toBe(false);
   });
+  it('exports key tonic and key-relative interval helpers',()=>{
+    expect(core.keyTonic(6,'major')).toEqual({step:'F',alter:1,pc:6});
+    expect(core.keyTonic(-1,'minor')).toEqual({step:'D',alter:0,pc:2});
+    expect(core.keyInterval(0,1,7,'major')).toEqual({diatonic:4,chromatic:7});
+    expect(core.keyInterval(6,4,-2,'major')).toEqual({diatonic:-1,chromatic:-2});
+    expect(core.transposePitch({step:'E',alter:1,octave:5},core.keyInterval(6,4,-2,'major'))).toEqual({step:'D',alter:1,octave:5});
+  });
   it('supports downward octave crossings and preserves double accidentals when valid',()=>{
     expect(core.transposePitch({step:'C',alter:0,octave:4},{diatonic:-1,chromatic:-1})).toEqual({step:'B',alter:0,octave:3});
     expect(core.transposePitch({step:'F',alter:2,octave:4},{diatonic:1,chromatic:2})).toEqual({step:'G',alter:2,octave:4});
