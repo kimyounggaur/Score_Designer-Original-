@@ -6,7 +6,7 @@
 //   (6) 반복 중 A-B 해제 → 18-cursor.spec.js
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
-import { openApp, openPanel, fixturesDir } from './helpers.js';
+import { openApp, openPanel, fixturesDir, uploadFixture, getPitches } from './helpers.js';
 
 async function uploadMany(page, names) {
   await page.locator('input[type="file"]').setInputFiles(names.map((name) => path.join(fixturesDir, name)));
@@ -70,4 +70,49 @@ test('@panels B02 part extraction skips files without the kept part', async ({ p
   await page.evaluate(() => window.__mxlSetActiveFile(1));
   await expect(page.locator('.score-main-render svg')).toBeVisible({ timeout: 30_000 });
   await expect(page.locator('.score-error')).toHaveCount(0);
+});
+
+async function transposeSemitones(page, panel, semitones) {
+  await panel.getByRole('button', { name: '반음 단위 이동', exact: true }).click();
+  await panel.locator('input[type="number"]').fill(String(semitones));
+  await panel.getByRole('button', { name: /변환 실행/ }).click();
+}
+
+// B07: '모두 지우기'가 현재 악보까지 버려, 다음 편집을 되돌리면 지우기 전 상태로 돌아가지 못하던 문제.
+test('@panels B07 history clear keeps a baseline', async ({ page }) => {
+  await openApp(page);
+  await uploadFixture(page, 'f01-basic.musicxml');
+  expect((await getPitches(page, { measure: 1 }))[0]).toBe('C/4');
+  const panel = await openPanel(page, 'transpose');
+  await transposeSemitones(page, panel, 2);
+  await expect.poll(async () => (await getPitches(page, { measure: 1 }))[0]).toBe('D/4');
+  await page.locator('.history-panel__clear').click();
+  await expect(page.locator('.history-panel__item')).toHaveCount(1);
+  const undo = page.getByRole('button', { name: '실행 취소', exact: true });
+  await expect(undo).toBeDisabled();
+  await transposeSemitones(page, panel, 2);
+  await expect.poll(async () => (await getPitches(page, { measure: 1 }))[0]).toBe('E/4');
+  await expect(undo).toBeEnabled();
+  await undo.click();
+  await expect.poll(async () => (await getPitches(page, { measure: 1 }))[0]).toBe('D/4');
+  await expect(page.locator('.history-panel__item--current')).toContainText('기준점 (지우기 전 상태)');
+});
+
+// C16: D.C./Fine 같은 이동 기호는 재생이 따르지 않는데 그 사실을 알리지 않던 문제.
+test('@panels C16 player warns that navigation marks are not followed', async ({ page }) => {
+  await openApp(page);
+  await uploadFixture(page, 'f17-dacapo.musicxml');
+  await expect(page.locator('.score-main-render svg')).toBeVisible();
+  const warning = page.locator('.player__warning');
+  await expect(warning).toHaveAttribute('role', 'status');
+  await expect(warning).toContainText('D.C.');
+  await expect(warning).toContainText('Fine');
+  await expect(warning.locator('.player__warning-text')).toHaveText('⚠ 재생 미반영: Fine · D.C. al Fine');
+  await expect(warning.locator('.visually-hidden')).toHaveText('반복 기호 Fine은(는) 재생에 반영되지 않습니다. 반복 기호 D.C. al Fine은(는) 재생에 반영되지 않습니다.');
+  await expect(warning).toHaveAttribute('title', '반복 기호 Fine은(는) 재생에 반영되지 않습니다.\n반복 기호 D.C. al Fine은(는) 재생에 반영되지 않습니다.');
+  await page.locator('input[type="file"]').setInputFiles(path.join(fixturesDir, 'f01-basic.musicxml'));
+  await expect(page.locator('.file-entry')).toHaveCount(2);
+  await page.evaluate(() => window.__mxlSetActiveFile(1));
+  await expect(page.locator('.header__badge')).toContainText('현재: f01-basic.musicxml');
+  await expect(page.locator('.player__warning')).toHaveCount(0);
 });

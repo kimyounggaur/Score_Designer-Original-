@@ -511,7 +511,7 @@ function LogPanel({lines}){
   </div>;
 }
 
-function HistoryPanel({history,historyIndex,onUndo,onRedo,onJump,onClear,notice}){
+function HistoryPanel({history,historyIndex,onUndo,onRedo,onJump,onClear,canClear,notice}){
   const visible=history.slice(-50);
   const canUndo=historyIndex>0;
   const canRedo=historyIndex<history.length-1;
@@ -546,7 +546,7 @@ function HistoryPanel({history,historyIndex,onUndo,onRedo,onJump,onClear,notice}
         })}
     </div>
     {notice&&<div className={`history-panel__notice log-line--${notice.t||'info'}`}>{notice.m}</div>}
-    <button className="history-panel__clear" onClick={onClear} disabled={!history.length}>모두 지우기</button>
+    <button className="history-panel__clear" onClick={onClear} disabled={!canClear}>모두 지우기</button>
   </div>;
 }
 
@@ -3596,6 +3596,8 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
   const [loopEnd,setLoopEnd]=useState(1);
   const synthRef=useRef(null);
   const isPlayingRef=useRef(false);
+  // 반복 없이 끝까지 재생할 때만 쓰는 곡 끝 정지 이벤트 id입니다(Tone.Transport.scheduleOnce 반환값).
+  const endEventIdRef=useRef(null);
   const cursorStateRef=useRef({cursor:null,index:-1});
   const resetCursor=useCallback(()=>{
     const cursor=osmdRef?.current?.cursor;
@@ -3662,13 +3664,39 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
     Tone.Transport.loop=false;
   },[]);
 
+  const clearEnd=useCallback(()=>{
+    const id=endEventIdRef.current;endEventIdRef.current=null;
+    if(id!==null&&window.Tone)Tone.Transport.clear(id);
+  },[]);
+
   const handleStop=useCallback(()=>{
-    playRequestRef.current++;cancelTransport();resetCursor();
+    playRequestRef.current++;clearEnd();cancelTransport();resetCursor();
     isPlayingRef.current=false;
     setIsPlaying(false);
     setPositionSec(0);
     onPlaybackUpdate?.({isPlaying:false,currentMeasure:0});
-  },[cancelTransport,onPlaybackUpdate,resetCursor]);
+  },[clearEnd,cancelTransport,onPlaybackUpdate,resetCursor]);
+
+  // 곡 끝 도달: 커서를 지우고 위치를 곡 길이에 둡니다. 예약 이벤트와 위치 폴링 안전망이 함께 부릅니다.
+  const finishPlayback=useCallback(()=>{
+    clearEnd();
+    if(window.Tone)Tone.Transport.stop();
+    resetCursor();
+    isPlayingRef.current=false;
+    setIsPlaying(false);
+    setPositionSec(playbackData.totalDuration||0);
+    onPlaybackUpdate?.({isPlaying:false,currentMeasure:0});
+  },[clearEnd,resetCursor,playbackData.totalDuration,onPlaybackUpdate]);
+
+  const scheduleEnd=useCallback(()=>{
+    if(!window.Tone)return;
+    clearEnd();
+    const id=Tone.Transport.scheduleOnce(()=>{
+      if(endEventIdRef.current===id)endEventIdRef.current=null;
+      finishPlayback();
+    },Math.max(0.1,playbackData.totalDuration||0));
+    endEventIdRef.current=id;
+  },[clearEnd,finishPlayback,playbackData.totalDuration]);
 
   const schedulePlayback=useCallback(()=>{
     if(!window.Tone)return false;
@@ -3691,19 +3719,12 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
     Tone.Transport.loop=loopEnabled;
     Tone.Transport.loopStart=startSec;
     Tone.Transport.loopEnd=endSec;
-    if(!loopEnabled){
-      Tone.Transport.scheduleOnce(()=>{
-        Tone.Transport.stop();resetCursor();
-        isPlayingRef.current=false;
-        setIsPlaying(false);
-        setPositionSec(playbackData.totalDuration||0);
-        onPlaybackUpdate?.({isPlaying:false,currentMeasure:0});
-      },Math.max(0.1,playbackData.totalDuration||0));
-    }
+    endEventIdRef.current=null;// Transport.cancel()이 이전 종료 이벤트도 지웠습니다.
+    if(!loopEnabled)scheduleEnd();
     return true;
   },[
     ensureSynth,playableEvents,currentBpm,loopEnabled,loopStart,loopEnd,
-    getMeasureStart,getMeasureEnd,playbackData.totalDuration,onPlaybackUpdate,resetCursor
+    getMeasureStart,getMeasureEnd,scheduleEnd
   ]);
 
   const handlePlay=useCallback(async()=>{
@@ -3743,10 +3764,11 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
 
   const handlePause=useCallback(()=>{
     if(!window.Tone)return;
+    clearEnd();
     Tone.Transport.pause();
     isPlayingRef.current=false;
     setIsPlaying(false);
-  },[]);
+  },[clearEnd]);
 
   const handleSeek=useCallback(e=>{
     const next=parseFloat(e.target.value)||0;
@@ -3796,18 +3818,25 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
     Tone.Transport.loop=loopEnabled;
     Tone.Transport.loopStart=startSec;
     Tone.Transport.loopEnd=endSec;
-  },[loopEnabled,loopStart,loopEnd,getMeasureStart,getMeasureEnd]);
+    // 재생 중 A-B를 끄면 곡 끝 정지 이벤트를 새로 예약하고, 켜면 지웁니다(B10).
+    clearEnd();
+    if(loopEnabled)return;
+    if(Tone.Transport.seconds>=totalDuration-0.05)handleStop();
+    else scheduleEnd();
+  },[loopEnabled,loopStart,loopEnd,getMeasureStart,getMeasureEnd,clearEnd,scheduleEnd,handleStop,totalDuration]);
 
   useEffect(()=>{
     if(!isPlaying)return;
     const id=setInterval(()=>{
-      if(!window.Tone)return;
+      if(!window.Tone||!isPlayingRef.current)return;
       const sec=Math.max(0,Tone.Transport.seconds||0);
+      // 안전망: 예약 이벤트가 어떤 이유로 빠져도 반복 없이 곡 끝을 지나면 한 번 정지합니다.
+      if(!loopEnabled&&playbackData.totalDuration>0&&sec>=playbackData.totalDuration){finishPlayback();return;}
       setPositionSec(loopEnabled?sec:Math.min(sec,playbackData.totalDuration||sec));
       syncCursor(sec,playbackData.measureTimeline);
     },100);
     return()=>clearInterval(id);
-  },[isPlaying,loopEnabled,playbackData.totalDuration,playbackData.measureTimeline,syncCursor]);
+  },[isPlaying,loopEnabled,playbackData.totalDuration,playbackData.measureTimeline,syncCursor,finishPlayback]);
 
   useEffect(()=>{
     onPlaybackUpdate?.({isPlaying,currentMeasure:isPlaying?currentMeasure:0});
@@ -3836,6 +3865,12 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
           value={Math.min(positionSec,totalDuration)} onChange={handleSeek}/>
         <div className="midi-player__time">
           <span>{formatSeconds(positionSec)}</span>
+          {/* C16: 재생이 따르지 않는 이동 기호. 고정 높이 재생 막대가 늘지 않도록 시간 줄 가운데 한 줄에 표기만 짧게 보이고,
+              전체 문장은 title과 화면 낭독기용 숨김 글로 둡니다. */}
+          {playbackData.warnings?.length>0&&<div className="player__warning" role="status" title={playbackData.warnings.join('\n')}>
+            <span className="player__warning-text" aria-hidden="true">⚠ 재생 미반영: {(playbackData.navigationMarks||[]).join(' · ')}</span>
+            <span className="visually-hidden">{playbackData.warnings.join(' ')}</span>
+          </div>}
           <span>{formatSeconds(playbackData.totalDuration||0)}</span>
         </div>
       </div>
@@ -4171,12 +4206,23 @@ function App(){
     restoreHistoryAt(idx,`● 히스토리 이동: ${history[idx]?.label||''}`);
   },[history,restoreHistoryAt]);
 
+  // 기록을 지워도 지금 악보는 기준점 한 칸으로 남겨, 다음 편집을 되돌리면 지우기 전 상태로 돌아옵니다(B07, D6).
   const clearHistory=useCallback(()=>{
-    historyStateRef.current={history:[],index:-1};
-    setHistory([]);
-    setHistoryIndex(-1);
-    setHistoryNotice({m:'히스토리를 모두 지웠습니다.',t:'warn'});
-  },[]);
+    if(!files.length){
+      historyStateRef.current={history:[],index:-1};
+      setHistory([]);
+      setHistoryIndex(-1);
+      setHistoryNotice({m:'히스토리를 모두 지웠습니다.',t:'warn'});
+      return;
+    }
+    const next=GlobalHistoryCore.pushHistoryEntry([],-1,files,'기준점 (지우기 전 상태)');
+    historyStateRef.current=next;
+    setHistory(next.history);
+    setHistoryIndex(next.index);
+    setHistoryNotice({m:'이전 기록을 지우고 현재 악보를 기준점으로 남겼습니다.',t:'warn'});
+  },[files]);
+  // 기록이 기준점 한 칸뿐이면 지울 것이 없습니다. 파일이 없을 때 남은 한 칸은 지울 수 있습니다.
+  const canClearHistory=history.length>1||(history.length===1&&!files.length);
 
   const buildSession=useCallback((id='autosave',extra={})=>({
     id,
@@ -4632,6 +4678,7 @@ function App(){
         onRedo={redo}
         onJump={jumpHistory}
         onClear={clearHistory}
+        canClear={canClearHistory}
         notice={historyNotice}
       />
     </aside>

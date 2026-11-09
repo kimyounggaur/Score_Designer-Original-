@@ -297,3 +297,14 @@ axe 4장면 serious/critical 0, 최초 대비 위반과 수정은 docs/a11y-repo
 - 테스트: 12-export +3(B05 파일 전환 후 미리보기 지움·f02 SVG에 Violin, B06 동명 다른 확장자 ZIP 2개, C13 Ossia 포함 PNG 높이 증가·MXL 알림), 13-color +1(filled 0개), 01-transpose +1(같은 stem 두 파일 12조 ZIP 24개·폴더 2개).
 - 설명서: Ossia(이미지 포함·MusicXML 제외), 이미지/PDF(미리보기 무효화·(2) 접미), 색깔 악보(머리 채움 유지).
 - 검증: 단위 153, 12·13·01·06·13-zoom·05·19-ossia·08·11 스펙 20개, 스모크 7 통과.
+
+## 2026-11-09 · A2-5
+- 히스토리 '모두 지우기': 파일이 있으면 지금 악보를 `기준점 (지우기 전 상태)` 한 칸으로 남깁니다(결정 D6, B07). 알림은 "이전 기록을 지우고 현재 악보를 기준점으로 남겼습니다." 버튼은 기록이 한 칸뿐이고 파일이 있으면 비활성입니다. 파일이 없을 때 남은 한 칸(예: '파일 모두 지우기')은 지울 수 있게 `canClear` 조건을 `history.length>1||(history.length===1&&!files.length)`로 정했습니다(프롬프트의 "기준점 1개뿐이면 비활성"을 넓힌 것).
+- MidiPlayer: 곡 끝 정지 이벤트 id를 `endEventIdRef`에 두고 `scheduleEnd`/`clearEnd`/`finishPlayback`으로 나눴습니다. `schedulePlayback`(반복 꺼짐)·재생 중 A-B 끄기는 예약, A-B 켜기·일시정지·정지는 해제합니다. A-B를 끌 때 이미 곡 끝(−0.05초)을 지났으면 바로 정지합니다. 위치 폴링은 반복 꺼짐에서 곡 길이를 지나면 `finishPlayback`을 한 번 부르는 안전망입니다(`isPlayingRef`로 중복 방지). 예약 콜백은 자기 id일 때만 ref를 비웁니다.
+- playback-core: `warnings`를 표기별 문장으로 바꿨습니다. direction의 words(같은 direction의 여러 words를 이어 붙여 검사)가 정규식에 맞으면 그 글자를, 아니면 segno/coda direction-type과 sound(dacapo·dalsegno·fine·tocoda) 속성을, direction 밖 sound와 barline의 segno/coda도 문서 순서로 모읍니다. 대소문자 무시 중복 제거, 40자 넘는 글자는 말줄임. 표기 목록은 `navigationMarks`로도 돌려줍니다(새 필드).
+- 표시 위치 변경(프롬프트는 "플레이어 상단"): 진행 막대 위에 줄을 더하면 132px 고정 높이 재생 막대에서 '반복 기호 펼치기'가 4~6px 잘리고 안쪽에 스크롤이 생겨(1440·1100폭 측정) 시간 줄 가운데에 `⚠ 재생 미반영: Fine · D.C. al Fine`처럼 표기만 짧게 보이고, 전체 문장은 `title`과 화면 낭독기용 숨김 글(`.visually-hidden`, 새 유틸)로 둡니다. `role="status"`. 1440·1100·700폭에서 이전 빌드(e4512eb)와 재생 막대 배치가 같음을 측정했습니다. 글자색은 `--amber`(#ff9f0a, 흰 바탕 대비 약 2:1) 대신 새 변수 `--amber-text`(#8a5100)를 씁니다. axe에 f17 장면을 추가해 통과를 확인했습니다.
+- 픽스처 f17-dacapo(4마디, 2마디 끝 Fine+sound fine, 4마디 끝 D.C. al Fine+sound dacapo) 추가, 01-fixtures 등록.
+- 테스트: 단위 playback-core +2(f17 표기·중복 없음·f08 0개, segno/coda/direction 밖 sound/중복 표기), 21-history 기대값 변경(지우기 뒤 0개 → 기준점 1개·버튼 비활성·음 유지), 18-cursor +1(A-B 켜고 재생 → 300ms 뒤 끄기 → 곡 길이+1.5초 안에 정지·커서 숨김·위치=곡 길이, 수정 전 코드에서 실패 확인), 24 +2(B07 지우기 후 +2 → 실행 취소 → D/4, C16 경고 표기·숨김 문장·title, 경고 없는 파일로 바꾸면 사라짐), axe +1 장면.
+- 설명서: 편집 공통 안내에 '모두 지우기' 기준점, 재생 안내에 '재생 미반영' 표시와 A-B 해제 정지를 적었습니다.
+- 검증: 단위 155, 01·17·18·21·24·axe 스펙 29개, 스모크 7 통과.
+

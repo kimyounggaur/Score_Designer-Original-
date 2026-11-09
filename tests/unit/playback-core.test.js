@@ -52,4 +52,25 @@ describe('PlaybackCore',()=>{
     const nested=score('<measure><repeat direction="forward"/></measure><measure><repeat direction="forward"/></measure><measure><repeat direction="backward"/></measure><measure><repeat direction="backward"/></measure>');
     expect(core.expandMeasureOrder(Array.from(nested.querySelectorAll('measure')))).toEqual([0,1,2,1,2,3,0,1,2,1,2,3]);
   });
+  it('warns about each navigation mark it does not follow, by its written label and without duplicates',()=>{
+    const data=core.extractPlaybackData(fixture('f17-dacapo.musicxml'));
+    expect(data.warnings.length).toBeGreaterThanOrEqual(1);
+    expect(new Set(data.warnings).size).toBe(data.warnings.length);
+    const text=data.warnings.join(' ');
+    expect(text).toContain('D.C.');expect(text).toContain('Fine');
+    expect(data.warnings).toEqual(['반복 기호 Fine은(는) 재생에 반영되지 않습니다.','반복 기호 D.C. al Fine은(는) 재생에 반영되지 않습니다.']);
+    expect(data.navigationMarks).toEqual(['Fine','D.C. al Fine']);
+    expect(core.extractPlaybackData(fixture('f08-repeats-tempo.musicxml')).warnings).toEqual([]);
+  });
+  it('labels segno, coda and bare sound jumps when no words name them',()=>{
+    const doc=score(`<measure number="1"><direction><direction-type><segno/></direction-type><sound segno="s1"/></direction>${note}</measure>`
+      +`<measure number="2"><barline location="left"><coda/></barline>${note}<sound dalsegno="s1"/></measure>`
+      +`<measure number="3"><direction><direction-type><words>rit.</words></direction-type><sound tocoda="c1"/></direction>${note}<direction><direction-type><words>To  Coda</words></direction-type></direction></measure>`);
+    expect(core.extractPlaybackData(doc).warnings).toEqual([
+      '반복 기호 Segno은(는) 재생에 반영되지 않습니다.',
+      '반복 기호 Coda은(는) 재생에 반영되지 않습니다.',
+      '반복 기호 D.S.은(는) 재생에 반영되지 않습니다.',
+      '반복 기호 To Coda은(는) 재생에 반영되지 않습니다.',
+    ]);
+  });
 });
