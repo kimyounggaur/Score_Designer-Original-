@@ -24,7 +24,7 @@ const fileSummary = (page, index) => page.evaluate((i) => {
     parts: doc.querySelectorAll('part-list score-part').length,
     partIds: Array.from(doc.querySelectorAll('part-list score-part'), (sp) => sp.getAttribute('id')),
     notes: doc.querySelectorAll('note').length,
-    romans: doc.querySelectorAll('words[data-roman-analysis]').length,
+    romans: doc.querySelectorAll('words[id^="mxl-roman-"]').length,
     xml: file.xmlString,
   };
 }, index);

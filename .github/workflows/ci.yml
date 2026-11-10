@@ -17,6 +17,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
+      # MusicXML 스키마 검증(tests/e2e/25-schema.spec.js)은 xmllint-wasm을 먼저 쓰고, 안 되면 시스템 xmllint로 폴백합니다.
+      - run: sudo apt-get install -y libxml2-utils
       - run: npm test
       - run: npm run e2e:smoke
       - run: npx playwright test --grep '@panels|@a11y'

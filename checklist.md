@@ -82,3 +82,15 @@ Phase A 종료 체크리스트 (기준 문서 4.3)
 - [x] HTML에 `detectChord`·`getKeyRoot`·`noteToNumStr`·`optStretch` 정의가 없다. `baselineRef`는 NotationPanel에만 남음(N8, 남은 문제)
 - [x] 기본값 D1~D12가 코드·설명서·context-notes에서 서로 같다
 - [x] README·README-TESTING·검증 보고서·설명서(PDF·SVG)·checklist·context-notes 동기화, PR 열림
+
+## Phase B · 출력 유효성 (기준 문서 `MXL-Studio10-PhaseB-출력유효성-바이브코딩-프롬프트.md`, 브랜치 `phase-b/output-validity`)
+
+- [x] B-1 · MusicXML 4.0 스키마 검증 스펙(25-schema 31개), 색상 대문자화(V1), 로마 숫자 표식을 표준 id로 교체(V2) (완료 기준 3개)
+- [ ] B-2 · 음높이 범위 가드(V3), 타악기 파트 조표 보호(V4), TAB 경고(V5)
+- [ ] B-3 · score-timewise 안내와 업로드 오류문 정리(U1)
+- [ ] B-4 · 이미지 내보내기 통일: 화면 밖 고정 폭 렌더(O1·O2)
+- [ ] B-5 · PDF: 쪽 나눔 인쇄 영역(O3·O4)
+- [ ] B-6 · 뷰어 렌더 횟수와 긴 악보 응답성(P1·P2)
+- [ ] B-7 · 재생: 타악기 안내(R1), D.C./D.S./Fine/Coda 점프(R2)
+- [ ] B-8 · 악보 표기 변환 기준선(N8)
+- [ ] B-9 · 회귀 매트릭스·문서 동기화·PR

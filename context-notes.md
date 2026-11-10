@@ -440,3 +440,20 @@ A2-2 per-minute는 비율 대신 `목표 BPM ÷ 박 배수`, 겹점 ×1.75 · A2
 - 모바일 실기기·Safari·Firefox, 드래그앤드롭, 실제 저장공간 가득 참 환경 확인(자동 테스트는 예외를 흉내 냄).
 - Linux 시각 기준 이미지 3장은 Nightly `update_snapshots=true` 아티팩트 검토 후 반영.
 
+
+## 2026-11-10 · Phase B 시작
+- 근거: 배포본(GitHub Pages `mxl-studio.html`)을 main 24f5328과 대조해 같음을 확인한 뒤 직접 분석한 결과(결함 V1~V5, O1~O4, P1~P2, R1~R2, N8, U1). 분석 방법과 증거 등급, 기본값 E1~E12는 프롬프트 문서 0장에 있습니다.
+- 사용자가 "개발 시작"을 지시했고, 위험하지 않은 구현 판단은 작업자가 자체 승인합니다(CLAUDE.md 4항). main에는 직접 올리지 않고 브랜치 `phase-b/output-validity`에서 단계마다 한 커밋씩 쌓습니다.
+
+## 2026-11-10 · B-1
+- **스키마 검증 기반**: `tests/schema/`에 MusicXML 4.0 XSD(`musicxml.xsd`)와 `xml.xsd`·`xlink.xsd`를 둡니다. 출처·바꾼 곳(import 두 줄)·직접 쓴 스텁의 한계는 `tests/schema/README.md`에 적었습니다. 작업 환경에서 W3C 저장소(403)와 musicxml.org에 접근하지 못해 PyPI `musicxml` 1.6.3 휠의 사본을 썼고, 공식 배포본과의 바이트 일치는 확인하지 못했습니다(확인 방법도 README에 있음).
+- devDependency `xmllint-wasm` 5.3.0 고정. `npm install --save-dev`가 `package-lock.json`의 기존 항목(`libc` 등)을 지워서, HEAD의 lock에 필요한 세 패키지(`xmllint-wasm`, `@types/node`, `undici-types`)만 넣은 최소 변경으로 되돌렸습니다(`npm ci --dry-run` 통과).
+- `tests/e2e/schema-validate.js`: `validateMusicXml(xml)` → 오류 문장 배열. xmllint-wasm → 시스템 xmllint → 없으면 `schemaSupport()`가 `{ok:false,reason}`을 주어 스펙이 `test.skip`. `MXL_SCHEMA_BACKEND=native`로 폴백 경로만 시험 가능. CI에 `libxml2-utils` 설치 단계 추가.
+- **`export-core.js`(새 코어, `window.ExportCore`)**: 이번 세션 범위는 `normalizeColor`(#RGB·#RRGGBB·#RRGGBBAA → 대문자), `octaveOutOfRange`(pitch 옥타브가 0~9 정수가 아닌 음 최대 5개), `isPercussionPart`, 상수 `MIN_OCTAVE`·`MAX_OCTAVE`. 단위 테스트 14개. 부팅 검사 `missingLibraries`에 `ExportCore` 추가.
+- **V1 색상**: `NOTE_COLORS`를 대문자로 바꾸고 `noteColorFor(step)`(= `ExportCore.normalizeColor`)를 거쳐 악보에 씁니다. 대상은 색깔 악보(note·notehead·stem)와 가사 계이름 색(lyric text)입니다. 형식이 틀리면 속성을 쓰지 않고 `⚠ … 색상 형식 오류` 로그를 남깁니다. 프롬프트가 있다고 본 가사 스타일 패널의 `<input type="color">`는 실제로는 없습니다(해당 없음).
+- **V2 로마 숫자**: 표식을 `words@id="mxl-roman-<파트 번호(1부터)>-<번호>"`(xs:ID, 문서 안 유일)로 바꿨습니다. `roman-analysis-core.js`(`?v=3`)에 `ROMAN_ID_PREFIX`·`isRomanWords`·`migrateRomanMarkers`를 추가하고, `insertRomanNumerals`는 ① 모든 파트에서 이전 표식(구버전 속성 포함)을 지운 뒤 ② 이미 쓰인 id를 건너뛰며 새로 넣습니다. 이전에는 첫 파트만 지웠습니다. `migrateRomanMarkers`의 반환값은 "문서를 고친 words 수"라서 0보다 크면 xmlString을 다시 직렬화해야 합니다.
+- **프롬프트와 다르게 정한 것**: ① 이전(migrate) 호출을 호출처마다 넣지 않고 `trustParsedFile`(업로드·세션 복원·공유·작업 기록 복원이 모두 지나는 단일 이음매)에 한 번만 넣었습니다. 바뀐 파일은 `commitFile`로 xmlString을 다시 만들고, 바뀔 것이 없으면 같은 객체를 돌려줍니다(문자열에 `data-roman-analysis`가 없으면 DOM을 훑지도 않음). ② 로마 숫자 패널에는 프롬프트가 말한 '삽입 제거' 버튼이 없고 '악보에 삽입'이 이전 표식을 교체하는 구조라서, 완료 기준을 "구 표식 파일 업로드 → 표준 id로 이전 → 다시 삽입하면 중복 없이 교체"로 검증했습니다(새 버튼은 만들지 않음). ③ `musicxml.local.xsd` 사본을 따로 두지 않고 `musicxml.xsd`의 import를 직접 로컬 경로로 바꿨습니다.
+- **검증 스펙** `tests/e2e/25-schema.spec.js`(@panels, 31개): 패널 28행(조옮김 2·조바꿈·카포·음역·이조·템포 2·Ossia(별도 `ossiaMxml`도 검증)·음자리표·파트 추출·표기 변환 5·색깔 악보 2·화성 쌓기·코드 도구 3·숫자 악보 3·가사 스타일 2·로마 숫자), 전체 픽스처 가져오기 1, 구 표식 2(업로드→재삽입, 세션 JSON 복원). 각 행은 먼저 작업 기록이 늘었는지(패널이 실제로 실행됐는지) 확인한 뒤 열린 모든 파일을 스키마로 검증합니다.
+- **스펙이 잡아내는지 확인**: V1(색 소문자)·V2(`data-roman-analysis` 재도입)를 일부러 되살려 돌리면 색깔 악보 2·가사 색·로마 삽입·구 표식 업로드의 5개가 실패하고(오류문에 `not accepted by the pattern`, `attribute is not allowed`), 원복하면 통과합니다.
+- 기존 테스트 기대값 변경: `24-audit-regressions` 요약 함수의 `words[data-roman-analysis]` → `words[id^="mxl-roman-"]`, `roman-analysis-core` 단위 테스트의 표식 단언 → id 접두·고유성·구속성 없음.
+- 검증: 단위 207(185+export-core 14+roman 8), 25-schema 31, `--grep @panels` 121, `--grep @smoke` 7 모두 통과. (샌드박스 주의: 하네스 `e2e.sh`는 CDN 미러가 꺼져 있으면 미러를 파이프에 물린 채 띄우므로, 출력은 `| tail` 대신 파일로 돌려야 합니다. 저장소 코드와는 무관.)

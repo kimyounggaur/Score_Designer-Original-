@@ -331,6 +331,53 @@
     return rows;
   }
 
+  // MusicXML 4.0의 words에는 사용자 속성을 둘 수 없으므로(XSD 위반) 로마 숫자 표식은 xs:ID 속성인 id로 구별합니다.
+  // 구버전이 쓰던 data-roman-analysis="true" 속성은 읽을 때만 인식하고, 새로 쓰지는 않습니다.
+  const ROMAN_ID_PREFIX='mxl-roman-';
+  const LEGACY_ROMAN_ATTR='data-roman-analysis';
+  function isRomanWords(words){
+    if(!words||typeof words.getAttribute!=='function')return false;
+    return String(words.getAttribute('id')||'').startsWith(ROMAN_ID_PREFIX)||words.getAttribute(LEGACY_ROMAN_ATTR)==='true';
+  }
+  // xs:ID는 문서 전체에서 유일해야 하므로 이미 쓰인 id를 모두 모읍니다.
+  function collectIds(xmlDoc){
+    const ids=new Set();
+    toArray(xmlDoc?.getElementsByTagName?.('*')).forEach(el=>{const id=el.getAttribute('id');if(id)ids.add(id);});
+    return ids;
+  }
+  function partNumberOf(xmlDoc,partEl){
+    const index=toArray(xmlDoc?.getElementsByTagName?.('*')).filter(el=>el.localName==='part').indexOf(partEl);
+    return index<0?1:index+1;
+  }
+  // 파트 번호(1부터)와 일련번호로 mxl-roman-<파트>-<번호> id를 만들고, 이미 쓰인 id는 건너뜁니다.
+  function makeRomanIdAllocator(used){
+    const counters=new Map();
+    return partNumber=>{
+      let n=counters.get(partNumber)||1,id;
+      do{id=ROMAN_ID_PREFIX+partNumber+'-'+n;n++;}while(used.has(id));
+      counters.set(partNumber,n);
+      used.add(id);
+      return id;
+    };
+  }
+  // 구버전 표식(words@data-roman-analysis)을 표준 id 표식으로 바꿉니다. 문서를 고친 words 수를 돌려줍니다(고친 것이 없으면 0).
+  // 업로드·세션·공유·작업 기록으로 들어온 문서를 커밋하기 전에 한 번 호출하고, 0보다 크면 xmlString을 다시 직렬화해야 합니다.
+  function migrateRomanMarkers(xmlDoc){
+    const legacy=toArray(xmlDoc?.getElementsByTagName?.('words')).filter(words=>words.hasAttribute(LEGACY_ROMAN_ATTR));
+    if(!legacy.length)return 0;
+    const allocate=makeRomanIdAllocator(collectIds(xmlDoc));
+    legacy.forEach(words=>{
+      const isRoman=words.getAttribute(LEGACY_ROMAN_ATTR)==='true';
+      words.removeAttribute(LEGACY_ROMAN_ATTR);
+      // 값이 true가 아니거나 다른 프로그램이 이미 id를 붙여 둔 words는 속성만 지우고 그대로 둡니다.
+      if(!isRoman||words.hasAttribute('id'))return;
+      let part=words.parentNode;
+      while(part&&part.localName!=='part')part=part.parentNode;
+      words.setAttribute('id',allocate(partNumberOf(xmlDoc,part)));
+    });
+    return legacy.length;
+  }
+
   function insertRomanNumerals(xmlDoc,rows){
     const parts=getPlayablePartElements(xmlDoc);
     const firstPart=parts[0];
@@ -339,12 +386,15 @@
     rows.forEach(row=>{
       if(!firstByMeasure.has(row.measure)&&row.roman&&row.roman!=='?')firstByMeasure.set(row.measure,row.roman);
     });
+    // 1) 이전에 넣은 표식(구버전 속성 포함)을 모든 파트에서 먼저 지웁니다. 새 id가 남은 id와 겹치지 않게 하는 순서입니다.
+    toArray(xmlDoc.getElementsByTagName('direction')).forEach(direction=>{
+      if(isRomanWords(xmlDesc(direction,'words')))direction.remove();
+    });
+    // 2) 첫 번째 재생 파트의 마디마다 로마 숫자를 넣습니다.
+    const allocate=makeRomanIdAllocator(collectIds(xmlDoc));
+    const partNumber=partNumberOf(xmlDoc,firstPart);
     let inserted=0;
     xmlChildren(firstPart,'measure').forEach((measure,index)=>{
-      xmlChildren(measure,'direction').forEach(direction=>{
-        const words=xmlDesc(direction,'words');
-        if(words?.getAttribute?.('data-roman-analysis')==='true')direction.remove();
-      });
       const number=measureNumber(measure,index);
       const roman=firstByMeasure.get(number);
       if(!roman)return;
@@ -354,7 +404,7 @@
       const words=xmlDoc.createElement('words');
       words.setAttribute('font-size','12');
       words.setAttribute('font-weight','bold');
-      words.setAttribute('data-roman-analysis','true');
+      words.setAttribute('id',allocate(partNumber));
       words.textContent=roman;
       directionType.appendChild(words);
       direction.appendChild(directionType);
@@ -369,6 +419,9 @@
   global.RomanAnalysis = {
     detectRomanNumeral,
     insertRomanNumerals,
+    migrateRomanMarkers,
+    isRomanWords,
+    ROMAN_ID_PREFIX,
     getKeyInfo,
     identifyChord,
     detectCadence,

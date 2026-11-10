@@ -73,7 +73,82 @@ describe('RomanAnalysis', () => {
 
     expect(inserted).toBe(5);
     expect(words).toEqual(['Ⅱm7', 'Ⅴ7', 'Ⅰ', 'Ⅳ', 'Ⅰ']);
-    expect(Array.from(doc.querySelectorAll('direction words')).every((word) => word.getAttribute('data-roman-analysis') === 'true')).toBe(true);
+    // MusicXML 4.0의 words에는 사용자 속성을 둘 수 없으므로 표식은 xs:ID 속성 id로 구별합니다(Phase B V2).
+    const marks = Array.from(doc.querySelectorAll('direction words'));
+    expect(marks.every((word) => /^mxl-roman-1-\d+$/.test(word.getAttribute('id')))).toBe(true);
+    expect(new Set(marks.map((word) => word.getAttribute('id'))).size).toBe(marks.length);
+    expect(marks.some((word) => word.hasAttribute('data-roman-analysis'))).toBe(false);
+  });
+});
+
+describe('roman marker ids (Phase B V2)', () => {
+  const parse = (text) => new DOMParser().parseFromString(text, 'text/xml');
+  const base = (body) => parse(`<score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">${body}</part></score-partwise>`);
+  const measure = (number, extra = '') => `<measure number="${number}">${extra}<note><pitch><step>C</step><octave>4</octave></pitch><duration>4</duration></note></measure>`;
+  const rows = (...romans) => romans.map((roman, index) => ({ measure: index + 1, roman }));
+
+  it('re-inserting replaces the earlier markers instead of stacking them and keeps ids unique', () => {
+    const doc = base(measure(1) + measure(2));
+    expect(window.RomanAnalysis.insertRomanNumerals(doc, rows('Ⅰ', 'Ⅴ'))).toBe(2);
+    expect(window.RomanAnalysis.insertRomanNumerals(doc, rows('Ⅳ', 'Ⅰ'))).toBe(2);
+    const marks = Array.from(doc.querySelectorAll('direction words'));
+    expect(marks.map((word) => word.textContent)).toEqual(['Ⅳ', 'Ⅰ']);
+    expect(marks.map((word) => word.getAttribute('id'))).toEqual(['mxl-roman-1-1', 'mxl-roman-1-2']);
+  });
+  it('does not reuse an id that another element already owns', () => {
+    // measure@id도 xs:ID라 문서 전체에서 유일해야 합니다(part@id는 IDREF라 score-part와 같아도 됩니다).
+    const doc = base(measure(1) + measure(2));
+    doc.querySelector('measure').setAttribute('id', 'mxl-roman-1-1');
+    window.RomanAnalysis.insertRomanNumerals(doc, rows('Ⅰ', 'Ⅴ'));
+    const wordIds = Array.from(doc.querySelectorAll('direction words'), (word) => word.getAttribute('id'));
+    expect(wordIds).toEqual(['mxl-roman-1-2', 'mxl-roman-1-3']);
+    expect(doc.querySelector('measure').getAttribute('id')).toBe('mxl-roman-1-1');
+  });
+  it('recognizes a words element by the id prefix, and only by that', () => {
+    const doc = base(measure(1, '<direction><direction-type><words id="mxl-roman-9-9">Ⅰ</words></direction-type></direction><direction><direction-type><words id="memo-1">메모</words></direction-type></direction>'));
+    const [roman, memo] = Array.from(doc.querySelectorAll('words'));
+    expect(window.RomanAnalysis.isRomanWords(roman)).toBe(true);
+    expect(window.RomanAnalysis.isRomanWords(memo)).toBe(false);
+    expect(window.RomanAnalysis.isRomanWords(null)).toBe(false);
+  });
+  it('removes legacy data-roman-analysis directions before inserting', () => {
+    const legacy = '<direction placement="above"><direction-type><words font-size="12" font-weight="bold" data-roman-analysis="true">Ⅰ</words></direction-type></direction>';
+    const doc = base(measure(1, legacy) + measure(2, legacy));
+    window.RomanAnalysis.insertRomanNumerals(doc, rows('Ⅱ'));
+    expect(Array.from(doc.querySelectorAll('direction words'), (word) => word.textContent)).toEqual(['Ⅱ']);
+    expect(doc.querySelector('[data-roman-analysis]')).toBeNull();
+  });
+  it('leaves a normal tempo/expression words direction alone', () => {
+    const own = '<direction placement="above"><direction-type><words>dolce</words></direction-type></direction>';
+    const doc = base(measure(1, own) + measure(2));
+    window.RomanAnalysis.insertRomanNumerals(doc, rows('Ⅰ', 'Ⅴ'));
+    expect(Array.from(doc.querySelectorAll('direction words'), (word) => word.textContent)).toEqual(['dolce', 'Ⅰ', 'Ⅴ']);
+  });
+  it('migrateRomanMarkers turns the legacy attribute into a standard id and reports the count', () => {
+    const legacy = (text) => `<direction placement="above"><direction-type><words font-size="12" data-roman-analysis="true">${text}</words></direction-type></direction>`;
+    const doc = base(measure(1, legacy('Ⅰ')) + measure(2, legacy('Ⅴ')));
+    expect(window.RomanAnalysis.migrateRomanMarkers(doc)).toBe(2);
+    const marks = Array.from(doc.querySelectorAll('direction words'));
+    expect(marks.map((word) => word.getAttribute('id'))).toEqual(['mxl-roman-1-1', 'mxl-roman-1-2']);
+    expect(doc.querySelector('[data-roman-analysis]')).toBeNull();
+    expect(marks.every((word) => window.RomanAnalysis.isRomanWords(word))).toBe(true);
+    expect(window.RomanAnalysis.migrateRomanMarkers(doc)).toBe(0);
+  });
+  it('migrateRomanMarkers numbers by part, drops a non-true legacy attribute without adding an id and counts every words it touched', () => {
+    const word = (text, attr) => `<direction><direction-type><words ${attr}>${text}</words></direction-type></direction>`;
+    const doc = parse(`<score-partwise><part-list><score-part id="P1"/><score-part id="P2"/></part-list>
+      <part id="P1"><measure number="1">${word('Ⅰ', 'data-roman-analysis="true"')}</measure></part>
+      <part id="P2"><measure number="1">${word('Ⅴ', 'data-roman-analysis="true"')}${word('x', 'data-roman-analysis="false"')}</measure></part></score-partwise>`);
+    expect(window.RomanAnalysis.migrateRomanMarkers(doc)).toBe(3);
+    const marks = Array.from(doc.querySelectorAll('words'));
+    expect(marks.map((node) => node.getAttribute('id'))).toEqual(['mxl-roman-1-1', 'mxl-roman-2-1', null]);
+    expect(doc.querySelector('[data-roman-analysis]')).toBeNull();
+  });
+  it('migrateRomanMarkers keeps an id that another program already set', () => {
+    const doc = base(measure(1, '<direction><direction-type><words id="x1" data-roman-analysis="true">Ⅰ</words></direction-type></direction>'));
+    expect(window.RomanAnalysis.migrateRomanMarkers(doc)).toBe(1);
+    expect(doc.querySelector('words').getAttribute('id')).toBe('x1');
+    expect(doc.querySelector('[data-roman-analysis]')).toBeNull();
   });
 });
 
