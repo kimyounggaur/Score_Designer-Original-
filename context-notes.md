@@ -568,3 +568,77 @@ A2-2 per-minute는 비율 대신 `목표 BPM ÷ 박 배수`, 겹점 ×1.75 · A2
 - **스펙이 잡아내는지 확인**(원본을 한 곳씩 망가뜨리고 해당 시험만 실행, 매번 원본과 `cmp`): M1 `commitFile`이 보관본을 안 지움 · M14 지우는 조건을 `!extra`로 줄임(숫자 악보 시험이 잡음) · M2 `run`이 보관본을 무시함 · M3 복원을 `commitFile`로 함 · M4 작업 기록 스냅샷에서 보관본 뺌(E2E·단위 둘 다) · M5 파트 목록을 현재 문서 기준으로 함 · M6 안내 문구 숨김 · M7 옵션 없음이 복원으로 안 감 · M8 복원이 보관본을 안 지움 · M9 복원이 항상 커밋함 · M10 변환이 보관본을 안 담음 · M11 변환마다 보관본을 새로 잡음 · M13 메모리 추정이 보관본을 뺌 · M15 '복원할 원본이 없습니다' 줄 삭제 · M18 복원을 `trustParsedFile`로 등록하지 않음 · M19 `serializeSessionFiles`가 보관본을 실음 · M20 공유 `createPayload`가 보관본을 실음. 17건 모두 해당 시험이 탐지했습니다(M20은 처음엔 놓쳤습니다. `parseShareURLAny`가 알려진 필드만 골라 돌려줘 누출을 가렸기 때문에, 링크 조각을 풀어 원문 JSON을 보도록 시험을 고친 뒤 탐지).
 - **남은 문제**: 보관본은 파일마다 XML 문자열 하나(최대 20MB)를 들고 있습니다. 이전에는 files 배열 참조 하나였으나 둘 다 변환 전 악보 하나를 메모리에 둔다는 점은 같고, 이제 작업 기록 스냅샷이 같은 문자열을 참조로 공유합니다. 세션을 저장하거나 새로고침하면 보관본은 사라집니다(숫자 악보 원본 가사와 같은 한계이며 패널 안내가 말해 줍니다).
 - 검증: `npm test` 256(12개 파일, B-7의 254에서 +2), `grep -n "baselineRef" mxl-studio.html` 0건, 전체 Playwright chromium 228개 중 225 통과·3 건너뜀(visual 3은 기준 이미지 없음)·실패 0(11.1분)과 모바일 @ux 10개 중 9 통과·1 건너뜀(11-layout 모바일은 설계상)·실패 0(합계 238개 중 234 통과·4 건너뜀), 변이 17건 모두 탐지.
+
+## 2026-11-11 · B-9
+- **확인 grep(프롬프트 B-9 1번)**: `grep -n "data-roman-analysis\|baselineRef\|autoResize:true\|'beforeprint',before\|osmd-batch-" mxl-studio.html`가 0건입니다. 처음에는 `data-roman-analysis`가 HTML에 2줄 남아 있었습니다(구 표식을 이전하기 전에 파일마다 DOM을 훑지 않으려고 문자열을 먼저 검사하던 줄). B-1 완료 기준(HTML 0건, 코어에는 이전·제거 판정에만 남음)을 지키려고 그 검사를 코어의 `RomanAnalysis.hasLegacyMarkers(xmlString)`으로 옮겼습니다(`roman-analysis-core.js?v=4`, 단위 +1: 구 속성 글자가 있으면 true, id 표식·null·undefined는 false). `hasLegacyMarkers`를 항상 false로 바꾸면 구 표식 E2E 2개(업로드·세션 복원)가 실패하고 원복하면 통과합니다.
+- **소문자 16진수 색**: `grep -n "#[0-9a-f]\{6\}'" mxl-studio.html`에 3줄이 남습니다. 381행 PNG 캔버스 흰 배경(`ctx.fillStyle='#ffffff'`), 3088·3097행 가사 스타일 패널 미리보기 상자의 CSS 인라인 스타일(`#e5e7eb` 테두리)이며 악보 XML에 쓰이는 값은 0건입니다. 악보 색은 `NOTE_COLORS`(대문자)와 `ExportCore.normalizeColor`만 지납니다.
+- **회귀 매트릭스**: 1.1 표의 모든 ID(V1~V5, O1~O4, P1·P2, R1·R2, N8, U1)에 대응하는 테스트가 이미 있어 새로 채운 것은 없습니다. 대응표는 아래 `Phase B 요약`입니다.
+- **전체 검증**(헤드리스 Chrome, 로컬 CDN 미러): `npm test` 12개 파일 257개 통과, Playwright chromium 228개 중 225 통과·3 건너뜀·실패 0(11.4분), 모바일 `@ux` 10개 중 9 통과·1 건너뜀·실패 0 → 합계 238개 중 234 통과·4 건너뜀. 건너뜀 4개는 Phase A2와 같습니다(Linux 기준 이미지가 없는 visual 3, 모바일의 11-layout 데스크톱 폭 1). PDF 쪽수 시험의 `chromium` 외 skip은 모바일 프로젝트가 `@ux`만 돌려 건너뜀 수를 늘리지 않았습니다.
+- **전후 수치**: 같은 하네스·같은 악보로 Phase B 이전 빌드와 이 브랜치를 창 크기 둘(1440×900·1000×800)에서 쟀습니다. 전체 표는 `docs/verification-report.md`의 'Phase B 재검증'에 있습니다. 12마디 악보의 PNG 저장은 358×2644 → 1650×774, 전체 PNG(ZIP)는 2160×774(창 1440)·1500×774(창 1000) → 1650×774, 헤더 PNG는 1408×1638·528×3998 → 2200×1032이고, 64마디 PDF는 3쪽(창 1440)·11쪽(창 1000) → 어느 창에서나 3쪽입니다. 렌더는 불러오기마다 2회 → 1회입니다(B-6: 64마디 839 → 601ms, 400마디 2파트 9.28 → 4.99초). 프롬프트 1.1의 기준선(358×2611·2160×817, PDF 3쪽·10쪽)과 악보가 달라 값이 조금 다릅니다.
+- **문서 동기화**: README(코어 12개·export-core 행·테스트 행·픽스처 21개·설계 문서 6번·검증 현황 Phase B 행), README-TESTING(f01~f21, @panels 25~27, 단위 12개 파일, f17 행 수정·f18~f21 행, 'MusicXML 스키마 검증' 절과 xmllint 폴백, 결과 줄), CLAUDE.md 데이터 규칙 한 줄(MusicXML 4.0 요소·속성만, 새 변환은 25-schema에 등록), `docs/verification-report.md`, 사용자 설명서·퀵스타트(표지 'Phase B'·갱신일 2026-11-11, 표기 변환 보관본·옥타브 범위·타악기 조표·TAB 안내, 이미지 폭 기본 1100px·용지 기본 A4 세로 문장, 내보내기 패널 화면 `06-export-panel.png` 재촬영). 설명서 PDF·SVG는 `npm run docs:build`로 다시 만들고 전 페이지를 이미지로 확인했습니다.
+- **프롬프트와 다르게 정한 것**
+  - ① `hasLegacyMarkers`는 프롬프트에 없던 코어 함수입니다. 위 grep 기준(HTML 0건)과 B-1 완료 기준을 함께 지키려고 더했습니다.
+  - ② **업데이트 안내 문서(`MXL-Studio-업데이트-문서/`)는 고치지 않았습니다.** 2026-09-03자 기록이고 Phase A·A2 때도 같은 이유로 그대로 두었습니다. 11월 변경은 설명서·README·보고서에 있습니다(필요하면 11월 업데이트 안내를 새로 쓰는 것은 별도 작업).
+  - ③ 설명서 화면은 내보내기 패널 하나(`06-export-panel.png`)만 다시 찍었습니다. 폭 선택·용지 선택·미리보기가 보이는 화면이라 B-4·B-5의 변경이 직접 드러나는 유일한 장면이고, 나머지 화면은 Phase B와 모습이 같습니다.
+  - ④ 프롬프트 4.3의 종료 체크리스트 "기본값 E1~E12가 코드·설명서·context-notes에서 서로 같다"는 아래 표의 '설명서' 칸으로 확인했습니다. E1·E2·E3·E9는 사용자에게 보이지 않는 내부 규칙이라 설명서에 적지 않았고 E4~E8·E10~E12는 설명서에 있습니다.
+- **남은 문제**: 아래 `Phase B 요약`의 '남은 문제'.
+
+## Phase B 요약
+
+### 결함 ID ↔ 세션 ↔ 테스트
+
+| ID | 세션 | 결과 | 테스트 |
+|---|---|---|---|
+| V1 | B-1 | 색상을 대문자 `#RRGGBB`로 정규화해 쓰고, 형식이 틀리면 속성을 쓰지 않고 로그 | unit export-core normalizeColor·25-schema `color notes`·`color notes with stems`·`lyric style: color by pitch` |
+| V2 | B-1 (E2·E3) | 로마 숫자 표식을 `words@id="mxl-roman-…"`로 교체, 구 속성은 업로드·세션 복원 때 이전 | unit roman-analysis(id 접두·고유성·재삽입·migrate·`hasLegacyMarkers`)·25-schema `roman numerals insert`·`legacy file is migrated on upload…`·`legacy markers in a restored session…` |
+| V3 | B-2 (E4) | 결과 옥타브가 0~9 밖이면 그 파일을 커밋하지 않고 경고, 12개 조 ZIP은 그 조만 제외 | 27 `transpose refuses out-of-range octaves`·`…several files…`·`…all 12…`·`harmony thirds refuse…`·`range panel refuses…`·`transposing instrument refuses…`, unit export-core octaveOutOfRange |
+| V4 | B-2 (E5) | 타악기 파트는 조옮김·카포·조바꿈이 조표를 건드리지 않음 | 27 `percussion key stays after …`(3행), unit transpose-core skipKeyFor·insertLeadingKey |
+| V5 | B-2 (E6) | TAB `<fret>`은 그대로 두고 로그로 경고 | 27 `TAB note keeps its fret…`, unit transpose-core tabNotes |
+| U1 | B-3 | timewise·opus·그 밖 루트·파트 없음·마디 없음이 각기 다른 한글 사유로 거절 | panels/21-upload `rejects … with its own reason`(5행) |
+| O1 | B-4 (E7) | PNG 저장·ZIP이 화면 밖 고정 폭 렌더의 같은 크기(폭×배율) | 26 `single PNG and ZIP PNG have the same size`·`export size ignores the window size…`·`the width setting changes…` |
+| O2 | B-4 (E7) | 헤더 PNG도 같은 경로, 확대율·창 폭과 무관 | 26 `header PNG ignores zoom…`, `renderForExport leaves no offscreen box…` |
+| O3 | B-5 (E8) | PDF는 쪽 나눔 `.print-root`만 인쇄, 쪽수가 창 크기·패널과 무관 | 26 `print root paginates…`·`pdf page count equals the print pages…`·`the paper setting changes…`·`the Ossia shares the first page…`·`…gets its own first page…`, 13-zoom-print |
+| O4 | B-5 | '인쇄 / PDF로 저장' 이름·안내, Ctrl+P 직접 입력은 안내만 | 13-zoom-print `does not print the viewer`, 26 용지·쪽 시험 |
+| P1 | B-6 (E9) | `autoResize:false` + 폭 감시, 불러오기 1회·확대 1회당 렌더 1번 | 27 `viewer renders once per load`·`…once per zoom step`·`window resize triggers one debounced render…`·`panel toggle re-renders once…`·`a width change under 4px…`·`…during playback…` |
+| P2 | B-6 | 음표 2,000개 이상은 진행 표시, 연속 확대는 마지막 값만 | 27 `long score shows the progress message…`·`zoom clicks in a burst render only the last value…` |
+| R1 | B-7 (E10) | 타악기 파트는 무음임을 경고 줄에 `타악기 <파트명>`으로 안내 | 27 `unpitched part is reported as muted`·`the warning line shows unfollowed marks and muted parts together`, unit playback-core 타악기 2 |
+| R2 | B-7 (E11) | D.C./D.S. al Fine·al Coda를 한 번만 점프, 맞지 않으면 점프 없이 경고 | unit playback-core 점프 23·f17 1, 17-playback `D.C. al Fine plays 6 measures`·`D.S. al Coda plays 8 measures`, 24 C16 |
+| N8 | B-8 (E12) | `baselineRef` 삭제, 보관본을 파일 객체의 `notationBackup`으로 | panels/11-notation 10개, unit history-core +2 |
+| — | B-1~B-8 | 모든 패널 출력이 MusicXML 4.0 XSD 통과 | 25-schema 32개 |
+
+### 기본값 E1~E12 (코드·설명서·이 문서가 같음)
+
+| 번호 | 결정 | 코드 | 설명서 |
+|---|---|---|---|
+| E1 | 색상 대문자 16진수 | `NOTE_COLORS`, `ExportCore.normalizeColor` | 내부 형식이라 적지 않음 |
+| E2 | 로마 숫자 표식 `words@id="mxl-roman-<파트>-<번호>"` | `roman-analysis-core.js` `ROMAN_ID_PREFIX` | 적지 않음 |
+| E3 | 구 표식은 업로드·세션 복원 때 이전 | `trustParsedFile`·`migrateRomanMarkers`·`hasLegacyMarkers` | 적지 않음 |
+| E4 | 옥타브 0~9 밖이면 파일 단위 거절 | `guardPitchRange`·`ExportCore.octaveOutOfRange` | 편집 도구 표 아래 안내 |
+| E5 | 타악기 파트 조표 보호 | `skipKeyFor:ExportCore.isPercussionPart` | 같은 안내 |
+| E6 | TAB 경고만 | `tabNotes` 로그 | 같은 안내 |
+| E7 | 이미지는 화면 밖 고정 폭, 기본 1100(800·1100·1400) | `renderForExport`·`EXPORT_WIDTHS` | 이미지 / PDF 행(기본 1100px) |
+| E8 | PDF는 `setPageFormat` 쪽 나눔 인쇄 영역, 기본 A4 세로 | `buildPrintRoot`·`printScore`·`PAGE_FORMATS` | 이미지 / PDF 행(A4 세로(기본)) |
+| E9 | 뷰어 `autoResize:false` + 4px·250ms 폭 감시 | ScoreView | 적지 않음 |
+| E10 | 타악기는 재생하지 않고 경고 줄에 안내(E10 표의 `타악기 N파트` 대신 B-7 본문의 `타악기 <파트명>` 형식) | `extractPlaybackData`·MidiPlayer | 재생 절 |
+| E11 | 이동 기호는 한 번 점프(4종) | `expandMeasureOrderDetailed` | 재생 절(지원 4종·한계) |
+| E12 | 표기 변환 복원 기준은 파일 객체 `notationBackup` | `commitFile`·NotationPanel | 표기 변환 행(보관본·↩ 원본 복원) |
+
+### 프롬프트와 다르게 정한 것 (각 세션 절에 이유)
+
+B-1 이전 호출을 `trustParsedFile` 한 곳에 둠·로마 숫자 '삽입 제거' 버튼 없이 재삽입 교체로 검증·`musicxml.local.xsd` 사본 없이 import 경로를 직접 수정 · B-2 f19의 4마디를 C9·C0이 아니라 C9 D9 E9 B9로, `commitIfChanged`로 모든 파일이 막히면 작업 기록을 남기지 않음, 가드는 변환한 문서 전체를 검사 · B-3 시험 3건 대신 분기 5건 · B-4 미리보기로는 SVG가 아니라 상자를 옮김, `svgIntrinsicSize` 추가 · B-5 `:has()` 대신 `body.mxl-printing`, 용지 select는 둘째 줄 · B-6 `__mxlRenderCount`는 인스턴스의 `render`를 감싸 셈(OSMD 내부 호출까지), 진행 표시 오버레이의 blur 제거, 첫 렌더 진행 표시를 `load` 앞에서 켬 · B-7 글자 표식은 문장 전체 일치, 반복 펼치기를 끄면 점프도 끔, 오른쪽 막대선의 segno·coda는 다음 마디, 위치 검사 추가, al Fine·al Coda 동시 표기는 점프 안 함, a11y 장면은 f19 대신 f17 변형 · B-8 복원은 `trustParsedFile`로 바이트 그대로, '↩ 원본 복원' 버튼 추가, 파트 목록은 보관본 기준, `estimateHistoryBytes`에 보관본 반영 · B-9 `hasLegacyMarkers`, 업데이트 안내 문서는 그대로.
+
+### 바뀐 기대값
+
+`24-audit-regressions` 요약 함수의 로마 표식 선택자와 C16(f17: 경고 줄 없음 + 순서 [1,2,3,4,1,2], 경고 표시는 segno 없는 D.S. 악보로) · `13-zoom-print` 인쇄 부분(뷰어가 아니라 `.print-hint`) · `a11y/axe` 'navigation-warning' 장면의 입력 악보 · unit `roman-analysis-core`의 표식 단언, `playback-core`의 f17 라벨 시험 · `01-fixtures` 목록에 f18~f21. 그 밖의 12-export·05-ossia-persist·25-schema·16-numbering·21-history는 고치지 않고 통과합니다. 사용자에게 보이는 동작 변화: 범위를 넘는 변환 거절, 타악기 조표 유지, 이미지 크기 통일과 악보 폭 선택, PDF 쪽 나눔과 용지 선택, 이동 기호 점프, 표기 변환 보관본과 '↩ 원본 복원'.
+
+### 남은 문제
+
+- Ossia를 MusicXML에 넣는 방식(별도 파트 또는 cue) 결정(Phase A2에서 이월).
+- 진짜 PDF 파일 생성(인쇄 창 없이 저장)·한글 글꼴 임베드(PDF 라이브러리와 글꼴 용량 결정 필요). iOS Safari처럼 `window.print()`가 바로 돌아오는 환경에서는 정리가 인쇄 미리보기보다 먼저 일어나 빈 쪽이 나올 수 있음(B-5, 실기기 확인 필요).
+- TAB 줄·프렛 재계산, 타악기 음원(조율·드럼 맵 정보 필요).
+- 점프가 둘 이상인 악보(중첩 D.C. 등)는 점프 없이 재생하고 경고로 알림(E11의 한계).
+- 400마디 이상 악보의 렌더 자체 시간(1회 약 5초). OSMD 단일 SVG 구조의 한계로, 쪽 단위 지연 렌더는 별도 설계.
+- Babel Standalone 시작 시간(앱 표시까지 약 2.2~2.6초, 프롬프트 4.4의 값 그대로 이월). 빌드 시스템 금지 계약(CLAUDE.md 1항)과 충돌하므로 사전 변환본을 저장소에 두는 방식은 사용자 결정이 필요.
+- 키가 큰 악보(f18·f19)에서 `#score-panel` 스크롤 영역이 키보드로 닿지 않는다는 axe `scrollable-region-focusable`(serious). B-7 이전부터 있었고 이번 범위 밖(B-7 절).
+- 클래식 스크롤바 환경의 악보 폭, 모바일 실기기·Safari·Firefox의 인쇄·PNG, 드래그앤드롭, 실제 저장공간 가득 참 환경은 자동 시험으로 확인하지 못함(수동 확인 항목).
+- 악보 클라우드 연동(저장·불러오기 버튼): 프롬프트 4.4의 소스 확인대로 앱 소스에 네트워크 호출이 없어(지금도 `fetch(` 0건) 프로젝트 설명의 클라우드 흐름은 아직 이 앱에 없음. 별도 기획.

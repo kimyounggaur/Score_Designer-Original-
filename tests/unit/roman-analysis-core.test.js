@@ -150,6 +150,12 @@ describe('roman marker ids (Phase B V2)', () => {
     expect(doc.querySelector('words').getAttribute('id')).toBe('x1');
     expect(doc.querySelector('[data-roman-analysis]')).toBeNull();
   });
+  it('hasLegacyMarkers only looks at the xml text so unmarked files skip the DOM walk', () => {
+    expect(window.RomanAnalysis.hasLegacyMarkers('<words data-roman-analysis="true">Ⅰ</words>')).toBe(true);
+    expect(window.RomanAnalysis.hasLegacyMarkers('<words id="mxl-roman-1-1">Ⅰ</words>')).toBe(false);
+    expect(window.RomanAnalysis.hasLegacyMarkers(null)).toBe(false);
+    expect(window.RomanAnalysis.hasLegacyMarkers(undefined)).toBe(false);
+  });
 });
 
 describe('minor keys, inversions and secondary dominants',()=>{

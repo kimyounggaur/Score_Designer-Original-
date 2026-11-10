@@ -360,6 +360,8 @@
       return id;
     };
   }
+  // xmlString에 구버전 표식 속성이 있는지 문자열만 보고 확인합니다. 읽어 들인 파일마다 DOM을 훑지 않으려는 사전 검사입니다.
+  function hasLegacyMarkers(xmlString){return typeof xmlString==='string'&&xmlString.includes(LEGACY_ROMAN_ATTR);}
   // 구버전 표식(words@data-roman-analysis)을 표준 id 표식으로 바꿉니다. 문서를 고친 words 수를 돌려줍니다(고친 것이 없으면 0).
   // 업로드·세션·공유·작업 기록으로 들어온 문서를 커밋하기 전에 한 번 호출하고, 0보다 크면 xmlString을 다시 직렬화해야 합니다.
   function migrateRomanMarkers(xmlDoc){
@@ -420,6 +422,7 @@
     detectRomanNumeral,
     insertRomanNumerals,
     migrateRomanMarkers,
+    hasLegacyMarkers,
     isRomanWords,
     ROMAN_ID_PREFIX,
     getKeyInfo,

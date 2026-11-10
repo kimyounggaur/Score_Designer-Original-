@@ -40,7 +40,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="measure-core.js?v=1"></script>
 <script src="numbering-core.js?v=1"></script>
 <script src="playback-core.js?v=3"></script>
-<script src="roman-analysis-core.js?v=3"></script>
+<script src="roman-analysis-core.js?v=4"></script>
 <script src="share-session-core.js?v=1"></script>
 <script src="session-store-core.js?v=2"></script>
 <script src="export-core.js?v=3"></script>
@@ -220,11 +220,11 @@ function commitFile(file, doc, extra){
   committedFiles.add(committed);
   return committed;
 }
-// 구버전이 words에 붙이던 data-roman-analysis 속성은 MusicXML 4.0 위반이므로 읽어 들인 파일은 표준 id 표식으로 바꿔 둡니다(Phase B V2).
+// 구버전이 words에 붙이던 사용자 속성은 MusicXML 4.0 위반이므로 읽어 들인 파일은 표준 id 표식으로 바꿔 둡니다(Phase B V2). 속성 이름은 코어만 압니다.
 // 바뀐 파일만 commitFile로 xmlString을 다시 만들고, 바꿀 것이 없으면 같은 객체를 돌려줍니다.
 function migrateLegacyMarkers(file){
   const doc=file?.xmlDoc;
-  if(!doc||typeof file.xmlString!=='string'||!file.xmlString.includes('data-roman-analysis'))return file;
+  if(!doc||!window.RomanAnalysis.hasLegacyMarkers(file.xmlString))return file;
   return window.RomanAnalysis.migrateRomanMarkers(doc)>0?commitFile(file,doc):file;
 }
 // 업로드·세션·공유·작업 기록 복원처럼 xmlString을 파싱해 xmlDoc을 만든 파일도 둘이 일치하므로 같은 대우를 합니다.
