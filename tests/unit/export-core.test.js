@@ -83,3 +83,78 @@ describe('isPercussionPart', () => {
     expect(core.isPercussionPart(null)).toBe(false);
   });
 });
+
+describe('PAGE_FORMATS / EXPORT_WIDTHS', () => {
+  it('lists A4 portrait, A4 landscape and Letter portrait with OSMD ids and @page values', () => {
+    expect(Object.keys(core.PAGE_FORMATS)).toEqual(['A4_P', 'A4_L', 'LETTER_P']);
+    for (const format of Object.values(core.PAGE_FORMATS)) {
+      expect(typeof format.label).toBe('string');
+      expect(typeof format.osmd).toBe('string');
+      expect(format.css).toMatch(/^(A4|letter) (portrait|landscape)$/);
+    }
+    expect(core.PAGE_FORMATS.A4_L.css).toBe('A4 landscape');
+  });
+  it('offers three export widths and uses 1100 as the default', () => {
+    expect(core.EXPORT_WIDTHS).toEqual([800, 1100, 1400]);
+    expect(core.DEFAULT_EXPORT_WIDTH).toBe(1100);
+    expect(core.EXPORT_WIDTHS).toContain(core.DEFAULT_EXPORT_WIDTH);
+  });
+});
+
+describe('clampExportWidth', () => {
+  it('keeps the listed widths, also when given as a numeric string', () => {
+    expect(core.clampExportWidth(800)).toBe(800);
+    expect(core.clampExportWidth('1400')).toBe(1400);
+  });
+  it('falls back to the default for anything else', () => {
+    for (const bad of [0, 1000, 358, -1, NaN, '', 'wide', null, undefined]) {
+      expect(core.clampExportWidth(bad)).toBe(1100);
+    }
+  });
+});
+
+describe('pngPixelSize', () => {
+  it('multiplies by the scale and rounds to whole pixels', () => {
+    expect(core.pngPixelSize({ width: 1100, height: 821.33 }, 2)).toEqual({ width: 2200, height: 1643, tooLarge: false });
+    expect(core.pngPixelSize({ width: 800, height: 600 }, 1.5)).toEqual({ width: 1200, height: 900, tooLarge: false });
+  });
+  it('flags a side beyond the 16,384px canvas limit', () => {
+    expect(core.pngPixelSize({ width: 1100, height: 5000 }, 4).tooLarge).toBe(true);
+    expect(core.pngPixelSize({ width: 1100, height: 4096 }, 4).tooLarge).toBe(false);
+    expect(core.pngPixelSize({ width: 16385, height: 10 }, 1).tooLarge).toBe(true);
+  });
+  it('flags an area beyond the canvas limit even when each side fits', () => {
+    expect(core.pngPixelSize({ width: 16000, height: 16000 }, 1).tooLarge).toBe(false);
+    expect(core.pngPixelSize({ width: 16384, height: 16384 }, 1).tooLarge).toBe(true);
+  });
+  it('flags missing or zero sizes instead of producing a blank PNG', () => {
+    expect(core.pngPixelSize(null, 2).tooLarge).toBe(true);
+    expect(core.pngPixelSize({ width: 0, height: 100 }, 2).tooLarge).toBe(true);
+    expect(core.pngPixelSize({ width: 'x', height: 100 }, 2).tooLarge).toBe(true);
+  });
+});
+
+describe('svgIntrinsicSize', () => {
+  const svg = attrs => {
+    const doc = parse(`<svg xmlns="http://www.w3.org/2000/svg" ${attrs}/>`);
+    return doc.documentElement;
+  };
+  it('reads the width and height attributes (fractional heights kept)', () => {
+    expect(core.svgIntrinsicSize(svg('width="1100" height="821.33" viewBox="0 0 1100 821.33"'))).toEqual({ width: 1100, height: 821.33 });
+  });
+  it('accepts px units', () => {
+    expect(core.svgIntrinsicSize(svg('width="640px" height="480px"'))).toEqual({ width: 640, height: 480 });
+  });
+  it('falls back to the viewBox when width/height are missing or relative', () => {
+    expect(core.svgIntrinsicSize(svg('viewBox="0 0 900 300"'))).toEqual({ width: 900, height: 300 });
+    expect(core.svgIntrinsicSize(svg('width="100%" height="auto" viewBox="0 0 700 200"'))).toEqual({ width: 700, height: 200 });
+    expect(core.svgIntrinsicSize(svg('viewBox="0,0,500,250"'))).toEqual({ width: 500, height: 250 });
+  });
+  it('returns null when the size cannot be known', () => {
+    expect(core.svgIntrinsicSize(svg(''))).toBeNull();
+    expect(core.svgIntrinsicSize(svg('viewBox="0 0 0 0"'))).toBeNull();
+    expect(core.svgIntrinsicSize(svg('width="0" height="0"'))).toBeNull();
+    expect(core.svgIntrinsicSize(null)).toBeNull();
+    expect(core.svgIntrinsicSize({})).toBeNull();
+  });
+});

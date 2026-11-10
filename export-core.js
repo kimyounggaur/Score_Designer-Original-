@@ -65,11 +65,60 @@
     return hasUnpitched && !hasPitched;
   }
 
+  // ---- 이미지·PDF 내보내기(Phase B O1~O4) ----
+  // 내보내기 크기는 화면에 보이는 요소가 아니라 이 값으로 정합니다. 같은 파일·같은 설정이면 PNG 저장·ZIP·헤더 PNG의 크기가 같습니다.
+  // PAGE_FORMATS.osmd는 OSMD setPageFormat에 넘기는 id, css는 @page size 값입니다.
+  const PAGE_FORMATS = {
+    A4_P: { label: 'A4 세로', osmd: 'A4_P', css: 'A4 portrait' },
+    A4_L: { label: 'A4 가로', osmd: 'A4_L', css: 'A4 landscape' },
+    LETTER_P: { label: 'Letter 세로', osmd: 'Letter_P', css: 'letter portrait' },
+  };
+  const EXPORT_WIDTHS = [800, 1100, 1400];
+  const DEFAULT_EXPORT_WIDTH = 1100;
+  // 브라우저 canvas 한도(Chromium 기준 한 변 16,384px, 넓이 약 2억 6,800만 px)를 넘으면 PNG를 만들 수 없습니다.
+  const MAX_PNG_SIDE = 16384;
+  const MAX_PNG_AREA = 268000000;
+
+  // 목록에 없는 값(빈 값·문자·다른 숫자)은 기본 폭으로 돌립니다. 숫자 문자열('1400')은 받아들입니다.
+  function clampExportWidth(value) {
+    const width = Number(value);
+    return EXPORT_WIDTHS.includes(width) ? width : DEFAULT_EXPORT_WIDTH;
+  }
+
+  // 배율을 곱한 PNG 픽셀 크기. 어느 한 변이든 넓이든 canvas 한도를 넘으면 tooLarge가 true입니다.
+  function pngPixelSize(size, scale) {
+    const width = Math.round(Number(size && size.width) * scale);
+    const height = Math.round(Number(size && size.height) * scale);
+    const tooLarge = !(width > 0 && height > 0) || width > MAX_PNG_SIDE || height > MAX_PNG_SIDE || width * height > MAX_PNG_AREA;
+    return { width, height, tooLarge };
+  }
+
+  const plainNumber = value => (/^\s*\d+(\.\d+)?(px)?\s*$/.test(value || '') ? parseFloat(value) : NaN);
+
+  // SVG의 본래 크기(좌표계 크기). 화면에 CSS로 줄어든 크기(getBoundingClientRect)가 아니라 width·height 속성, 없거나 %면 viewBox를 씁니다.
+  // 알 수 없으면 null이며, 그때는 호출한 쪽이 화면 크기로 대신합니다.
+  function svgIntrinsicSize(svg) {
+    if (!svg || typeof svg.getAttribute !== 'function') return null;
+    let width = plainNumber(svg.getAttribute('width'));
+    let height = plainNumber(svg.getAttribute('height'));
+    if (!(width > 0 && height > 0)) {
+      const box = String(svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+      if (box.length === 4 && box.every(Number.isFinite) && box[2] > 0 && box[3] > 0) { width = box[2]; height = box[3]; }
+    }
+    return width > 0 && height > 0 ? { width, height } : null;
+  }
+
   global.ExportCore = {
     MIN_OCTAVE,
     MAX_OCTAVE,
+    PAGE_FORMATS,
+    EXPORT_WIDTHS,
+    DEFAULT_EXPORT_WIDTH,
     normalizeColor,
     octaveOutOfRange,
     isPercussionPart,
+    clampExportWidth,
+    pngPixelSize,
+    svgIntrinsicSize,
   };
 })(window);

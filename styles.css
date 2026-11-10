@@ -2484,9 +2484,9 @@ body {
 .measure-input[aria-invalid="true"],
 .form-input[aria-invalid="true"] { border-color: var(--red); box-shadow: 0 0 0 1px var(--red); }
 
-/* Phase A2 · 이미지 내보내기 미리보기의 Ossia(본보 위)
-   OSMD는 상자의 offsetWidth로 배치합니다. 안쪽 상자가 .export-preview의 패딩까지 같은 폭(offsetWidth)을 갖게 해
-   본보만 있을 때 예전(미리보기 상자에 바로 렌더)과 같은 배치·크기로 나오게 합니다. */
-.export-preview > .export-preview__main,
-.export-preview > .export-preview__ossia { margin-inline: -16px; padding-inline: 16px; }
+/* Phase B · 이미지 내보내기 (O1·O2)
+   내보내기용 렌더는 화면 밖의 고정 폭 상자(.export-offscreen, 폭은 JS가 정함)에서 하고 끝나면 지웁니다.
+   미리보기는 거기서 옮겨 온 SVG를 CSS로만 줄여 보여 주므로(.export-preview svg) 패널 폭이 내보내기 크기에 영향을 주지 않습니다. */
+.export-offscreen { position: fixed; left: -20000px; top: 0; pointer-events: none; }
 .export-preview > .export-preview__ossia { margin-bottom: 12px; }
+.export-settings__hint { margin-top: 4px; font-size: 12px; color: var(--text-muted); }

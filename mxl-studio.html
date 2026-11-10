@@ -43,7 +43,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="roman-analysis-core.js?v=3"></script>
 <script src="share-session-core.js?v=1"></script>
 <script src="session-store-core.js?v=2"></script>
-<script src="export-core.js?v=1"></script>
+<script src="export-core.js?v=2"></script>
 </head>
 <body>
 <div id="root"><div id="boot" class="boot" role="status">
@@ -309,10 +309,18 @@ function uniqueStem(stem,used){
   while(used.has(result))result=`${stem} (${suffix++})`;
   used.add(result);return result;
 }
+// SVG의 내보내기 크기. 화면에 CSS로 줄어든 크기(getBoundingClientRect)가 아니라 SVG 자신의 width·height 속성(없으면 viewBox)을 씁니다.
+// 패널 폭이나 창 크기에 따라 같은 악보의 PNG 크기가 달라지던 결함(O1)의 핵심입니다. 크기를 알 수 없을 때만 화면 크기로 대신합니다.
+function svgExportSize(svg){
+  const size=window.ExportCore.svgIntrinsicSize(svg);
+  if(size)return size;
+  const rect=svg.getBoundingClientRect();
+  return {width:rect.width,height:rect.height};
+}
 // 렌더된 SVG들을 위에서 아래로 쌓아 하나의 SVG 마크업으로 만듭니다(Ossia 위, 본보 아래, 간격 12px).
 // SVG가 하나면 기존 내보내기와 같은 마크업을 냅니다.
 function stackSvgMarkup(svgEls,gap=12){
-  const items=svgEls.filter(Boolean).map(svg=>{const r=svg.getBoundingClientRect();return {svg,width:r.width,height:r.height};});
+  const items=svgEls.filter(Boolean).map(svg=>({svg,...svgExportSize(svg)}));
   if(!items.length)throw new Error('SVG를 찾을 수 없습니다.');
   const serializer=new XMLSerializer();
   if(items.length===1){
@@ -330,12 +338,21 @@ function stackSvgMarkup(svgEls,gap=12){
   });
   return {markup:`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${y}" viewBox="0 0 ${width} ${y}">${parts.join('')}</svg>`,width,height:y};
 }
+// PNG 한 장이 canvas 한도(한 변 16,384px·넓이 약 2억 6,800만 px)를 넘으면 변환하지 않고 안내문을 돌려줍니다. 문제가 없으면 null입니다.
+function pngSizeProblem(size,scale){
+  const px=window.ExportCore.pngPixelSize(size,scale);
+  return px.tooLarge?`이미지가 너무 큽니다(${px.width}×${px.height}). 배율이나 폭을 낮추세요.`:null;
+}
 function svgMarkupToPngBlob({markup,width,height},{scale=1,bgWhite=true}={}){
+  // 화면 크기와 무관하게 정수 픽셀로 고정합니다. 소수 높이(821.33)에 배율을 곱해도 canvas가 한 줄 잘리지 않습니다.
+  const problem=pngSizeProblem({width,height},scale);
+  if(problem)return Promise.reject(new Error(problem));
+  const px=window.ExportCore.pngPixelSize({width,height},scale);
   return new Promise((resolve,reject)=>{
     const url=URL.createObjectURL(new Blob([markup],{type:'image/svg+xml;charset=utf-8'}));
     const img=new Image();
     img.onload=()=>{
-      const canvas=document.createElement('canvas');canvas.width=width*scale;canvas.height=height*scale;
+      const canvas=document.createElement('canvas');canvas.width=px.width;canvas.height=px.height;
       const ctx=canvas.getContext('2d');
       if(bgWhite){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);}
       ctx.drawImage(img,0,0,canvas.width,canvas.height);URL.revokeObjectURL(url);
@@ -347,7 +364,9 @@ function svgMarkupToPngBlob({markup,width,height},{scale=1,bgWhite=true}={}){
 }
 // 본보와 Ossia(있으면)를 container 안에 렌더합니다. 뷰어와 같은 순서·배율(Ossia 0.65)입니다.
 // isStale()이 true를 돌려주면 렌더를 멈추고 null을 반환합니다.
-async function renderScoreSvgs(file,container,{isStale=()=>false}={}){
+// pageFormat(PAGE_FORMATS 키)이 있으면 OSMD 쪽 나눔을 켭니다. 그때 본보 SVG는 쪽마다 하나이며 pages에 모입니다(PDF·B-5).
+// 렌더 폭은 container의 폭(offsetWidth)이 정합니다. 내보내기는 renderForExport가 고정 폭 상자를 만들어 이 함수를 부릅니다.
+async function renderScoreSvgs(file,container,{isStale=()=>false,pageFormat=null}={}){
   container.innerHTML='';
   const ossiaBox=document.createElement('div');ossiaBox.className='export-preview__ossia';
   const mainBox=document.createElement('div');mainBox.className='export-preview__main';
@@ -355,6 +374,8 @@ async function renderScoreSvgs(file,container,{isStale=()=>false}={}){
   const osmd=new opensheetmusicdisplay.OpenSheetMusicDisplay(mainBox,{autoResize:false,backend:'svg',drawTitle:true,drawComposer:true,drawPartNames:true,drawMeasureNumbers:true});
   await osmd.load(serializeScore(file.xmlDoc));
   if(isStale())return null;
+  const format=pageFormat&&window.ExportCore.PAGE_FORMATS[pageFormat];
+  if(format)osmd.setPageFormat(format.osmd);
   osmd.render();
   let ossia=null;
   if(file.ossiaMxml){
@@ -364,7 +385,26 @@ async function renderScoreSvgs(file,container,{isStale=()=>false}={}){
     ossiaOsmd.zoom=0.65;ossiaOsmd.render();
     ossia=ossiaBox.querySelector('svg');
   }else ossiaBox.remove();
-  return {osmd,main:mainBox.querySelector('svg'),ossia};
+  return {osmd,main:mainBox.querySelector('svg'),ossia,pages:Array.from(mainBox.querySelectorAll('svg')),boxes:Array.from(container.children)};
+}
+// 화면 밖의 고정 폭 상자에서 악보를 렌더합니다. PNG 저장·ZIP·헤더 PNG·미리보기가 모두 이 길을 지나므로
+// 패널 폭·창 크기·확대율과 상관없이 같은 파일·같은 폭이면 같은 SVG가 나옵니다(O1·O2).
+// 반환: {osmd,main,ossia,pages,boxes,dispose()}. 쓰고 나면 dispose()로 상자를 body에서 지웁니다. isStale()이 true면 null입니다.
+// boxes(Ossia·본보 상자)는 dispose 전에 다른 곳(미리보기)으로 옮겨 쓸 수 있습니다.
+async function renderForExport(file,{width=window.ExportCore.DEFAULT_EXPORT_WIDTH,pageFormat=null,isStale=()=>false}={}){
+  const pixels=Math.round(Number(width));
+  const holder=document.createElement('div');
+  holder.className='export-offscreen';
+  holder.setAttribute('data-export-offscreen','');
+  holder.setAttribute('aria-hidden','true');
+  holder.style.width=`${pixels>0?pixels:window.ExportCore.DEFAULT_EXPORT_WIDTH}px`;
+  document.body.appendChild(holder);
+  const dispose=()=>holder.remove();
+  try{
+    const rendered=await renderScoreSvgs(file,holder,{isStale,pageFormat});
+    if(!rendered){dispose();return null;}
+    return {...rendered,dispose};
+  }catch(error){dispose();throw error;}
 }
 function serializeSessionFiles(files){
   return Array.from(files||[]).map(file=>({
@@ -2150,6 +2190,7 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
   useEffect(()=>setSelIdx(activeFile),[activeFile]);
   const [format,setFormat]=useState('png');
   const [scale,setScale]=useState(1.5);
+  const [exportWidth,setExportWidth]=useState(window.ExportCore.DEFAULT_EXPORT_WIDTH);
   const [bgWhite,setBgWhite]=useState(true);
   const [previewing,setPreviewing]=useState(false);
   const [previewReady,setPreviewReady]=useState(false);
@@ -2169,39 +2210,47 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
     return activeDoc(files,activeFile).querySelector('part')?.querySelectorAll('measure')?.length||0;
   },[files,activeFile]);
 
-  // 미리보기가 그린 파일·문서·Ossia를 기억합니다. 선택 파일이나 악보가 바뀌면 미리보기를 지웁니다(B05).
+  // 미리보기가 그린 파일·문서·Ossia·폭을 기억합니다. 선택 파일이나 악보, 악보 폭이 바뀌면 미리보기를 지웁니다(B05·J-4).
   const previewSourceRef=useRef(null);
-  const previewMatches=useCallback(()=>{
+  const sameScoreAsPreview=useCallback(()=>{
     const source=previewSourceRef.current,current=files[selIdx];
     return !!(source&&current&&source.index===selIdx&&source.xmlDoc===current.xmlDoc&&source.ossiaMxml===current.ossiaMxml);
   },[files,selIdx]);
+  const previewMatches=useCallback(()=>sameScoreAsPreview()&&previewSourceRef.current.width===exportWidth,[sameScoreAsPreview,exportWidth]);
   useEffect(()=>{
     if(!previewReady||previewMatches())return;
+    const widthOnly=sameScoreAsPreview();
     previewGeneration.current++;
     if(previewRef.current)previewRef.current.innerHTML='';
     osmdRef.current=null;previewSourceRef.current=null;setPreviewReady(false);
-    setLog([{m:'ℹ 선택 파일이나 악보가 바뀌어 미리보기를 지웠습니다. 다시 실행하세요.',t:'info'}]);
-  },[files,selIdx,previewReady,previewMatches]);
+    setLog([{m:widthOnly?'ℹ 악보 폭이 바뀌어 미리보기를 지웠습니다. 다시 실행하세요.':'ℹ 선택 파일이나 악보가 바뀌어 미리보기를 지웠습니다. 다시 실행하세요.',t:'info'}]);
+  },[files,selIdx,exportWidth,previewReady,previewMatches,sameScoreAsPreview]);
 
-  // 본보와 Ossia를 함께 미리보기에 렌더합니다(Ossia 위, 본보 아래).
+  // 본보와 Ossia를 화면 밖 고정 폭 상자에서 렌더한 뒤 미리보기로 옮깁니다(Ossia 위, 본보 아래).
+  // 미리보기 상자 안에서는 CSS로만 줄여 보이며, SVG의 width·height 속성(=내보내기 크기)은 그대로입니다.
   const loadPreview=useCallback(async()=>{
     if(!files.length||!previewRef.current)return;
     const index=files[selIdx]?selIdx:0;const file=files[index];
     const generation=++previewGeneration.current;
+    const width=window.ExportCore.clampExportWidth(exportWidth);
     setPreviewing(true);setPreviewReady(false);previewSourceRef.current=null;
+    previewRef.current.innerHTML='';
+    let rendered=null;
     try{
-      const rendered=await renderScoreSvgs(file,previewRef.current,{isStale:()=>generation!==previewGeneration.current});
-      if(!rendered||generation!==previewGeneration.current)return;
+      rendered=await renderForExport(file,{width,isStale:()=>generation!==previewGeneration.current});
+      if(!rendered||generation!==previewGeneration.current||!previewRef.current)return;
+      rendered.boxes.forEach(box=>previewRef.current.appendChild(box));
       osmdRef.current=rendered.osmd;
-      previewSourceRef.current={index,xmlDoc:file.xmlDoc,ossiaMxml:file.ossiaMxml};
+      previewSourceRef.current={index,xmlDoc:file.xmlDoc,ossiaMxml:file.ossiaMxml,width};
       setPreviewReady(true);
     }catch(e){
       if(previewRef.current)previewRef.current.innerHTML='';
       setLog(l=>[...l,{m:'❌ 렌더링 오류: '+friendlyError(e),t:'err'}]);
     }finally{
+      if(rendered)rendered.dispose();
       if(generation===previewGeneration.current)setPreviewing(false);
     }
-  },[files,selIdx]);
+  },[files,selIdx,exportWidth]);
 
   const previewSvgs=()=>[previewRef.current?.querySelector('.export-preview__ossia svg'),previewRef.current?.querySelector('.export-preview__main svg')];
   const stemOf=name=>safeFileStem(String(name||'score').replace(/\.(mxl|xml|musicxml)$/i,''));
@@ -2232,29 +2281,36 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
   const exportAllPNG=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('전체 파일 PNG 변환 중...');
-    const container=document.createElement('div');
-    container.id='osmd-batch-'+Date.now();
-    document.body.appendChild(container);
+    const width=window.ExportCore.clampExportWidth(exportWidth);
+    const lines=[];
     try{
-      const zip=new JSZip();const lines=[];const used=new Set();
+      const zip=new JSZip();const used=new Set();
       for(let fi=0;fi<files.length;fi++){
         showProgress(`PNG 변환 중... (${fi+1}/${files.length})`);
         await new Promise(r=>setTimeout(r,50));
-        const rendered=await renderScoreSvgs(files[fi],container);
-        if(!rendered?.main){lines.push({m:`⚠ ${files[fi].name}: SVG 렌더링 실패`,t:'warn'});continue}
-        const {blob,width,height}=await svgMarkupToPngBlob(stackSvgMarkup([rendered.ossia,rendered.main]),{scale,bgWhite});
-        // 같은 이름의 .xml·.mxl이 있어도 엔트리가 덮이지 않게 고유 이름을 씁니다(B06).
-        const bn=uniqueStem(stemOf(files[fi].name),used);
-        zip.file(`${bn}.png`,blob);
-        lines.push({m:`✓ ${bn}.png (${Math.round(width)}×${Math.round(height)}px${rendered.ossia?', Ossia 포함':''})`,t:'ok'});
+        // 파일마다 화면 밖 고정 폭 상자에서 렌더하고 바로 지웁니다. 미리보기와 같은 폭이라 PNG 저장과 크기가 같습니다(O2).
+        const rendered=await renderForExport(files[fi],{width});
+        try{
+          if(!rendered?.main){lines.push({m:`⚠ ${files[fi].name}: SVG 렌더링 실패`,t:'warn'});continue}
+          const stacked=stackSvgMarkup([rendered.ossia,rendered.main]);
+          const problem=pngSizeProblem(stacked,scale);
+          if(problem){lines.push({m:`❌ ${files[fi].name}: ${problem}`,t:'err'});continue}
+          const {blob,width:pixelWidth,height:pixelHeight}=await svgMarkupToPngBlob(stacked,{scale,bgWhite});
+          // 같은 이름의 .xml·.mxl이 있어도 엔트리가 덮이지 않게 고유 이름을 씁니다(B06).
+          const bn=uniqueStem(stemOf(files[fi].name),used);
+          zip.file(`${bn}.png`,blob);
+          lines.push({m:`✓ ${bn}.png (${pixelWidth}×${pixelHeight}px${rendered.ossia?', Ossia 포함':''})`,t:'ok'});
+        }finally{rendered?.dispose();}
       }
-      const zipBlob=await zip.generateAsync({type:'blob'});
-      downloadBlob(zipBlob,'scores_png.zip');
-      lines.push({m:`✅ ${used.size}개 PNG를 ZIP으로 내려받았습니다.`,t:'ok'});setLog(lines);
-    }catch(e){setLog(l=>[...l,{m:'❌ '+friendlyError(e),t:'err'}])}
-    finally{container.remove();}
+      if(!used.size){lines.push({m:'⚠ 만든 PNG가 없어 ZIP을 내려받지 않았습니다.',t:'warn'});setLog(lines);}
+      else{
+        const zipBlob=await zip.generateAsync({type:'blob'});
+        downloadBlob(zipBlob,'scores_png.zip');
+        lines.push({m:`✅ ${used.size}개 PNG를 ZIP으로 내려받았습니다.${used.size<files.length?` (${files.length-used.size}개 제외)`:''}`,t:'ok'});setLog(lines);
+      }
+    }catch(e){setLog([...lines,{m:'❌ '+friendlyError(e),t:'err'}])}
     hideProgress();
-  },[files,scale,bgWhite,showProgress,hideProgress]);
+  },[files,scale,bgWhite,exportWidth,showProgress,hideProgress]);
 
   // Export SVG directly (Ossia가 있으면 위에 함께 넣습니다)
   const exportSVG=useCallback(()=>{
@@ -2290,8 +2346,15 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
       <div className="export-settings">
         <div className="export-settings__row">
           <div className="export-settings__field">
+            <label className="form-label" htmlFor="export-width">악보 폭</label>
+            <select id="export-width" className="form-select" aria-label="악보 폭" value={exportWidth} onChange={e=>setExportWidth(window.ExportCore.clampExportWidth(e.target.value))}>
+              {window.ExportCore.EXPORT_WIDTHS.map(w=><option key={w} value={w}>{w}px{w===window.ExportCore.DEFAULT_EXPORT_WIDTH?' (기본)':''}</option>)}
+            </select>
+            <div className="export-settings__hint">폭이 넓을수록 한 줄에 마디가 많이 들어갑니다.</div>
+          </div>
+          <div className="export-settings__field">
             <label className="form-label">배율 (PNG)</label>
-            <select className="form-select" value={scale} onChange={e=>setScale(parseFloat(e.target.value))}>
+            <select className="form-select" aria-label="배율 (PNG)" value={scale} onChange={e=>setScale(parseFloat(e.target.value))}>
               <option value={1}>1× (원본)</option>
               <option value={1.5}>1.5× (추천)</option>
               <option value={2}>2× (고해상도)</option>
@@ -4704,17 +4767,20 @@ function App(){
 
   const exportPNG=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
-    const svgEl=document.querySelector('.score-main-render svg');
-    if(!svgEl){notify('악보가 렌더링되지 않았습니다.','warn');return}
+    const file=files[activeFile]||files[0];
     showProgress('PNG 생성 중...');
+    await new Promise(resolve=>setTimeout(resolve,50));
+    let rendered=null;
     try{
-      // 뷰어에 Ossia가 있으면 본보 위에 함께 넣습니다(이미지 패널과 같은 합성).
-      const ossiaEl=(files[activeFile]||files[0])?.ossiaMxml?document.querySelector('.ossia-inline svg'):null;
-      const {blob}=await svgMarkupToPngBlob(stackSvgMarkup([ossiaEl,svgEl]),{scale:2,bgWhite:true});
-      const fn=(files[activeFile]||files[0]).name.replace(/\.(mxl|xml|musicxml)$/i,'');
+      // 뷰어 화면(확대율·창 폭)을 쓰지 않고 이미지 패널과 같은 화면 밖 고정 폭 렌더를 씁니다. 크기는 폭 1100px × 배율 2로 늘 같습니다.
+      // Ossia가 있으면 본보 위에 함께 넣습니다.
+      rendered=await renderForExport(file,{width:window.ExportCore.DEFAULT_EXPORT_WIDTH});
+      if(!rendered?.main){notify('악보를 렌더링하지 못했습니다.','warn');return}
+      const {blob}=await svgMarkupToPngBlob(stackSvgMarkup([rendered.ossia,rendered.main]),{scale:2,bgWhite:true});
+      const fn=file.name.replace(/\.(mxl|xml|musicxml)$/i,'');
       downloadBlob(blob,fn+'.png');
     }catch(e){notify(friendlyError(e),'err');}
-    hideProgress();
+    finally{rendered?.dispose();hideProgress();}
   },[files,activeFile,showProgress,hideProgress]);
 
   const exportPDF=useCallback(()=>{
