@@ -468,3 +468,10 @@ A2-2 per-minute는 비율 대신 `목표 BPM ÷ 박 배수`, 겹점 ×1.75 · A2
 - **테스트**: 단위 `transpose-core.test.js` 24 → 32(+8: skipKeyFor 유무, unpitched 불변, 시작 마디에 key가 없을 때 삽입 안 함·대조군은 삽입, TAB 수, 0반음, TAB 없는 악보). `tests/e2e/27-phase-b-regressions.spec.js`(@panels, 10개): 조옮김 거부(원본·작업 기록·조표·프렛 불변, 로그 `마디 4 F10`), 파일 둘 중 하나만 커밋(같은 객체 유지), 12개 조 ZIP(남은 6개 조 이름·P2 조표 0·로그 수 일치·열린 악보 불변), 화성 쌓기·음역대·이조 악기 거부, 타악기 조표 유지(조옮김·카포·조바꿈, TAB 경고는 앞 두 경로에만), TAB 프렛 유지. `25-schema.spec.js`에 f19 −5 행 추가(32개).
 - **스펙이 잡아내는지 확인**: 가드를 항상 통과시키고 `skipKeyFor`를 `undefined`로 바꿔 돌리면 27 스펙 10개 중 9개가 실패하고(남은 1개는 TAB 경고만 보는 테스트), 원복하면 통과합니다. 단위 테스트는 HEAD 코어로 바꾸면 8개 중 7개가 실패합니다(나머지 1개는 unpitched 불변 확인).
 - 검증: `npm test` 215, 27 스펙 10, `--grep @panels` 132, `--grep @smoke` 7 모두 통과.
+
+## 2026-11-10 · B-3
+- **U1 업로드 거절 사유**: `mxl-studio.html`에 순수 판정 함수 `unsupportedScoreReason(xmlDoc)`를 `validOssia` 옆에 두고 `addFiles`가 쓰도록 바꿨습니다(열 수 있으면 null). 사유는 루트가 `score-timewise`, `opus`, 그 밖의 루트(`지원하는 MusicXML 악보가 아닙니다. (루트 요소: 이름)`), `part` 없음, `part`는 있으나 `measure` 없음의 5가지이고 문구는 프롬프트 그대로입니다. 로그는 기존대로 `파일명: 사유` 형식입니다. 문장이 `FRIENDLY_ERRORS` 패턴(`part-list` 등)에 걸리지 않음을 확인했습니다.
+- **프롬프트와 다르게 정한 것**: ① 프롬프트는 시험 3건(timewise·opus·빈 파트)을 말했지만 같은 함수의 다섯 분기를 모두 시험하려고 "마디 없는 파트"와 "알 수 없는 루트"를 더해 5건으로 했습니다. ② `part` 검사를 `querySelector('part')`에서 직계 자식 `:scope > part`로 좁혔습니다. 앱의 모든 패널이 `score-partwise > part`만 다루므로 직계 `part`가 없는 문서는 어차피 처리할 수 없습니다. ③ 세션 복원(`restoreSession`)의 루트 검사는 자체 문구(`세션 안의 MusicXML 악보를 읽을 수 없습니다.`)가 있어 이번에 건드리지 않았습니다.
+- **테스트**: `tests/e2e/panels/21-upload.spec.js`(CRLF 파일, `eolpatch`로 수정)에 5건 추가. 각 건은 문자열로 만든 파일을 `setInputFiles({name,mimeType,buffer})`로 올려 ① 로그에 `파일명: 사유` ② 다른 분기의 사유가 섞이지 않음 ③ 파일 목록 0개 ④ 파일 수·작업 기록 불변 ⑤ 거절 뒤 올바른 악보(f01)는 열림을 확인합니다. timewise·opus·파트 없음 분기를 일부러 끄면 그 세 건만 실패하고 원복하면 통과합니다.
+- **설명서**: 사용자 설명서 '파일 업로드' 행에 "파트 우선(score-partwise) 형식만 열 수 있으며 … 이유를 알려 주고 열지 않습니다" 문장을 더했고 `manual/`과 `MXL-Studio-사용자설명서/`의 두 HTML을 같은 내용으로 맞췄습니다(바이트 동일 확인). PDF·SVG는 HTML에서 만드는 산출물이라 B-9에서 `npm run docs:build`로 다시 만듭니다.
+- 검증: 21-upload 8(기존 3 + 신규 5), 08-upload-robust·01-fixtures·00-smoke 27, `--grep @smoke` 7 모두 통과.

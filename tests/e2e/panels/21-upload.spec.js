@@ -30,3 +30,28 @@ test('@panels upload: renders MusicXML that has no XML declaration',async({page}
   const xmlText=await page.evaluate(async text=>(await (await window.JSZip.loadAsync(text,{base64:true})).file('score.xml').async('string')),base64);
   expect(xmlText.startsWith('<?xml version="1.0" encoding="UTF-8"?>')).toBe(true);
 });
+
+// Phase B U1: 열 수 없는 악보는 원인별 문장으로 거절하고 파일 목록·작업 기록은 그대로 둡니다. 거절 뒤에도 올바른 악보는 열립니다.
+const PART_LIST='<part-list><score-part id="P1"><part-name>Flute</part-name></score-part></part-list>';
+const rejections=[
+  {name:'score-timewise',file:'timewise.musicxml',xml:`<?xml version="1.0" encoding="UTF-8"?><score-timewise version="4.0">${PART_LIST}<measure number="1"><part id="P1"><note><rest/><duration>4</duration><type>whole</type></note></part></measure></score-timewise>`,reason:'마디 우선(score-timewise) 형식은 지원하지 않습니다. 악보 프로그램에서 MusicXML(partwise)로 다시 내보내 주세요.'},
+  {name:'opus',file:'bundle.musicxml',xml:'<?xml version="1.0" encoding="UTF-8"?><opus><title>묶음</title></opus>',reason:'여러 악보 묶음(opus) 파일은 지원하지 않습니다. 악보를 하나씩 내보내 주세요.'},
+  {name:'a score without parts',file:'no-part.musicxml',xml:`<score-partwise version="4.0">${PART_LIST}</score-partwise>`,reason:'악보에 파트가 없습니다.'},
+  {name:'a part without measures',file:'no-measure.musicxml',xml:`<score-partwise version="4.0">${PART_LIST}<part id="P1"></part></score-partwise>`,reason:'악보에 마디가 없습니다.'},
+  {name:'an unknown root element',file:'page.xml',xml:'<html><body>악보 아님</body></html>',reason:'지원하는 MusicXML 악보가 아닙니다. (루트 요소: html)'},
+];
+for(const row of rejections){
+  test(`@panels upload: rejects ${row.name} with its own reason`,async({page})=>{
+    test.setTimeout(30000);await openApp(page);
+    const state=()=>page.evaluate(()=>({files:window.__mxlGetState().files.length,history:window.__mxlGetState().history.length}));
+    const before=await state();
+    await page.locator('input[type="file"]').setInputFiles({name:row.file,mimeType:'application/xml',buffer:Buffer.from(row.xml)});
+    const log=page.locator('.inspector .panel--visible .result-log');
+    await expect(log).toContainText(`${row.file}: ${row.reason}`);
+    if(!row.reason.includes('루트 요소'))await expect(log).not.toContainText('지원하는 MusicXML 악보가 아닙니다');
+    await expect(page.locator('.file-entry')).toHaveCount(0);
+    expect(await state()).toEqual(before);
+    await uploadFixture(page,'f01-basic.musicxml');
+    expect((await state()).files).toBe(1);
+  });
+}

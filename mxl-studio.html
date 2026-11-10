@@ -276,6 +276,17 @@ function transposeNoticeLines(label,result,lines){
   if(result?.skippedKeyParts)lines.push({m:`ℹ ${label}: 타악기 파트 ${result.skippedKeyParts}개는 조표를 바꾸지 않았습니다.`,t:'info'});
   if(result?.tabNotes)lines.push({m:`⚠ ${label}: TAB 프렛 표기 ${result.tabNotes}개는 바뀌지 않습니다. 줄·프렛을 직접 확인하세요.`,t:'warn'});
 }
+// 읽어 들인 XML을 이 앱이 열 수 없을 때 사유 문장을 돌려주고, 열 수 있으면 null입니다(Phase B U1).
+// 사용자가 "왜 안 열리는지"를 알고 악보 프로그램에서 다시 내보낼 수 있도록 원인별로 나눕니다.
+function unsupportedScoreReason(xmlDoc){
+  const root=xmlDoc?.documentElement,name=root?.localName||'';
+  if(name==='score-timewise')return '마디 우선(score-timewise) 형식은 지원하지 않습니다. 악보 프로그램에서 MusicXML(partwise)로 다시 내보내 주세요.';
+  if(name==='opus')return '여러 악보 묶음(opus) 파일은 지원하지 않습니다. 악보를 하나씩 내보내 주세요.';
+  if(name!=='score-partwise')return `지원하는 MusicXML 악보가 아닙니다. (루트 요소: ${name||'없음'})`;
+  if(!root.querySelector(':scope > part'))return '악보에 파트가 없습니다.';
+  if(!root.querySelector(':scope > part > measure'))return '악보에 마디가 없습니다.';
+  return null;
+}
 function validOssia(xml){
   if(typeof xml!=='string'||!xml)return undefined;
   const doc=new DOMParser().parseFromString(xml,'text/xml');
@@ -4617,7 +4628,8 @@ function App(){
           if(new TextEncoder().encode(xmlString).length>MAX_FILE_BYTES)throw new Error('20MB를 넘는 악보는 열 수 없습니다.');
           const xmlDoc=new DOMParser().parseFromString(xmlString,'text/xml');
           if(xmlDoc.querySelector('parsererror'))throw new Error('XML 파싱 오류입니다. 파일을 확인하세요.');
-          if(xmlDoc.documentElement.localName!=='score-partwise'||!xmlDoc.querySelector('part'))throw new Error('지원하는 MusicXML 악보가 아닙니다.');
+          const reason=unsupportedScoreReason(xmlDoc);
+          if(reason)throw new Error(reason);
           const name=uniqueFileName(file.name,used);
           newFiles.push(trustParsedFile({name,sourceName:file.name,xmlDoc,xmlString}));
           if(name!==file.name)lines.push({m:`중복 이름을 ${name}(으)로 변경했습니다.`,t:'info'});
