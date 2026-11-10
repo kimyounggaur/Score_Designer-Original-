@@ -440,3 +440,205 @@ A2-2 per-minute는 비율 대신 `목표 BPM ÷ 박 배수`, 겹점 ×1.75 · A2
 - 모바일 실기기·Safari·Firefox, 드래그앤드롭, 실제 저장공간 가득 참 환경 확인(자동 테스트는 예외를 흉내 냄).
 - Linux 시각 기준 이미지 3장은 Nightly `update_snapshots=true` 아티팩트 검토 후 반영.
 
+
+## 2026-11-10 · Phase B 시작
+- 근거: 배포본(GitHub Pages `mxl-studio.html`)을 main 24f5328과 대조해 같음을 확인한 뒤 직접 분석한 결과(결함 V1~V5, O1~O4, P1~P2, R1~R2, N8, U1). 분석 방법과 증거 등급, 기본값 E1~E12는 프롬프트 문서 0장에 있습니다.
+- 사용자가 "개발 시작"을 지시했고, 위험하지 않은 구현 판단은 작업자가 자체 승인합니다(CLAUDE.md 4항). main에는 직접 올리지 않고 브랜치 `phase-b/output-validity`에서 단계마다 한 커밋씩 쌓습니다.
+
+## 2026-11-10 · B-1
+- **스키마 검증 기반**: `tests/schema/`에 MusicXML 4.0 XSD(`musicxml.xsd`)와 `xml.xsd`·`xlink.xsd`를 둡니다. 출처·바꾼 곳(import 두 줄)·직접 쓴 스텁의 한계는 `tests/schema/README.md`에 적었습니다. 작업 환경에서 W3C 저장소(403)와 musicxml.org에 접근하지 못해 PyPI `musicxml` 1.6.3 휠의 사본을 썼고, 공식 배포본과의 바이트 일치는 확인하지 못했습니다(확인 방법도 README에 있음).
+- devDependency `xmllint-wasm` 5.3.0 고정. `npm install --save-dev`가 `package-lock.json`의 기존 항목(`libc` 등)을 지워서, HEAD의 lock에 필요한 세 패키지(`xmllint-wasm`, `@types/node`, `undici-types`)만 넣은 최소 변경으로 되돌렸습니다(`npm ci --dry-run` 통과).
+- `tests/e2e/schema-validate.js`: `validateMusicXml(xml)` → 오류 문장 배열. xmllint-wasm → 시스템 xmllint → 없으면 `schemaSupport()`가 `{ok:false,reason}`을 주어 스펙이 `test.skip`. `MXL_SCHEMA_BACKEND=native`로 폴백 경로만 시험 가능. CI에 `libxml2-utils` 설치 단계 추가.
+- **`export-core.js`(새 코어, `window.ExportCore`)**: 이번 세션 범위는 `normalizeColor`(#RGB·#RRGGBB·#RRGGBBAA → 대문자), `octaveOutOfRange`(pitch 옥타브가 0~9 정수가 아닌 음 최대 5개), `isPercussionPart`, 상수 `MIN_OCTAVE`·`MAX_OCTAVE`. 단위 테스트 14개. 부팅 검사 `missingLibraries`에 `ExportCore` 추가.
+- **V1 색상**: `NOTE_COLORS`를 대문자로 바꾸고 `noteColorFor(step)`(= `ExportCore.normalizeColor`)를 거쳐 악보에 씁니다. 대상은 색깔 악보(note·notehead·stem)와 가사 계이름 색(lyric text)입니다. 형식이 틀리면 속성을 쓰지 않고 `⚠ … 색상 형식 오류` 로그를 남깁니다. 프롬프트가 있다고 본 가사 스타일 패널의 `<input type="color">`는 실제로는 없습니다(해당 없음).
+- **V2 로마 숫자**: 표식을 `words@id="mxl-roman-<파트 번호(1부터)>-<번호>"`(xs:ID, 문서 안 유일)로 바꿨습니다. `roman-analysis-core.js`(`?v=3`)에 `ROMAN_ID_PREFIX`·`isRomanWords`·`migrateRomanMarkers`를 추가하고, `insertRomanNumerals`는 ① 모든 파트에서 이전 표식(구버전 속성 포함)을 지운 뒤 ② 이미 쓰인 id를 건너뛰며 새로 넣습니다. 이전에는 첫 파트만 지웠습니다. `migrateRomanMarkers`의 반환값은 "문서를 고친 words 수"라서 0보다 크면 xmlString을 다시 직렬화해야 합니다.
+- **프롬프트와 다르게 정한 것**: ① 이전(migrate) 호출을 호출처마다 넣지 않고 `trustParsedFile`(업로드·세션 복원·공유·작업 기록 복원이 모두 지나는 단일 이음매)에 한 번만 넣었습니다. 바뀐 파일은 `commitFile`로 xmlString을 다시 만들고, 바뀔 것이 없으면 같은 객체를 돌려줍니다(문자열에 `data-roman-analysis`가 없으면 DOM을 훑지도 않음). ② 로마 숫자 패널에는 프롬프트가 말한 '삽입 제거' 버튼이 없고 '악보에 삽입'이 이전 표식을 교체하는 구조라서, 완료 기준을 "구 표식 파일 업로드 → 표준 id로 이전 → 다시 삽입하면 중복 없이 교체"로 검증했습니다(새 버튼은 만들지 않음). ③ `musicxml.local.xsd` 사본을 따로 두지 않고 `musicxml.xsd`의 import를 직접 로컬 경로로 바꿨습니다.
+- **검증 스펙** `tests/e2e/25-schema.spec.js`(@panels, 31개): 패널 28행(조옮김 2·조바꿈·카포·음역·이조·템포 2·Ossia(별도 `ossiaMxml`도 검증)·음자리표·파트 추출·표기 변환 5·색깔 악보 2·화성 쌓기·코드 도구 3·숫자 악보 3·가사 스타일 2·로마 숫자), 전체 픽스처 가져오기 1, 구 표식 2(업로드→재삽입, 세션 JSON 복원). 각 행은 먼저 작업 기록이 늘었는지(패널이 실제로 실행됐는지) 확인한 뒤 열린 모든 파일을 스키마로 검증합니다.
+- **스펙이 잡아내는지 확인**: V1(색 소문자)·V2(`data-roman-analysis` 재도입)를 일부러 되살려 돌리면 색깔 악보 2·가사 색·로마 삽입·구 표식 업로드의 5개가 실패하고(오류문에 `not accepted by the pattern`, `attribute is not allowed`), 원복하면 통과합니다.
+- 기존 테스트 기대값 변경: `24-audit-regressions` 요약 함수의 `words[data-roman-analysis]` → `words[id^="mxl-roman-"]`, `roman-analysis-core` 단위 테스트의 표식 단언 → id 접두·고유성·구속성 없음.
+- 검증: 단위 207(185+export-core 14+roman 8), 25-schema 31, `--grep @panels` 121, `--grep @smoke` 7 모두 통과. (샌드박스 주의: 하네스 `e2e.sh`는 CDN 미러가 꺼져 있으면 미러를 파이프에 물린 채 띄우므로, 출력은 `| tail` 대신 파일로 돌려야 합니다. 저장소 코드와는 무관.)
+
+## 2026-11-10 · B-2
+- **V3 옥타브 범위 가드**: `mxl-studio.html`에 헬퍼 세 개를 `scopeLogLine` 뒤에 둡니다. `guardPitchRange(file,doc,lines,{label,skipped})`는 `ExportCore.octaveOutOfRange(doc)`가 있으면 `⚠ …: 음이 표기 가능한 범위(옥타브 0~9)를 벗어나 …. 예: 마디 N 음이름옥타브` 한 줄을 남기고 false를 돌려줍니다. `commitIfChanged(onFilesUpdate,files,merged,label,lines,done)`는 결과가 모두 원래 객체와 같으면 `onFilesUpdate`를 부르지 않고 `⚠ 적용된 파일이 없어 악보와 작업 기록을 바꾸지 않았습니다.`만 남깁니다(`App.updateFiles`는 호출마다 작업 기록을 남기기 때문). `transposeNoticeLines(label,result,lines)`는 타악기·TAB 안내 줄을 만듭니다.
+- **적용한 패널(`grep -c "guardPitchRange(" mxl-studio.html` = 12, 정의 1 + 호출 11)**: 조옮김 4경로(반음·음정·특정 조·12개 조 ZIP), 마디별 조바꿈, 카포, 음역대 조정, 이조 악기, Ossia(Ossia 문서에 대해, 막히면 그 파일의 Ossia만 만들지 않음), 화성 쌓기, 음자리표 변환(옥타브를 실제로 옮긴 경우에만). 막힌 파일은 `updatedFiles.push(file)`로 같은 객체를 그대로 둡니다. 파일이 여럿이면 범위 안인 파일만 커밋됩니다.
+- **12개 조 ZIP**: 범위를 넘는 조는 ZIP에 넣지 않고 `⚠ 파일 → 조 이름: … ZIP에 넣지 않았습니다` 줄을 남깁니다. ZIP 항목 수 = `✓` 줄 수(규칙 J-3). 남는 조가 하나도 없으면 ZIP을 내려받지 않습니다. 완료 줄은 제외한 조가 있으면 `…(범위를 벗어난 N개 조는 제외)`로 바뀝니다.
+- **V4 타악기 조표 보호**: `transpose-core.js`(`?v=4`)의 `transposeDocument`·`transposePartRange`가 `options.skipKeyFor(partEl)`을 받습니다. true인 파트는 `key`를 고치지도, `insertLeadingKey`로 넣지도 않고, 보표별 다른 key도 건드리지 않으며 `result.skippedKeyParts`를 올립니다. HTML의 조옮김 계열 호출 5곳(TransposePanel `transposeDoc`, InstrumentPanel, KeyChangePanel, CapoPanel, OssiaPanel)이 모두 `ExportCore.isPercussionPart`를 넘기고, 건너뛴 파트가 있으면 `ℹ 파일: 타악기 파트 N개는 조표를 바꾸지 않았습니다.`를 남깁니다. unpitched 음표는 원래 `transposeNoteElement`가 건드리지 않습니다.
+- **V5 TAB 경고(E6, 경고만)**: 두 함수가 `result.tabNotes`(옮겨서 음높이가 실제로 바뀐 `notations > technical > fret` 음표 수)를 돌려줍니다. 0반음처럼 음높이가 안 바뀐 음표는 세지 않습니다. `<fret>`·`<string>`은 고치지 않고 `⚠ 파일: TAB 프렛 표기 N개는 바뀌지 않습니다. 줄·프렛을 직접 확인하세요.`만 남깁니다. 12개 조 ZIP은 파일당 한 번만, ZIP에 넣은 조 중 가장 큰 값으로 안내합니다.
+- **프롬프트와 다르게 정한 것**: ① 픽스처 f19의 4마디를 `C9 D9 E9 B9`로 했습니다(프롬프트는 C9·C0). C0까지 있으면 −5 같은 하향 변환도 막혀서 "범위 안에서는 정상 변환"을 같은 픽스처로 시험할 수 없고 25-schema 행도 못 넣습니다. 윗쪽 끝 음 B9 하나로 +7(F♯10) 거부와 −5 정상 변환을 모두 시험합니다. ② 막힌 파일마다 `continue`만 하면 모든 파일이 막혔을 때도 `onFilesUpdate`가 불려 빈 작업 기록이 생기므로(완료 기준 "히스토리 불변"과 어긋남) `commitIfChanged`로 호출 자체를 건너뜁니다. 다른 파일이 하나라도 바뀌면 이전처럼 한 번 커밋합니다. ③ 가드는 변환한 문서 전체를 검사하는 엄격한 방식입니다. 그래서 원래부터 옥타브 0~9 밖의 음이 있던 파일은 이 패널들의 어떤 변환도 막힙니다(로그의 예시 음이 그 음). 스키마 위반 파일을 더 망가뜨리지 않는 쪽을 택했습니다. ④ `transposeMeasureRange`는 HTML이 쓰지 않고 기존 단위 테스트가 결과 모양을 `toEqual`로 고정하므로 `tabNotes`를 넣지 않았습니다. ⑤ TAB 안내는 `transposeDocument`·`transposePartRange` 계열(조옮김·조바꿈·카포·이조·Ossia)에만 붙이고, 음역대·음자리표의 옥타브 이동에는 붙이지 않았습니다. ⑥ 이조 악기의 "실음 → 이조 악보"가 모든 파트(타악기 포함)에 `<transpose>`를 붙이는 기존 동작은 바꾸지 않았습니다(프롬프트 범위 밖).
+- **테스트**: 단위 `transpose-core.test.js` 24 → 32(+8: skipKeyFor 유무, unpitched 불변, 시작 마디에 key가 없을 때 삽입 안 함·대조군은 삽입, TAB 수, 0반음, TAB 없는 악보). `tests/e2e/27-phase-b-regressions.spec.js`(@panels, 10개): 조옮김 거부(원본·작업 기록·조표·프렛 불변, 로그 `마디 4 F10`), 파일 둘 중 하나만 커밋(같은 객체 유지), 12개 조 ZIP(남은 6개 조 이름·P2 조표 0·로그 수 일치·열린 악보 불변), 화성 쌓기·음역대·이조 악기 거부, 타악기 조표 유지(조옮김·카포·조바꿈, TAB 경고는 앞 두 경로에만), TAB 프렛 유지. `25-schema.spec.js`에 f19 −5 행 추가(32개).
+- **스펙이 잡아내는지 확인**: 가드를 항상 통과시키고 `skipKeyFor`를 `undefined`로 바꿔 돌리면 27 스펙 10개 중 9개가 실패하고(남은 1개는 TAB 경고만 보는 테스트), 원복하면 통과합니다. 단위 테스트는 HEAD 코어로 바꾸면 8개 중 7개가 실패합니다(나머지 1개는 unpitched 불변 확인).
+- 검증: `npm test` 215, 27 스펙 10, `--grep @panels` 132, `--grep @smoke` 7 모두 통과.
+
+## 2026-11-10 · B-3
+- **U1 업로드 거절 사유**: `mxl-studio.html`에 순수 판정 함수 `unsupportedScoreReason(xmlDoc)`를 `validOssia` 옆에 두고 `addFiles`가 쓰도록 바꿨습니다(열 수 있으면 null). 사유는 루트가 `score-timewise`, `opus`, 그 밖의 루트(`지원하는 MusicXML 악보가 아닙니다. (루트 요소: 이름)`), `part` 없음, `part`는 있으나 `measure` 없음의 5가지이고 문구는 프롬프트 그대로입니다. 로그는 기존대로 `파일명: 사유` 형식입니다. 문장이 `FRIENDLY_ERRORS` 패턴(`part-list` 등)에 걸리지 않음을 확인했습니다.
+- **프롬프트와 다르게 정한 것**: ① 프롬프트는 시험 3건(timewise·opus·빈 파트)을 말했지만 같은 함수의 다섯 분기를 모두 시험하려고 "마디 없는 파트"와 "알 수 없는 루트"를 더해 5건으로 했습니다. ② `part` 검사를 `querySelector('part')`에서 직계 자식 `:scope > part`로 좁혔습니다. 앱의 모든 패널이 `score-partwise > part`만 다루므로 직계 `part`가 없는 문서는 어차피 처리할 수 없습니다. ③ 세션 복원(`restoreSession`)의 루트 검사는 자체 문구(`세션 안의 MusicXML 악보를 읽을 수 없습니다.`)가 있어 이번에 건드리지 않았습니다.
+- **테스트**: `tests/e2e/panels/21-upload.spec.js`(CRLF 파일, `eolpatch`로 수정)에 5건 추가. 각 건은 문자열로 만든 파일을 `setInputFiles({name,mimeType,buffer})`로 올려 ① 로그에 `파일명: 사유` ② 다른 분기의 사유가 섞이지 않음 ③ 파일 목록 0개 ④ 파일 수·작업 기록 불변 ⑤ 거절 뒤 올바른 악보(f01)는 열림을 확인합니다. timewise·opus·파트 없음 분기를 일부러 끄면 그 세 건만 실패하고 원복하면 통과합니다.
+- **설명서**: 사용자 설명서 '파일 업로드' 행에 "파트 우선(score-partwise) 형식만 열 수 있으며 … 이유를 알려 주고 열지 않습니다" 문장을 더했고 `manual/`과 `MXL-Studio-사용자설명서/`의 두 HTML을 같은 내용으로 맞췄습니다(바이트 동일 확인). PDF·SVG는 HTML에서 만드는 산출물이라 B-9에서 `npm run docs:build`로 다시 만듭니다.
+- 검증: 21-upload 8(기존 3 + 신규 5), 08-upload-robust·01-fixtures·00-smoke 27, `--grep @smoke` 7 모두 통과.
+
+## 2026-11-10 · B-4
+- **원인(O1·O2)**: 'PNG 저장'은 미리보기 SVG의 `getBoundingClientRect()`(화면에서 CSS로 줄어든 크기)로 PNG 크기를 정했고, 미리보기는 패널 폭(약 358px)에 맞춰 그렸습니다. ZIP은 창 폭 상자에, 헤더 PNG는 뷰어 SVG(확대율·창 폭)에 그렸습니다. 그래서 같은 악보가 358×2611, 2160×817처럼 갈렸습니다.
+- **`export-core.js`(`?v=2`)**: `PAGE_FORMATS`(A4 세로·A4 가로·Letter 세로, `osmd` id와 `@page` 값), `EXPORT_WIDTHS=[800,1100,1400]`, `DEFAULT_EXPORT_WIDTH=1100`, `clampExportWidth`(목록 밖이면 1100, 숫자 문자열 허용), `pngPixelSize({width,height},scale)`(반올림, 한 변 16,384px 초과 또는 넓이 2억 6,800만 px 초과 또는 크기를 모르면 `tooLarge`). 프롬프트에 없던 `svgIntrinsicSize(svg)`를 더했습니다: SVG의 `width`·`height` 속성(`px` 허용), 없거나 `%`·`auto`면 `viewBox`, 그래도 모르면 null. 순수 함수라 jsdom 단위 테스트로 시험하고, HTML은 null일 때만 화면 크기로 대신합니다. 단위 14 → 26(+12: 상수 2, clamp 2, pngPixelSize 4, svgIntrinsicSize 4).
+- **HTML**: `svgExportSize`/`stackSvgMarkup`이 SVG 속성 크기를 쓰도록 바꿨습니다(O1의 핵심 한 줄). `pngSizeProblem(size,scale)`이 한도를 넘으면 `이미지가 너무 큽니다(W×H). 배율이나 폭을 낮추세요.`를 돌려주고, `svgMarkupToPngBlob`은 같은 계산(`pngPixelSize`)의 정수 픽셀로 canvas를 만듭니다(소수 높이 821.33 × 1.5가 한 줄 잘리지 않음). `renderScoreSvgs`는 컨테이너만 받는 구조를 지키며 `pageFormat`(OSMD `setPageFormat`, render 앞)과 반환 `pages`(본보 SVG 전부)·`boxes`(Ossia·본보 상자)를 더했습니다. `renderForExport(file,{width,pageFormat,isStale})`는 `.export-offscreen`(`position:fixed;left:-20000px`, `data-export-offscreen`, `aria-hidden`) 상자를 body에 붙여 그 안에서 `renderScoreSvgs`를 부르고 `{…,dispose()}`를 돌려줍니다. 중단(`isStale`)이나 오류에서도 상자는 지웁니다.
+- **ExportPanel**: 상태 `exportWidth`(기본 1100)와 '악보 폭' `<select>`(800·1100·1400, 안내 "폭이 넓을수록 한 줄에 마디가 많이 들어갑니다."). 배율 select에는 `aria-label="배율 (PNG)"`를 달았습니다(시험이 레이블로 찾도록). `loadPreview`는 화면 밖에서 렌더한 뒤 Ossia·본보 상자를 `.export-preview`로 **옮기고**(appendChild) 화면 밖 상자는 dispose합니다. `previewSourceRef`에 폭을 더했고 폭만 바뀌면 `ℹ 악보 폭이 바뀌어 미리보기를 지웠습니다. 다시 실행하세요.`, 파일·악보가 바뀌면 기존 문구를 냅니다(규칙 J-4). `exportAllPNG`는 파일마다 `renderForExport`→변환→`finally dispose`입니다. 너무 큰 파일은 `❌ 파일명: 이미지가 너무 큽니다…` 줄을 남기고 그 파일만 건너뛰며, 만든 PNG가 하나도 없으면 ZIP을 내려받지 않고(`⚠ 만든 PNG가 없어 ZIP을 내려받지 않았습니다.`), 일부만 건너뛰면 완료 줄에 `(N개 제외)`가 붙습니다. PNG 저장은 `svgMarkupToPngBlob`이 같은 안내문으로 거절합니다(다운로드 없음).
+- **App `exportPNG`(헤더·메뉴 PNG)**: 문자열 `'.score-main-render svg'`를 지우고 `renderForExport(file,{width:DEFAULT_EXPORT_WIDTH})` → `stackSvgMarkup([ossia,main])` → 배율 2 → dispose입니다. 확대율·창 폭과 무관하게 1100×2 = 폭 2200px입니다. 오버레이가 보이도록 렌더 앞에 50ms를 둡니다.
+- **프롬프트와 다르게 정한 것**: ① 미리보기로 옮기는 단위를 SVG가 아니라 `.export-preview__ossia`·`__main` 상자로 했습니다. 기존 선택자(`.export-preview__ossia svg`)와 12-export 시험을 그대로 쓸 수 있고, OSMD 인스턴스가 쥔 컨테이너도 함께 움직입니다. ② Phase A2가 넣은 `.export-preview > .export-preview__main/__ossia { margin-inline:-16px; padding-inline:16px }` 보정(OSMD가 미리보기 패널 폭에 맞춰 배치하게 하던 규칙)은 이제 렌더가 화면 밖에서 끝나므로 지웠고 Ossia 아래 12px 간격만 남겼습니다. ③ `.export-offscreen`의 위치 규칙은 styles.css에 두고 폭만 JS가 인라인으로 정합니다(계약 1항: 스타일은 styles.css). ④ 프롬프트의 4개 시험 외에 SVG 폭(1100·1400), 폭 선택이 레이아웃을 바꿈(800 → 1200px, 1400 → 2100px, 좁을수록 세로가 김), 한도 초과 안내(PNG·ZIP), `renderForExport`의 상자 정리와 `pageFormat` 쪽 나눔(A4 세로 비율 297/210)을 더해 7개로 했습니다.
+- **바뀐 기대값**: 없음. 12-export·05-ossia-persist·13-zoom-print·01-fixtures·25-schema는 고치지 않고 통과합니다. 01-fixtures 목록에 f18·f19를 더했습니다(f18 `f18-long-64.musicxml`은 64마디, 하모니 32개, 한글 제목·가사로 스키마 검증 통과).
+- **스펙이 잡아내는지 확인**: ① 크기 계산을 옛 방식(`getBoundingClientRect`만)으로 되돌리면 26 스펙 중 폭 1650 단언(359가 나옴)과 PNG 저장↔ZIP·헤더 일치가 실패했고, 폭 단언을 더한 뒤에는 창 크기 시험도 실패합니다. ② `previewMatches`의 폭 비교를 빼면 폭 변경 시험이 실패합니다. ③ 헤더 PNG와 ZIP의 `dispose()`를 빼면 `[data-export-offscreen]` 0개 단언이 실패합니다. 원복 뒤 모두 통과합니다.
+- **육안 확인**: f01 + Ossia(1~2마디)의 'PNG 저장'은 1650×763px로, 본보 위에 Ossia(0.65배)가 놓이고 제목·작곡가·템포가 겹치지 않습니다. 같은 악보의 헤더 PNG는 2200×1017px로 비율이 같습니다. 미리보기 패널에서는 같은 SVG가 CSS로 줄어 보입니다.
+- **B-5로 넘기는 것**: `renderForExport(file,{width:800,pageFormat:'A4_P'})`가 64마디를 여러 쪽(쪽마다 297/210 비율)으로 나눔을 시험으로 확인했습니다(OSMD `setPageFormat('A4_P')` id가 맞음). `'A4_L'`·`'Letter_P'` id와 쪽 폭(`PAGE_FORMATS.width`)은 B-5에서 확인·추가합니다.
+- 검증: `npm test` 227(215 + export-core 12), 26-output 7, 12-export·05-ossia-persist·13-zoom-print·01-fixtures·25-schema 57, `--grep @panels` 143, 모바일 `--grep @ux` 9(스킵 1), `--grep @smoke` 7 모두 통과.
+
+## 2026-11-10 · B-5
+- **원인(O3·O4)**: `printScore`가 뷰어 화면 전체를 `window.print()`로 인쇄해 브라우저가 긴 SVG 하나를 쪽 경계에서 임의로 잘랐고, 인쇄 직전 `beforeprint`로 뷰어를 100%로 다시 그리느라 화면과 쪽 수가 창 크기·확대율에 따라 달랐습니다.
+- **`export-core.js`(`?v=3`)**: `PAGE_FORMATS`에 인쇄용 렌더 폭 `width`(96dpi 용지 폭: A4 세로 794, A4 가로 1123, Letter 세로 816)를 더했습니다. 단위 26 → 27(+1: 폭 3개). OSMD 1.8.9의 `PageFormatStandards`에 `A4_P`·`A4_L`·`Letter_P`가 있음을 번들에서 확인했고(`A3_*`·`A5_*`·`Letter_L`·`Endless`도 있음), 시험으로 세 id 모두 쪽 비율(297/210, 210/297, 279.4/215.9)로 그려짐을 확인했습니다.
+- **`buildPrintRoot(file,pageFormat)`**: 전에 남은 `.print-root`·`#mxl-print-page`를 지운 뒤 `renderForExport(file,{width:format.width,pageFormat})`로 화면 밖에서 OSMD 쪽 나눔 렌더를 합니다. 쪽 SVG마다 `<div class="print-page">`를 만들어 SVG를 **옮기고**(`width="100%"`, `height` 속성 제거, `preserveAspectRatio="xMidYMin meet"`), 쪽들을 body 직속 `<div class="print-root" data-page-format>`에 담습니다. 용지는 head의 `<style id="mxl-print-page">@page{size:…;margin:0}</style>`가 정하고(여백은 OSMD 쪽 여백), 표시용 클래스 `body.mxl-printing`을 붙입니다. 화면 밖 상자는 `finally dispose`입니다.
+- **Ossia 배치**: 본보 첫 쪽에서 내용이 끝나는 곳(`svg.getBBox()`의 y+height) + Ossia 높이 + 12px이 쪽 높이 안이면 첫 쪽의 본보 위에 두고, 아니면 Ossia만 담은 쪽을 맨 앞에 둡니다. 옮기면 속성이 바뀌므로 크기는 화면 밖 상자에 있을 때 잽니다. 측정에 실패하면 별도 쪽입니다. f01(2마디)+Ossia는 1쪽에 SVG 2개, f18(64마디)+Ossia는 4쪽(Ossia만 1쪽, 본보 3쪽)입니다.
+- **`printScore(file,pageFormat,{beforePrint})`는 async**: 렌더가 끝난 뒤 `beforePrint()`(진행 표시 끄기)를 부르고 `afterprint`(once)를 걸고 `window.print()`를 엽니다. `afterprint`와 `finally`에서 인쇄 영역·style·`mxl-printing`을 지우고 문서 제목을 되돌립니다. 시험 전용 훅 `window.__mxlKeepPrintRoot=true`이면 지우지 않아 `page.pdf()`로 실제 쪽 수를 셀 수 있습니다(제목 복원은 항상 합니다). 호출처 둘(ExportPanel·App)은 `showProgress('인쇄 준비 중...')` → 50ms → `await printScore` → 오류는 `notify(friendlyError(e),'err')` → `finally hideProgress()`입니다. 헤더·메뉴의 PDF는 A4 세로이고 용지는 이미지 / PDF 패널에서 고릅니다.
+- **뷰어는 인쇄 대상이 아님**: ScoreView의 `beforeprint`·`afterprint` 재렌더와 `printingRef`를 지웠습니다. App에 `beforeprint` 리스너를 두어 `.print-root`가 없을 때(Ctrl+P 직접 입력) `notify('인쇄는 내보내기의 PDF 버튼을 사용하세요.','info')`를 띄웁니다. 그때 인쇄물은 빈 종이 대신 body의 정적 `.print-hint` 한 줄입니다.
+- **styles.css**: `@media print` 블록을 제자리에서 다시 썼습니다(`@page{margin:10mm}`와 뷰어용 규칙 삭제). 화면에서는 `.print-root`·`.print-hint`가 숨고, 인쇄에서는 `body > #root`가 숨고 `.print-root`만 보입니다. `.print-page{break-after:page;break-inside:avoid;width:100%;height:100vh;overflow:hidden}`, 마지막 쪽은 `break-after:auto`입니다.
+- **UI**: '내보내기 설정'에 둘째 줄로 '용지' select(`aria-label="용지"`, A4 세로·A4 가로·Letter 세로, 기본 A4 세로), 버튼 '🖨️ 인쇄 / PDF로 저장'과 안내 "인쇄 창에서 대상을 'PDF로 저장'으로 고르면 PDF 파일이 됩니다.". 헤더 PDF 버튼 title과 메뉴 항목 이름을 '인쇄 / PDF로 저장'으로 맞췄습니다(보이는 글자 'PDF'는 그대로). 용지를 바꿔도 미리보기는 지우지 않습니다(PDF는 미리보기와 따로 렌더).
+- **프롬프트와 다르게 정한 것**: ① 안내 한 줄은 `:has()` 대신 body 클래스 `mxl-printing`으로 껐다 켭니다(`:has` 미지원 브라우저에서도 같은 동작). ② 용지 select는 기존 줄에 끼우지 않고 둘째 줄로 두었습니다(좁은 패널에서 줄바꿈이 덜 어지러움). ③ 'PDF 쪽수' 시험은 `page.pdf()`가 되는 데스크톱 Chromium 프로젝트에서만 돕니다(`test.skip`).
+- **바뀐 기대값**: `13-zoom-print`의 인쇄 부분. 예전에는 인쇄 미디어에서 뷰어 `.score-main-render svg`가 보이는지 확인했으나, 이제 인쇄 미디어에서 `#root`가 숨고 `.print-hint`가 보이며(화면에서는 숨음) `beforeprint`를 보내면 안내 토스트가 뜹니다. 시험 이름도 'prints only the score' → 'does not print the viewer'로 바꿨습니다.
+- **테스트** `26-output.spec.js`(@panels) +5: ① 64마디가 3쪽 이상·쪽마다 SVG 1개·`@page` A4 세로·제목·인쇄 뒤 잔여물 0 ② `page.pdf({preferCSSPageSize:true})`의 쪽 수(`/Type /Page` 개수, `/Pages` 제외) = `.print-page` 수이고 창 1440→1000과 패널 열림에도 같음 ③ 용지 A4 가로·Letter 세로의 `@page` 문자열과 쪽 비율, 미리보기 유지 ④ 짧은 악보+Ossia는 한 쪽에 SVG 둘 ⑤ 긴 악보+Ossia는 Ossia만 담은 쪽이 앞에 더해짐(4쪽).
+- **PDF 육안 확인**(Playwright `page.pdf()` → `pdftoppm`): f18 64마디는 A4 3쪽이며 1쪽 마디 1~29(제목·작곡가 포함), 2쪽 30~59, 3쪽 60~64로 어느 쪽에서도 보표·가사·코드·마디 번호가 잘리지 않고 마지막 쪽이 빈 쪽으로 늘어나지 않았습니다(`pdfinfo` Pages 3, 594.96×841.92pt). f01+Ossia는 한 쪽 위에 Ossia(0.65배), 아래에 제목·본보가 겹치지 않고 놓입니다.
+- **스펙이 잡아내는지 확인**: ① `pageFormat`을 빼면(긴 SVG 하나) 5개 모두 실패 ② 인쇄 뒤 정리를 빼면 잔여물 단언이 3개에서 실패(쪽 수를 직접 지우는 PDF 시험은 통과) ③ Ossia를 항상 첫 쪽에 넣으면 '별도 첫 쪽' 시험 실패 ④ `@page`를 항상 A4 세로로 쓰면 용지 시험 실패 ⑤ 렌더 폭을 창 폭에서 구하면 'PDF 쪽수·창 크기' 시험 실패. 원복 뒤 모두 통과합니다. (변이 도중 원복을 너무 일찍 해 한 번 결과가 섞였으나 실패 판정에는 영향이 없었고, 이후 요약 줄이 나온 뒤에만 원복했습니다.)
+- **남은 문제**: iOS Safari처럼 `window.print()`가 바로 돌아오는 환경에서는 `finally`의 정리가 인쇄 미리보기보다 먼저 일어나 빈 쪽이 나올 수 있습니다(데스크톱 Chromium·Firefox·Safari는 인쇄 창이 닫힐 때까지 돌아오지 않음). 실기기 확인 항목으로 남깁니다.
+- 검증: `npm test` 228(227 + export-core 1), 26-output 12(B-4 7 + B-5 5), 13-zoom-print 1, `--grep @panels` 149, `--grep @a11y` 8, 모바일 `--grep @ux` 9(스킵 1), `--grep @smoke` 7 모두 통과.
+
+## 2026-11-11 · B-6
+- **원인(P1)**: ScoreView가 OSMD를 `autoResize:true`로 만들어, 첫 `render()` 직후 OSMD가 안에서 한 번 더 `render()`를 불렀습니다(불러오기마다 2회). 아래 측정에서도 전(HEAD)은 모든 시행에서 2회, 후는 1회입니다.
+- **ScoreView**(`mxl-studio.html`): ① OSMD 옵션을 `autoResize:false`로 바꿨습니다. ② 폭 감시: `ResizeObserver`가 `.score-main-render`를 보고, 렌더 직후의 `clientWidth`를 적어 둔 `lastWidthRef`와 4px 이상 다를 때만 250ms 디바운스 뒤 한 번 다시 그립니다(없는 브라우저는 `window resize`로 같은 디바운스). 폭이 0(숨김)이면 무시하고, 타이머가 울릴 때 폭을 다시 비교하므로 첫 렌더 직후의 옵저버 알림은 아무 일도 일으키지 않습니다. ③ 재생 중(`isPlaying`)에는 폭 변경 재렌더를 미루고 정지하면 한 번 실행합니다(커서 보존, `onOsmdReady(null)`→`(osmd)` 순서 유지). ④ `redraw`는 async이고 `redrawSeqRef` 세대 번호로 마지막 요청만 그립니다(앞 요청은 양보 뒤 물러남). 호출처(확대 effect·폭 감시·정지 뒤 재개)는 `requestRedraw`로 부르며 `.catch`가 `setRenderError`로 보냅니다. ⑤ 음표 2,000개 이상이면 첫 렌더와 `redraw` 모두 `showProgress('악보를 그리는 중...')` → 한 프레임 양보 → 렌더 → `hideProgress()`입니다. App이 `showProgress`·`hideProgress`를 props로 넘깁니다.
+- **테스트 훅 `window.__mxlRenderCount`**: App의 `__mxlGetState` 등록 위 주석에 용도를 적었습니다.
+- **프롬프트와 다르게 정한 것**
+  - ① **훅은 호출 지점이 아니라 인스턴스의 `render`를 감싸서(`trackScoreRender`) 셉니다.** 프롬프트대로 ScoreView가 `render()`를 부르는 줄마다 +1을 두면, OSMD가 autoResize로 안에서 스스로 부르는 두 번째 `render()`는 세지지 못합니다. 실제로 호출 지점 방식으로 만든 뒤 `autoResize:true`로 되돌려 보니 '불러오기 1회' 시험이 **통과**했습니다(변이 M1 미탐지). 인스턴스를 감싸면 `autoResize:true`일 때 2로 세어져 실패합니다(M1 탐지). Ossia 인스턴스도 같은 방식입니다.
+  - ② **진행 표시 오버레이에서 `backdrop-filter: blur(12px)`를 뺐습니다**(배경 투명도 0.6 → 0.78로 보완). 400마디 2파트 악보를 오버레이가 그려진 채 렌더하면 한 번이 6.2~6.6초로, 오버레이 없이(4.5~4.7초)보다 약 40% 느렸습니다. 블러만 빼도(4.3~4.6초), 스피너 애니메이션만 꺼도(4.3~4.4초) 원래대로 돌아와, 블러와 회전 애니메이션이 겹칠 때 OSMD의 레이아웃 읽기가 느려지는 것으로 봅니다. 스피너는 화면이 멈춘 게 아님을 보여 주므로 남기고 블러를 뺐습니다. `.progress-overlay`는 다른 패널의 진행 표시와 공용이라 모두 같은 모양이 됩니다.
+  - ③ 첫 렌더는 진행 표시를 OSMD 생성·`load` **앞에서** 켭니다(프롬프트는 `render()` 직전). 큰 악보는 `load`도 오래 걸리기 때문입니다. `redraw`는 프롬프트대로 `render()` 직전 한 프레임 양보입니다.
+  - ④ `yieldFrame`은 숨겨진 탭(`document.hidden`)에서는 `requestAnimationFrame`이 멈추므로 `setTimeout(0)`으로 바로 넘깁니다.
+  - ⑤ 진행 표시를 켠 요청 수를 `progressDepthRef`로 세어, 요청이 겹쳐도 마지막 요청이 끝날 때 한 번만 끕니다(세대 취소로 물러난 요청이 아직 기다리는 요청의 표시를 끄지 않게). ScoreView가 사라질 때도 켜 둔 표시를 끕니다.
+- **바뀐 기대값**: 없습니다. 11-layout·17-playback·18-cursor는 고치지 않고 통과했고, `visual/score.spec.js`는 로컬에 기준 이미지가 없어 건너뜁니다(`svg`가 보이면 바로 찍는 구조라 autoResize 타이밍에 기대지 않으며, 두 번째 렌더가 SVG를 바꿔치던 문제가 오히려 사라집니다).
+- **테스트** `27-phase-b-regressions.spec.js`(@panels) +8: ① 불러오기 1회 = 렌더 1(f18, 1.5초 대기) ② 확대 한 번당 +1 ③ 창 폭 1440→1200→1100(100ms 간격)이 디바운스되어 +1이고 SVG 폭이 상자 폭에 맞음 ④ Ctrl+B로 왼쪽 패널을 닫으면 +1·SVG가 넓어지고 다시 열면 +1 ⑤ 2px 변화는 다시 그리지 않음 ⑥ 재생 중 폭이 바뀌어도 그리지 않고 커서가 남아 있다가 정지하면 +1 ⑦ 2,160음 악보(스펙 안에서 생성)는 진행 표시 메시지가 켜졌다 꺼지고 렌더는 1 ⑧ 같은 악보에서 확대를 세 번 눌러도(한 프레임 양보를 붙잡아 두고 연속 클릭) 마지막 값 한 번만 그림.
+- **수동 측정**(헤드리스 Chrome, 창 1440×900, 시행 3회·중앙값, 앱 밖에서 `OpenSheetMusicDisplay.prototype.render`를 감싸 autoResize까지 잼. 400마디 악보는 `/tmp`에서 생성했고 저장소에 넣지 않았습니다):
+
+  | 악보 | | 렌더 횟수 | 렌더별 시간 | 메인 스레드가 풀리기까지(업로드 후) |
+  |---|---|---|---|---|
+  | f18 (64마디 1파트) | 전(HEAD) | 2 | 276+195 · 268+207 · 243+214 ms | 839ms |
+  | | 후 | **1** | 219 · 214 · 263 ms | **601ms** |
+  | 생성 400마디 2파트(음표 4,000) | 전(HEAD) | 2 | 4.46+4.04 · 4.25+4.08 · 4.23+4.01초 | 9.28초 |
+  | | 후 | **1** | 4.75 · 4.17 · 4.22초 | **4.99초** |
+
+  프롬프트 1.1의 기준선(64마디 406+273ms, 400마디 2파트 5.5+5.3초)과 같은 모양(2회 → 1회)입니다. 기계와 악보 내용이 달라 절대값은 다릅니다. 블러 오버레이를 둔 채 잰 중간 결과(6.2~6.6초, 7.3~7.6초)는 위 ②에 적었습니다.
+- **스펙이 잡아내는지 확인**(`mxl-studio.html`을 한 곳씩 망가뜨리고 해당 시험만 실행, 매번 원본과 `cmp`): ① `autoResize:true`로 되돌림 → '불러오기 1회' 실패(위 ①의 훅 수정 뒤 탐지) ② 폭 감시 콜백을 비움 → 창 크기·패널·재생 시험 3개 실패 ③ 디바운스를 뺌 → '창 크기' 시험 실패 ④ 세대 확인을 뺌 → '연속 확대' 시험 실패 ⑤ 첫 렌더 진행 표시를 뺌 → 진행 표시 시험 실패 ⑥ 재생 중 미루기를 뺌 → 재생 시험 실패 ⑦ 임계값을 4→1px → '2px' 시험 실패 ⑧ 첫 렌더 뒤 폭 기록을 뺌 → '불러오기 1회' 실패(옵저버의 첫 알림이 재렌더를 일으킴) ⑨ 다시 그린 뒤 폭 기록을 뺌 → 창 크기·패널 시험 실패 ⑩ `redraw`의 진행 표시를 뺌 → '연속 확대' 시험 실패.
+- **남은 문제**: 클래식 스크롤바에서는 세로 스크롤바가 생기면 악보 상자가 그만큼 좁아지는데 OSMD는 스크롤바가 생기기 전의 폭으로 그립니다. 헤드리스의 `--hide-scrollbars`를 빼고 f18을 열어 보니 전(HEAD)·후 모두 SVG 속성 폭 704, 상자 699, 보이는 폭 699, 가로 넘침 0으로 같았습니다(`max-width:100%`가 줄여 보여 줌). 옵저버는 렌더 직후의 줄어든 폭을 기준으로 삼아 다시 그리지 않습니다(후는 렌더 1회). 자동 시험은 스크롤바를 숨긴 Chromium에서 돌기 때문에 이 확인은 수동입니다.
+- 검증: `npm test` 228, 27-phase-b-regressions 18(B-2 10 + B-6 8), 전체 Playwright(chromium+mobile) 223개 중 219 통과·4 건너뜀(모바일 11-layout 1은 설계상, visual 3은 기준 이미지 없음)·실패 0(12.9분), 변이 10건 모두 탐지.
+
+## 2026-11-11 · B-7
+- **구현**(`playback-core.js`, 줄 끝 CRLF 유지, 쿼리 `?v=3`): ① `readMarks`·`measureMarks`가 `direction`의 글자, `sound` 속성(`dacapo`·`dalsegno`·`fine`·`tocoda`·`segno`·`coda`), `<segno>`·`<coda>` 기호, `barline`의 `<segno>`·`<coda>`를 표식으로 읽습니다. ② `collectNavigation(measures)`가 마디 인덱스별 `{dacapo,dalsegno,segno,fine,tocoda,coda,alFine,alCoda,labels}` 표를 만듭니다(파트마다 같은 위치의 마디를 묶어 같은 기호는 한 번으로 셉니다). ③ 기존 반복·볼타 전개를 `repeatStructure`와 `expandRepeatsOnly(measures,{from,to,lastPassOnly,structure})`로 빼내 점프 전(전체 반복)과 점프 뒤(마지막 괄호만)에 함께 씁니다. ④ `planJump(marks)`가 점프 계획을, ⑤ `expandMeasureOrderDetailed(measures,expandRepeats,{jumps,marks})→{order,applied,unsupported}`가 전체 순서를 만들고, `expandMeasureOrder`는 `.order`만 돌려줍니다. ⑥ `extractPlaybackData`는 따른 표식(`applied`)을 `navigationMarks`·`warnings`에서 빼고, 새로 `unpitchedParts`·`mutedParts`(타악기 파트 이름)와 경고 `타악기 파트 …은(는) 재생되지 않습니다.`를 돌려줍니다. 새 export는 `expandMeasureOrderDetailed`·`collectNavigation`입니다. A-B 구간은 원래부터 펼친 재생 순번을 기준으로 해서 점프가 있어도 코드를 고치지 않았습니다.
+- **MidiPlayer**(`mxl-studio.html`): 경고 줄이 `navigationMarks`와 `mutedParts`(`타악기 <이름>`)를 ` · `로 이어 `⚠ 재생 미반영: D.S. · 타악기 Drums`로 보여 줍니다. 둘 다 없으면 줄을 그리지 않습니다. 화면 글자는 `aria-hidden`이고, `visually-hidden` 전체 문장과 `title`에 `warnings` 전체가 들어 있습니다. `styles.css`는 그대로입니다(`.player__warning-text`가 이미 말줄임).
+- **점프 규칙**: 설계 2.5의 1~5를 구현했고 세부는 아래 "프롬프트와 다르게 정한 것"에 적었습니다. 점프는 한 번만 하며, 첫 통과는 전체 반복을 펼친 순서에서 D.C./D.S. 마디의 마지막 등장 뒤를 자르고, 둘째 통과는 `lastPassOnly`로 되돌아가지 않고 마지막 괄호만 연주합니다. 방식은 글자의 `al Fine`/`al Coda`가 먼저이고, 없으면 Fine이 있을 때 al Fine, To Coda와 Coda가 모두 있을 때 al Coda, 아니면 곡 끝까지입니다. 점프 표식이 둘 이상이거나 필요한 표식이 없거나 위치가 어긋나면 점프하지 않고 `unsupported`에 점프 라벨을 담으며, 경고와 `navigationMarks`는 지금까지처럼 남습니다.
+- **프롬프트와 다르게 정한 것**
+  - ① **글자 표식은 문장 전체가 맞아야 점프 표식으로 인정합니다**(`WORD_KINDS`: `D.C.`·`Da Capo`·`D.S.`·`Dal Segno`(+`al Fine|Coda`), `Fine`, `To Coda`, `Coda`, `Segno`, `al Fine`, `al Coda`). 프롬프트의 "words `Fine` → fine"을 부분 일치로 만들면 `play fine` 같은 일반 지시어가 Fine 표식이 되어 곡이 거기서 끊깁니다(변이 U8로 확인). 이동 기호처럼 보이는 문구는 기존 `NAVIGATION_WORDS`가 계속 안내 라벨로만 남깁니다.
+  - ② **"반복 기호 펼치기"를 끄면(`expandRepeats:false`) 점프도 하지 않습니다.** 설계는 이 경우를 정하지 않았습니다. 악보에 적힌 순서대로 재생한다는 옵션의 뜻에 맞추었고, 이때는 모든 표식이 `navigationMarks`에 남아 경고 줄이 그대로 보입니다. 설명서에도 적었습니다.
+  - ③ **오른쪽(기본) 막대선에 붙은 segno·coda는 다음 마디 첫머리의 기호로 봅니다**(`shift:1`). 왼쪽·가운데 막대선은 그 마디입니다. MusicXML에서 마디 끝 막대선에 붙은 기호는 뒤 마디의 시작을 가리키기 때문입니다(변이 U9).
+  - ④ **점프 표식과 같은 `direction`에 든 `<segno/>`·`<coda/>` 기호 그림은 위치로 세지 않습니다.** D.S.·To Coda 글자 옆에 그려 넣는 기호라서, 세면 D.S.만 있는 악보가 자기 마디를 segno로 삼거나 To Coda 마디가 coda 위치가 됩니다(변이 U12).
+  - ⑤ **위치 검사를 더했습니다**(설계의 "필요한 표식이 없거나"를 위치까지 넓힘): segno는 D.S. 마디와 같거나 앞, Fine은 점프 목표(D.C.는 1번 마디, D.S.는 segno) 이상, To Coda도 목표 이상, Coda는 To Coda보다 뒤여야 합니다. 어긋나면 점프하지 않습니다(U3·U4·U5). segno·coda가 여럿이면 D.S.·To Coda의 id(`dalsegno="segno1"`)로 고르고(U17), 맞는 id가 없으면 후보가 하나일 때만 그것으로 봅니다.
+  - ⑥ **한 마디에 `al Fine`과 `al Coda`가 함께 있으면 추측하지 않고 점프하지 않습니다**(U16). 설계는 우선순위를 정하지 않았습니다.
+  - ⑦ **순서 길이 상한 20,000**은 반복 전개의 걸음 수와 점프를 더한 전체 길이에 모두 겁니다. 점프 마디가 상한 밖이라 도달하지 못하면 점프하지 않고 `unsupported`로 보고합니다(U14). 시험은 jsdom `querySelector` 비용 때문에 마디 12,000개짜리 악보가 아니라 중첩 반복(×6·×9·×16·×7)으로 첫 통과를 정확히 19,993마디로 만들어 점프 뒤 10마디가 잘리는 것을 봅니다(1.2초, 마디 수 방식은 5초 이상).
+  - ⑧ `mutedParts`는 `unpitchedParts`와 같은 파트 이름 목록입니다(설계가 두 이름을 모두 요구해 같은 값을 두 이름으로 돌려줍니다. 경고 줄은 `mutedParts`를 읽습니다).
+  - ⑨ **a11y `navigation-warning` 장면을 f19로 바꾸지 않았습니다**(프롬프트 5번 "아니면 f19로"). f19를 열면 axe가 serious `scrollable-region-focusable`을 `#score-panel`에서 보고합니다. 경고 줄 때문이 아니라 악보가 패널보다 커서 스크롤되기 때문입니다(f18-long-64도 같은 위반, f01·f17은 없음을 임시 스펙으로 확인했고 임시 스펙은 지웠습니다). 장면 이름은 그대로 두고 f17 문자열에서 D.C.를 segno 없는 D.S.로 바꿔 테스트 안에서 만든 작은 악보를 올려 경고 줄이 뜨는 상태를 검사합니다.
+- **바뀐 기대값**: ① 단위 f17 라벨 시험은 `{expandRepeats:false}`로 호출해 경고 라벨 목록만 확인하고, 새 시험 'follows the f17 D.C. al Fine now'가 순서 [1,2,3,4,1,2]와 경고 없음을 확인합니다. ② `24-audit-regressions.spec.js` C16: f17 → 경고 줄 없음 + 순서 [1,2,3,4,1,2], 경고 표시 자체는 테스트 안에서 만든 `f17-ds-without-segno.musicxml`로 확인(`⚠ 재생 미반영: Fine · D.S. al Fine`, 숨김 문장, title), f01은 경고 없음. ③ `a11y/axe.spec.js` 'navigation-warning'은 위 ⑨. ④ `01-fixtures.spec.js` 목록에 f20·f21.
+- **픽스처**(`tests/fixtures`): `f20-dc-al-fine.musicxml`(4마디, 순서 1,2,3,4,1,2)와 `f21-ds-al-coda.musicxml`(6마디, 2마디 segno·3마디 끝 To Coda·4마디 끝 D.S. al Coda·5마디 coda, 순서 1,2,3,4,2,3,5,6). MusicXML 3.1 머리말로 `xmllint`(4.0 스키마) 검증을 통과합니다.
+- **테스트**: 단위 `playback-core.test.js` 10 → 36(+26): 점프 23(f20·f21, D.S. al Fine, D.C. al Coda, al Fine/al Coda 추정, 둘 다 적힘, id로 segno 고르기, 단독 D.C., segno 없음·segno가 D.S. 뒤·Fine이 segno 앞·점프 표식 둘 → 점프 없음, 반복 뒤 재생·마지막 괄호만, 둘째 괄호의 segno, 파트별 표식 합침, 문장 전체 일치, 반복 펼치기 끔, 표식 수집, 막대선 이동, D.S. 기호 그림, 상한 2건) + 타악기 2 + f17 1. E2E: `17-playback.spec.js` +2(@panels, f20·f21: 재생 순서·경고 줄 없음·마디 표시가 점프 뒤 마디를 가리킴·재생/정지), `27-phase-b-regressions.spec.js` +2('unpitched part is reported as muted', '타악기와 따르지 못한 기호를 한 줄에').
+- **스펙이 잡아내는지 확인**(원본을 한 곳씩 망가뜨리고 해당 시험만 실행, 매번 원본과 `cmp`): 단위 변이 19건(U1 점프 뒤 반복 되풀이 · U2 점프 표식 둘 허용 · U3 D.S. 뒤 segno 허용 · U4 segno 앞 Fine 허용 · U5 coda 순서 검사 삭제 · U6 점프 뒤 상한 삭제 · U7 첫 파트만 읽기 · U8 부분 일치 · U9 막대선 이동 삭제 · U10 적용한 표식을 경고에 남김 · U11 mutedParts 비움 · U12 기호 그림 세기 · U13 둘째 괄호 초기값 · U14 도달 못 한 점프 미보고 · U15 al Fine 추정 삭제 · U16 둘 다 적힘 허용 · U17 id 무시 · U18 jumps 옵션 무시 · U19 펼치기 끔에서도 점프)과 E2E 변이 6건(E1 경고 줄에서 타악기 빼기 · E2 점프 끔 · E3 줄을 항상 그림 · E4 타악기 검출 고장 · E5 적용한 표식을 경고에 남김 · E6 title 삭제)을 모두 해당 시험이 잡았습니다.
+- **남은 문제**: 점프가 둘 이상인 악보(중첩 D.C. 등)는 점프 없이 재생하고 경고 줄로 알립니다. 타악기 파트는 계속 소리가 나지 않습니다(안내만). 키가 큰 악보(f18·f19)에서 `#score-panel` 스크롤 영역이 키보드로 닿지 않는다는 axe `scrollable-region-focusable`(serious)은 B-7 이전부터 있고 이번 범위 밖이라 고치지 않았습니다(4.4절 후보).
+- 검증: `npm test` 254(12개 파일, B-6의 228에서 +26), 전체 Playwright chromium 219개 중 216 통과·3 건너뜀(visual 3은 기준 이미지 없음)·실패 0(11.7분)과 모바일 @ux 10개 중 9 통과·1 건너뜀(11-layout 모바일은 설계상)·실패 0(합계 229개 중 225 통과·4 건너뜀), 변이 25건(단위 19·E2E 6) 모두 탐지.
+
+## 2026-11-11 · B-8
+- **원인(N8)**: NotationPanel은 "처음 상태에서 다시 적용"의 기준을 패널 안 `baselineRef`(그 시점의 files 배열)에 두었고, `lastOutRef`(패널 자신의 마지막 출력)와 다른 files가 들어올 때마다 `useEffect`가 기준선을 **지금 files로 갈아 끼웠습니다**. 다른 패널이 파일을 커밋하면 새 files가 들어오므로 기준선이 이미 바뀐 악보가 되고, 그 뒤의 '원본 복원'(옵션을 모두 끄고 실행)은 변환 전 악보가 아니라 지금 악보를 그대로 다시 커밋했습니다. 기준선은 파일 인덱스(`baseline[fi]`)로 파일을 찾아 파일이 추가·제거되어도 따라가지 못했습니다. A2-3에서 숫자 악보만 `lyricBackup`으로 옮기고 N8을 남은 문제로 적어 두었습니다.
+- **구현**(`mxl-studio.html`, `history-core.js?v=3`): ① `commitFile`에 `if(!extra||!('notationBackup' in extra))delete committed.notationBackup;` 한 줄: 표기 변환 패널만 `extra`에 `notationBackup` 키를 넘기므로, 다른 패널(조옮김·숫자 악보처럼 자기 `extra`를 넘기는 패널 포함)이 커밋하면 보관본이 지워집니다. `lyricBackup`은 그대로 물려줍니다. ② 헬퍼 `parseNotationBackup`·`notationBackupDoc`(WeakMap으로 한 번만 파싱, 파트 목록용 읽기 전용)·`restoreNotationBackup`. ③ NotationPanel: `baselineRef`·`lastOutRef`·`useEffect` 삭제. `run`은 파일마다 `backup=file.notationBackup||{xml:file.xmlString}`를 잡고, 보관본이 있으면 그 XML을 새로 파싱한 문서에서, 없으면 현재 문서의 복제에서 출발해 `commitFile(file,doc,{notationBackup:backup})`로 커밋합니다. 새로 만든 `restore`는 보관본이 있는 파일을 되돌리고 보관본을 지우며, 하나도 되돌리지 못하면 악보·작업 기록을 바꾸지 않고 `ℹ <파일명>: 복원할 원본이 없습니다.`만 남깁니다. 옵션을 하나도 켜지 않고 실행하면 `restore`로 갑니다(예전 '원본 복원' 방법 그대로). ④ 보관본이 있으면 안내 `표기 변환 전 원본을 보관 중입니다. 다른 도구로 악보를 바꾸면 보관본은 사라집니다.`를 `role="status"` 영역에 그리고, `btn--secondary` '↩ 원본 복원' 버튼을 더했습니다. ⑤ `HistoryCore.pushHistoryEntry` 스냅샷에 `notationBackup:file.notationBackup`(참조)을 `lyricBackup` 옆에 넣었고, `estimateHistoryBytes`가 보관본 XML도 한 번 더하도록 했습니다. 세션 저장(`serializeSessionFiles`)과 공유(`createPayload`)는 원래 필드를 골라 쓰므로 고치지 않았습니다.
+- **프롬프트와 다르게 정한 것**
+  - ① **복원은 `commitFile`로 다시 직렬화하지 않고 `trustParsedFile({...rest,xmlDoc:파싱(보관 XML),xmlString:보관 XML})`로 만듭니다.** 업로드한 파일의 `xmlString`은 읽은 글자 그대로(XML 선언 포함)라서, `commitFile`로 돌려놓으면 `XMLSerializer` 출력이 되어 바이트 단위로 같지 않습니다. 변이 M3(`commitFile`로 복원)·M18(`trustParsedFile` 뺌)에서 'byte for byte' 시험이 실패합니다. 그래서 완료 기준 "원본과 바이트 단위로 같다"가 지켜집니다.
+  - ② **'↩ 원본 복원' 버튼을 더했습니다.** 프롬프트의 시험 이름('원본 복원')이 가리키는 조작이 기존 화면에는 "옵션을 모두 끄고 실행"뿐이었습니다. 그 방법도 같은 결과가 되도록 `run`이 옵션 없음을 `restore`로 보냅니다(보관본이 없으면 예전처럼 현재 악보를 다시 커밋하지 않고 안내만 하며 작업 기록도 남기지 않습니다).
+  - ③ 로그 문구에 파일 이름을 붙였습니다(`ℹ <파일명>: 복원할 원본이 없습니다.`). 대상 파일이 여럿일 수 있어서이고, 프롬프트의 '복원할 원본이 없습니다'는 그대로 들어 있습니다.
+  - ④ **파트 목록은 보관본이 있으면 보관본 문서 기준입니다.** 예전 `baselineRef`가 하던 일입니다. 파트를 제거한 뒤에도 전체 파트가 보여야 다시 고를 수 있습니다(시험 8).
+  - ⑤ `estimateHistoryBytes` 한 줄은 프롬프트에 없는 추가입니다. 스냅샷이 보관본 문자열을 참조로 들고 있어 작업 기록 패널의 '메모리 약 …MB'에서 빠지기 때문입니다.
+- **바뀐 동작(사용자 눈에 보이는 것)**: ① 옵션 없이 '표기 변환 실행'을 누르면, 보관본이 있으면 되돌리고 없으면 안내만 합니다(예전: 현재 악보를 그대로 다시 커밋하고 작업 기록 한 줄 추가). ② 변환 뒤 다른 도구(Ossia 삽입 포함)를 쓰면 보관본이 사라지고 '복원할 원본이 없습니다'가 나옵니다(예전: 지금 악보를 '복원'). ③ 실행 취소·다시 실행이 보관본을 함께 되돌립니다. ④ 변환 → 복원 뒤 `xmlString`은 업로드 직후와 같고 작업 기록은 `파일 업로드 / 악보 표기 변환 / 악보 표기 원본 복원` 순입니다.
+- **바뀐 기대값**: 없습니다. 기존 11-notation 시험 1개, 25-schema 표기 변환 행 4개, 16-numbering(색깔 악보 뒤 `lyricBackup` 복원)·21-history는 고치지 않고 통과했습니다.
+- **테스트**: 단위 `history-core.test.js` +2(실행 취소·다시 실행 뒤 보관본 유지, 메모리 추정에 보관본 한 번 반영). E2E `panels/11-notation.spec.js` 1 → 10(@panels +9): ① 변환 → 원본 복원이 `xmlString`까지 업로드 직후와 같음·작업 기록 3줄 ② 옵션을 바꿔 다시 실행해도 겹치지 않음(슬래시 → 가사 숨기기가 원본에 가사 숨기기만 한 것과 글자까지 같음) ③ 조옮김이 보관본을 지우고 이후 '원본 복원'은 '복원할 원본이 없습니다'(악보·작업 기록 그대로) ④ 조옮김을 실행 취소하면 보관본이 돌아옴 ⑤ 옵션 없이 실행 = 원본 복원/안내 ⑥ 열린 파일 둘을 각자의 보관본으로 복원 ⑦ 파트를 제거해도 파트 목록이 전체이고 복원하면 되돌아옴 ⑧ 자기 `extra`를 넘기는 숫자 악보 커밋도 보관본을 지움 ⑨ 세션 직렬화·공유 링크 원문에 보관본이 없음.
+- **스펙이 잡아내는지 확인**(원본을 한 곳씩 망가뜨리고 해당 시험만 실행, 매번 원본과 `cmp`): M1 `commitFile`이 보관본을 안 지움 · M14 지우는 조건을 `!extra`로 줄임(숫자 악보 시험이 잡음) · M2 `run`이 보관본을 무시함 · M3 복원을 `commitFile`로 함 · M4 작업 기록 스냅샷에서 보관본 뺌(E2E·단위 둘 다) · M5 파트 목록을 현재 문서 기준으로 함 · M6 안내 문구 숨김 · M7 옵션 없음이 복원으로 안 감 · M8 복원이 보관본을 안 지움 · M9 복원이 항상 커밋함 · M10 변환이 보관본을 안 담음 · M11 변환마다 보관본을 새로 잡음 · M13 메모리 추정이 보관본을 뺌 · M15 '복원할 원본이 없습니다' 줄 삭제 · M18 복원을 `trustParsedFile`로 등록하지 않음 · M19 `serializeSessionFiles`가 보관본을 실음 · M20 공유 `createPayload`가 보관본을 실음. 17건 모두 해당 시험이 탐지했습니다(M20은 처음엔 놓쳤습니다. `parseShareURLAny`가 알려진 필드만 골라 돌려줘 누출을 가렸기 때문에, 링크 조각을 풀어 원문 JSON을 보도록 시험을 고친 뒤 탐지).
+- **남은 문제**: 보관본은 파일마다 XML 문자열 하나(최대 20MB)를 들고 있습니다. 이전에는 files 배열 참조 하나였으나 둘 다 변환 전 악보 하나를 메모리에 둔다는 점은 같고, 이제 작업 기록 스냅샷이 같은 문자열을 참조로 공유합니다. 세션을 저장하거나 새로고침하면 보관본은 사라집니다(숫자 악보 원본 가사와 같은 한계이며 패널 안내가 말해 줍니다).
+- 검증: `npm test` 256(12개 파일, B-7의 254에서 +2), `grep -n "baselineRef" mxl-studio.html` 0건, 전체 Playwright chromium 228개 중 225 통과·3 건너뜀(visual 3은 기준 이미지 없음)·실패 0(11.1분)과 모바일 @ux 10개 중 9 통과·1 건너뜀(11-layout 모바일은 설계상)·실패 0(합계 238개 중 234 통과·4 건너뜀), 변이 17건 모두 탐지.
+
+## 2026-11-11 · B-9
+- **확인 grep(프롬프트 B-9 1번)**: `grep -n "data-roman-analysis\|baselineRef\|autoResize:true\|'beforeprint',before\|osmd-batch-" mxl-studio.html`가 0건입니다. 처음에는 `data-roman-analysis`가 HTML에 2줄 남아 있었습니다(구 표식을 이전하기 전에 파일마다 DOM을 훑지 않으려고 문자열을 먼저 검사하던 줄). B-1 완료 기준(HTML 0건, 코어에는 이전·제거 판정에만 남음)을 지키려고 그 검사를 코어의 `RomanAnalysis.hasLegacyMarkers(xmlString)`으로 옮겼습니다(`roman-analysis-core.js?v=4`, 단위 +1: 구 속성 글자가 있으면 true, id 표식·null·undefined는 false). `hasLegacyMarkers`를 항상 false로 바꾸면 구 표식 E2E 2개(업로드·세션 복원)가 실패하고 원복하면 통과합니다.
+- **소문자 16진수 색**: `grep -n "#[0-9a-f]\{6\}'" mxl-studio.html`에 3줄이 남습니다. 381행 PNG 캔버스 흰 배경(`ctx.fillStyle='#ffffff'`), 3088·3097행 가사 스타일 패널 미리보기 상자의 CSS 인라인 스타일(`#e5e7eb` 테두리)이며 악보 XML에 쓰이는 값은 0건입니다. 악보 색은 `NOTE_COLORS`(대문자)와 `ExportCore.normalizeColor`만 지납니다.
+- **회귀 매트릭스**: 1.1 표의 모든 ID(V1~V5, O1~O4, P1·P2, R1·R2, N8, U1)에 대응하는 테스트가 이미 있어 새로 채운 것은 없습니다. 대응표는 아래 `Phase B 요약`입니다.
+- **전체 검증**(헤드리스 Chrome, 로컬 CDN 미러): `npm test` 12개 파일 257개 통과, Playwright chromium 228개 중 225 통과·3 건너뜀·실패 0(11.4분), 모바일 `@ux` 10개 중 9 통과·1 건너뜀·실패 0 → 합계 238개 중 234 통과·4 건너뜀. 건너뜀 4개는 Phase A2와 같습니다(Linux 기준 이미지가 없는 visual 3, 모바일의 11-layout 데스크톱 폭 1). PDF 쪽수 시험의 `chromium` 외 skip은 모바일 프로젝트가 `@ux`만 돌려 건너뜀 수를 늘리지 않았습니다.
+- **전후 수치**: 같은 하네스·같은 악보로 Phase B 이전 빌드와 이 브랜치를 창 크기 둘(1440×900·1000×800)에서 쟀습니다. 전체 표는 `docs/verification-report.md`의 'Phase B 재검증'에 있습니다. 12마디 악보의 PNG 저장은 358×2644 → 1650×774, 전체 PNG(ZIP)는 2160×774(창 1440)·1500×774(창 1000) → 1650×774, 헤더 PNG는 1408×1638·528×3998 → 2200×1032이고, 64마디 PDF는 3쪽(창 1440)·11쪽(창 1000) → 어느 창에서나 3쪽입니다. 렌더는 불러오기마다 2회 → 1회입니다(B-6: 64마디 839 → 601ms, 400마디 2파트 9.28 → 4.99초). 프롬프트 1.1의 기준선(358×2611·2160×817, PDF 3쪽·10쪽)과 악보가 달라 값이 조금 다릅니다.
+- **문서 동기화**: README(코어 12개·export-core 행·테스트 행·픽스처 21개·설계 문서 6번·검증 현황 Phase B 행), README-TESTING(f01~f21, @panels 25~27, 단위 12개 파일, f17 행 수정·f18~f21 행, 'MusicXML 스키마 검증' 절과 xmllint 폴백, 결과 줄), CLAUDE.md 데이터 규칙 한 줄(MusicXML 4.0 요소·속성만, 새 변환은 25-schema에 등록), `docs/verification-report.md`, 사용자 설명서·퀵스타트(표지 'Phase B'·갱신일 2026-11-11, 표기 변환 보관본·옥타브 범위·타악기 조표·TAB 안내, 이미지 폭 기본 1100px·용지 기본 A4 세로 문장, 내보내기 패널 화면 `06-export-panel.png` 재촬영). 설명서 PDF·SVG는 `npm run docs:build`로 다시 만들고 전 페이지를 이미지로 확인했습니다.
+- **프롬프트와 다르게 정한 것**
+  - ① `hasLegacyMarkers`는 프롬프트에 없던 코어 함수입니다. 위 grep 기준(HTML 0건)과 B-1 완료 기준을 함께 지키려고 더했습니다.
+  - ② **업데이트 안내 문서(`MXL-Studio-업데이트-문서/`)는 고치지 않았습니다.** 2026-09-03자 기록이고 Phase A·A2 때도 같은 이유로 그대로 두었습니다. 11월 변경은 설명서·README·보고서에 있습니다(필요하면 11월 업데이트 안내를 새로 쓰는 것은 별도 작업).
+  - ③ 설명서 화면은 내보내기 패널 하나(`06-export-panel.png`)만 다시 찍었습니다. 폭 선택·용지 선택·미리보기가 보이는 화면이라 B-4·B-5의 변경이 직접 드러나는 유일한 장면이고, 나머지 화면은 Phase B와 모습이 같습니다.
+  - ④ 프롬프트 4.3의 종료 체크리스트 "기본값 E1~E12가 코드·설명서·context-notes에서 서로 같다"는 아래 표의 '설명서' 칸으로 확인했습니다. E1·E2·E3·E9는 사용자에게 보이지 않는 내부 규칙이라 설명서에 적지 않았고 E4~E8·E10~E12는 설명서에 있습니다.
+- **남은 문제**: 아래 `Phase B 요약`의 '남은 문제'.
+
+## Phase B 요약
+
+### 결함 ID ↔ 세션 ↔ 테스트
+
+| ID | 세션 | 결과 | 테스트 |
+|---|---|---|---|
+| V1 | B-1 | 색상을 대문자 `#RRGGBB`로 정규화해 쓰고, 형식이 틀리면 속성을 쓰지 않고 로그 | unit export-core normalizeColor·25-schema `color notes`·`color notes with stems`·`lyric style: color by pitch` |
+| V2 | B-1 (E2·E3) | 로마 숫자 표식을 `words@id="mxl-roman-…"`로 교체, 구 속성은 업로드·세션 복원 때 이전 | unit roman-analysis(id 접두·고유성·재삽입·migrate·`hasLegacyMarkers`)·25-schema `roman numerals insert`·`legacy file is migrated on upload…`·`legacy markers in a restored session…` |
+| V3 | B-2 (E4) | 결과 옥타브가 0~9 밖이면 그 파일을 커밋하지 않고 경고, 12개 조 ZIP은 그 조만 제외 | 27 `transpose refuses out-of-range octaves`·`…several files…`·`…all 12…`·`harmony thirds refuse…`·`range panel refuses…`·`transposing instrument refuses…`, unit export-core octaveOutOfRange |
+| V4 | B-2 (E5) | 타악기 파트는 조옮김·카포·조바꿈이 조표를 건드리지 않음 | 27 `percussion key stays after …`(3행), unit transpose-core skipKeyFor·insertLeadingKey |
+| V5 | B-2 (E6) | TAB `<fret>`은 그대로 두고 로그로 경고 | 27 `TAB note keeps its fret…`, unit transpose-core tabNotes |
+| U1 | B-3 | timewise·opus·그 밖 루트·파트 없음·마디 없음이 각기 다른 한글 사유로 거절 | panels/21-upload `rejects … with its own reason`(5행) |
+| O1 | B-4 (E7) | PNG 저장·ZIP이 화면 밖 고정 폭 렌더의 같은 크기(폭×배율) | 26 `single PNG and ZIP PNG have the same size`·`export size ignores the window size…`·`the width setting changes…` |
+| O2 | B-4 (E7) | 헤더 PNG도 같은 경로, 확대율·창 폭과 무관 | 26 `header PNG ignores zoom…`, `renderForExport leaves no offscreen box…` |
+| O3 | B-5 (E8) | PDF는 쪽 나눔 `.print-root`만 인쇄, 쪽수가 창 크기·패널과 무관 | 26 `print root paginates…`·`pdf page count equals the print pages…`·`the paper setting changes…`·`the Ossia shares the first page…`·`…gets its own first page…`, 13-zoom-print |
+| O4 | B-5 | '인쇄 / PDF로 저장' 이름·안내, Ctrl+P 직접 입력은 안내만 | 13-zoom-print `does not print the viewer`, 26 용지·쪽 시험 |
+| P1 | B-6 (E9) | `autoResize:false` + 폭 감시, 불러오기 1회·확대 1회당 렌더 1번 | 27 `viewer renders once per load`·`…once per zoom step`·`window resize triggers one debounced render…`·`panel toggle re-renders once…`·`a width change under 4px…`·`…during playback…` |
+| P2 | B-6 | 음표 2,000개 이상은 진행 표시, 연속 확대는 마지막 값만 | 27 `long score shows the progress message…`·`zoom clicks in a burst render only the last value…` |
+| R1 | B-7 (E10) | 타악기 파트는 무음임을 경고 줄에 `타악기 <파트명>`으로 안내 | 27 `unpitched part is reported as muted`·`the warning line shows unfollowed marks and muted parts together`, unit playback-core 타악기 2 |
+| R2 | B-7 (E11) | D.C./D.S. al Fine·al Coda를 한 번만 점프, 맞지 않으면 점프 없이 경고 | unit playback-core 점프 23·f17 1, 17-playback `D.C. al Fine plays 6 measures`·`D.S. al Coda plays 8 measures`, 24 C16 |
+| N8 | B-8 (E12) | `baselineRef` 삭제, 보관본을 파일 객체의 `notationBackup`으로 | panels/11-notation 10개, unit history-core +2 |
+| — | B-1~B-8 | 모든 패널 출력이 MusicXML 4.0 XSD 통과 | 25-schema 32개 |
+
+### 기본값 E1~E12 (코드·설명서·이 문서가 같음)
+
+| 번호 | 결정 | 코드 | 설명서 |
+|---|---|---|---|
+| E1 | 색상 대문자 16진수 | `NOTE_COLORS`, `ExportCore.normalizeColor` | 내부 형식이라 적지 않음 |
+| E2 | 로마 숫자 표식 `words@id="mxl-roman-<파트>-<번호>"` | `roman-analysis-core.js` `ROMAN_ID_PREFIX` | 적지 않음 |
+| E3 | 구 표식은 업로드·세션 복원 때 이전 | `trustParsedFile`·`migrateRomanMarkers`·`hasLegacyMarkers` | 적지 않음 |
+| E4 | 옥타브 0~9 밖이면 파일 단위 거절 | `guardPitchRange`·`ExportCore.octaveOutOfRange` | 편집 도구 표 아래 안내 |
+| E5 | 타악기 파트 조표 보호 | `skipKeyFor:ExportCore.isPercussionPart` | 같은 안내 |
+| E6 | TAB 경고만 | `tabNotes` 로그 | 같은 안내 |
+| E7 | 이미지는 화면 밖 고정 폭, 기본 1100(800·1100·1400) | `renderForExport`·`EXPORT_WIDTHS` | 이미지 / PDF 행(기본 1100px) |
+| E8 | PDF는 `setPageFormat` 쪽 나눔 인쇄 영역, 기본 A4 세로 | `buildPrintRoot`·`printScore`·`PAGE_FORMATS` | 이미지 / PDF 행(A4 세로(기본)) |
+| E9 | 뷰어 `autoResize:false` + 4px·250ms 폭 감시 | ScoreView | 적지 않음 |
+| E10 | 타악기는 재생하지 않고 경고 줄에 안내(E10 표의 `타악기 N파트` 대신 B-7 본문의 `타악기 <파트명>` 형식) | `extractPlaybackData`·MidiPlayer | 재생 절 |
+| E11 | 이동 기호는 한 번 점프(4종) | `expandMeasureOrderDetailed` | 재생 절(지원 4종·한계) |
+| E12 | 표기 변환 복원 기준은 파일 객체 `notationBackup` | `commitFile`·NotationPanel | 표기 변환 행(보관본·↩ 원본 복원) |
+
+### 프롬프트와 다르게 정한 것 (각 세션 절에 이유)
+
+B-1 이전 호출을 `trustParsedFile` 한 곳에 둠·로마 숫자 '삽입 제거' 버튼 없이 재삽입 교체로 검증·`musicxml.local.xsd` 사본 없이 import 경로를 직접 수정 · B-2 f19의 4마디를 C9·C0이 아니라 C9 D9 E9 B9로, `commitIfChanged`로 모든 파일이 막히면 작업 기록을 남기지 않음, 가드는 변환한 문서 전체를 검사 · B-3 시험 3건 대신 분기 5건 · B-4 미리보기로는 SVG가 아니라 상자를 옮김, `svgIntrinsicSize` 추가 · B-5 `:has()` 대신 `body.mxl-printing`, 용지 select는 둘째 줄 · B-6 `__mxlRenderCount`는 인스턴스의 `render`를 감싸 셈(OSMD 내부 호출까지), 진행 표시 오버레이의 blur 제거, 첫 렌더 진행 표시를 `load` 앞에서 켬 · B-7 글자 표식은 문장 전체 일치, 반복 펼치기를 끄면 점프도 끔, 오른쪽 막대선의 segno·coda는 다음 마디, 위치 검사 추가, al Fine·al Coda 동시 표기는 점프 안 함, a11y 장면은 f19 대신 f17 변형 · B-8 복원은 `trustParsedFile`로 바이트 그대로, '↩ 원본 복원' 버튼 추가, 파트 목록은 보관본 기준, `estimateHistoryBytes`에 보관본 반영 · B-9 `hasLegacyMarkers`, 업데이트 안내 문서는 그대로.
+
+### 바뀐 기대값
+
+`24-audit-regressions` 요약 함수의 로마 표식 선택자와 C16(f17: 경고 줄 없음 + 순서 [1,2,3,4,1,2], 경고 표시는 segno 없는 D.S. 악보로) · `13-zoom-print` 인쇄 부분(뷰어가 아니라 `.print-hint`) · `a11y/axe` 'navigation-warning' 장면의 입력 악보 · unit `roman-analysis-core`의 표식 단언, `playback-core`의 f17 라벨 시험 · `01-fixtures` 목록에 f18~f21. 그 밖의 12-export·05-ossia-persist·25-schema·16-numbering·21-history는 고치지 않고 통과합니다. 사용자에게 보이는 동작 변화: 범위를 넘는 변환 거절, 타악기 조표 유지, 이미지 크기 통일과 악보 폭 선택, PDF 쪽 나눔과 용지 선택, 이동 기호 점프, 표기 변환 보관본과 '↩ 원본 복원'.
+
+### 남은 문제
+
+- Ossia를 MusicXML에 넣는 방식(별도 파트 또는 cue) 결정(Phase A2에서 이월).
+- 진짜 PDF 파일 생성(인쇄 창 없이 저장)·한글 글꼴 임베드(PDF 라이브러리와 글꼴 용량 결정 필요). iOS Safari처럼 `window.print()`가 바로 돌아오는 환경에서는 정리가 인쇄 미리보기보다 먼저 일어나 빈 쪽이 나올 수 있음(B-5, 실기기 확인 필요).
+- TAB 줄·프렛 재계산, 타악기 음원(조율·드럼 맵 정보 필요).
+- 점프가 둘 이상인 악보(중첩 D.C. 등)는 점프 없이 재생하고 경고로 알림(E11의 한계).
+- 400마디 이상 악보의 렌더 자체 시간(1회 약 5초). OSMD 단일 SVG 구조의 한계로, 쪽 단위 지연 렌더는 별도 설계.
+- Babel Standalone 시작 시간(앱 표시까지 약 2.2~2.6초, 프롬프트 4.4의 값 그대로 이월). 빌드 시스템 금지 계약(CLAUDE.md 1항)과 충돌하므로 사전 변환본을 저장소에 두는 방식은 사용자 결정이 필요.
+- 키가 큰 악보(f18·f19)에서 `#score-panel` 스크롤 영역이 키보드로 닿지 않는다는 axe `scrollable-region-focusable`(serious). B-7 이전부터 있었고 이번 범위 밖(B-7 절).
+- 클래식 스크롤바 환경의 악보 폭, 모바일 실기기·Safari·Firefox의 인쇄·PNG, 드래그앤드롭, 실제 저장공간 가득 참 환경은 자동 시험으로 확인하지 못함(수동 확인 항목).
+- 악보 클라우드 연동(저장·불러오기 버튼): 프롬프트 4.4의 소스 확인대로 앱 소스에 네트워크 호출이 없어(지금도 `fetch(` 0건) 프로젝트 설명의 클라우드 흐름은 아직 이 앱에 없음. 별도 기획.

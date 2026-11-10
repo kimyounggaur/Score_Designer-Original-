@@ -1,6 +1,6 @@
 # 악보 디자이너 MXL Studio09
 
-MusicXML/MXL 악보의 조옮김·분석·재생·세션 저장을 지원하는 React 18 UMD 단일 HTML 앱입니다. 21개 패널과 11개 순수 코어를 사용합니다. 현대 Chrome/Edge 등 ES2020 지원 브라우저가 기준이며, Babel은 JSX 변환만 수행합니다.
+MusicXML/MXL 악보의 조옮김·분석·재생·세션 저장을 지원하는 React 18 UMD 단일 HTML 앱입니다. 21개 패널과 12개 순수 코어를 사용합니다. 현대 Chrome/Edge 등 ES2020 지원 브라우저가 기준이며, Babel은 JSX 변환만 수행합니다.
 
 ## 시작
 
@@ -19,7 +19,7 @@ npm run serve
 | `transpose-core.js` | 단조·조성·이명동음·음표 및 코드 조옮김, 파트·마디 구간 조옮김, 온음계 음정 이동, 보표별 조표 |
 | `pitch-core.js` | 음이름 철자를 지키는 음정 계산·옥타브 이동, 조표·임시표 판단, 3도·자리바꿈 베이스 |
 | `measure-core.js` | 마디 번호(못갖춘마디 0) 조회, 유효 attributes 누적, 변경 지점 구간 분할 |
-| `playback-core.js` | 반복·템포·붙임줄·셈여림 이벤트, 마디 타임라인, 재생이 따르지 않는 이동 기호 경고 |
+| `playback-core.js` | 반복·D.C./D.S. 한 번 점프·템포·붙임줄·셈여림 이벤트, 마디 타임라인, 따르지 않는 이동 기호·타악기 무음 안내 |
 | `chord-symbol-core.js` | MusicXML 코드 종류 33종, slash·degree 파싱과 적용 |
 | `chord-tools-core.js` | N.C. 판정과 보존, 음높이류 코드 판정(3음 이상·완전5도)과 조표 철자 |
 | `numbering-core.js` | 숫자 악보(고정·이동 도법·한국어 계이름) 생성 가사 표식, 원본 가사 백업·복원, 옥타브 점 |
@@ -27,9 +27,10 @@ npm run serve
 | `history-core.js` | XML 문자열 기록, 복원·분기·50개 제한 |
 | `share-session-core.js` | 현재 XML·Ossia 직렬화와 압축 공유 링크 |
 | `session-store-core.js` | IndexedDB·localStorage 세션 저장과 목록, 쓰기 실패 이유 전달, 구세션 이전 보호 |
-| `tests/fixtures`, `tests/unit`, `tests/e2e` | 픽스처 17개, 단위·브라우저 회귀(검수 회귀 24-audit-regressions 포함) |
+| `export-core.js` | 출력·MusicXML 표준 공용 함수: 색상 `#RRGGBB` 정규화, 음높이 옥타브(0~9) 검사, 타악기 파트 판정, 이미지 폭 3종·용지 3종·PNG 크기 한도, SVG 고유 크기 |
+| `tests/fixtures`, `tests/unit`, `tests/e2e`, `tests/schema` | 픽스처 21개, 단위·브라우저 회귀(검수 회귀 24-audit-regressions, MusicXML 스키마 25-schema, 이미지·PDF 출력 26-output, Phase B 회귀 27-phase-b-regressions 포함)와 테스트 전용 MusicXML 4.0 XSD |
 | `manual`, `MXL-Studio-사용자설명서`, `MXL-Studio-퀵스타트-사용자설명서` | 설명서 HTML 정본과 PDF·SVG 배포본 |
-| `MXL-Studio-업데이트-문서` | 최근 변경 안내와 2026년 9월 릴리스 노트 |
+| `MXL-Studio-업데이트-문서` | 2026년 9월 기준 변경 안내와 릴리스 노트(이후 Phase A·A2·B 변경은 설명서와 `context-notes.md`에 기록) |
 | `scripts` | HTML → PDF → SVG 재생성 도구 |
 | `.github/workflows` | CI·Nightly·Pages 배포·배포 후 검증 |
 | `checklist.md`, `context-notes.md`, `docs` | 단계별 작업·검증·문서 점검 기록 |
@@ -38,11 +39,12 @@ npm run serve
 
 | 날짜 | 환경 | 단위 | 전체 브라우저 | 시간 |
 |---|---|---|---|---|
+| 2026-11-11 (Phase B) | Linux 헤드리스 Chrome | **257개 통과** | **234개 통과 / 4개 제외** | 12.3분 |
 | 2026-11-10 (Phase A2) | Linux 헤드리스 Chrome | **185개 통과** | **150개 통과 / 4개 제외** | 8.6분 |
 | 2026-11-09 (Phase A) | Linux 헤드리스 Chrome | **142개 통과** | **107개 통과 / 4개 제외** | 6.1분 |
 | 2026-09-03 | Windows Chrome | **84개 통과** | **80개 통과 / 4개 제외** | 5.5분 |
 
-제외 항목은 매번 모바일의 데스크톱 너비 검사 1개와 Linux 기준 시각 이미지 3개입니다. axe 다섯 장면(반복 기호 경고 장면 추가) serious/critical 0. 2026-11-09·10 실행은 외부 CDN이 막힌 작업 환경이라 같은 버전·같은 바이트의 라이브러리를 로컬 미러로 제공했습니다.
+제외 항목은 매번 모바일의 데스크톱 너비 검사 1개와 Linux 기준 시각 이미지 3개입니다. axe 다섯 장면(반복 기호 경고 장면 추가) serious/critical 0. 2026-11-09~11 실행은 외부 CDN이 막힌 작업 환경이라 같은 버전·같은 바이트의 라이브러리를 로컬 미러로 제공했습니다.
 
 테스트 태그: `@smoke @fixtures @panels @ux @a11y @robustness @perf @visual`. 자세한 방법과 제외 조건은 [테스트 가이드](README-TESTING.md), 실측은 [검증 보고서](docs/verification-report.md)에 있습니다.
 
@@ -52,7 +54,7 @@ npm run serve
 - [퀵스타트](manual/MXL-Studio-Quick-Start-ko.html): 업로드부터 저장까지 빠른 흐름.
 - [9월 업데이트](MXL-Studio-업데이트-문서/MXL-Studio-2026-09-업데이트-안내.md): 이번 개선 내용.
 
-HTML이 정본이며 설명서·퀵스타트의 PDF와 SVG는 2026-11-10 버전으로 재생성했습니다(Linux에서 생성해 Malgun Gothic 대신 Noto Sans CJK로 표시됩니다. Windows에서 다시 생성하면 원래 글꼴로 돌아갑니다). `python -m pip install -r scripts/requirements-docs.txt` 후 `npm run docs:build`로 갱신합니다. 다른 Python을 쓰려면 `DOCS_PYTHON` 환경 변수에 실행 경로를 지정합니다.
+HTML이 정본이며 설명서·퀵스타트의 PDF와 SVG는 2026-11-11 버전으로 재생성했습니다(Linux에서 생성해 Malgun Gothic 대신 Noto Sans CJK로 표시됩니다. Windows에서 다시 생성하면 원래 글꼴로 돌아갑니다). `python -m pip install -r scripts/requirements-docs.txt` 후 `npm run docs:build`로 갱신합니다. 다른 Python을 쓰려면 `DOCS_PYTHON` 환경 변수에 실행 경로를 지정합니다.
 
 ## 설계 문서 관계
 
@@ -61,8 +63,9 @@ HTML이 정본이며 설명서·퀵스타트의 PDF와 SVG는 2026-11-10 버전�
 3. `MXL-Studio-기능확장-자동테스트-바이브코딩-프롬프트.md`: 다른 스냅샷용 확장 설계. 존재하지 않는 모듈을 전제로 실행하면 안 됩니다.
 4. `MXL-Studio10-PhaseA-변환정확도-바이브코딩-프롬프트.md`: Studio10 Phase A(A-1~A-10) 변환 정확도 작업의 기준. 진행 기록은 `checklist.md`, 결정과 남은 문제는 `context-notes.md`의 Phase A 절에 있습니다.
 5. `MXL-Studio10-PhaseA2-검수대응-바이브코딩-프롬프트.md`: 2026-11-09 외부 검수 보고서(B01~B10·C01~C18) 대응 Phase A2(A2-1~A2-11)의 기준. 작업자 기본값 D1~D12와 검수 ID별 결과는 `context-notes.md`의 `Phase A2 요약`에 있습니다.
+6. `MXL-Studio10-PhaseB-출력유효성-바이브코딩-프롬프트.md`: 출력 유효성(MusicXML 4.0 스키마)·출력 통일(PNG·ZIP·헤더·PDF)·렌더 횟수·재생 이동 기호·표기 변환 기준선 Phase B(B-1~B-9)의 기준. 작업자 기본값 E1~E12와 결함 ID(V1~V5·O1~O4·P1·P2·R1·R2·N8·U1)별 결과는 `context-notes.md`의 `Phase B 요약`에 있습니다.
 
-선택 Phase 9의 주석·청음·난이도·운지·QR·AI·클라우드는 이번 구현 범위에 포함하지 않았습니다. D.C./D.S./Fine/코다 재생 이동도 제외되어 있으며, 악보에 이런 기호가 있으면 재생 막대에 '재생 미반영'으로 알립니다.
+선택 Phase 9의 주석·청음·난이도·운지·QR·AI·클라우드는 이번 구현 범위에 포함하지 않았습니다. D.C./D.S./Fine/코다 재생 이동은 한 번만 따르며, 중첩·복수 점프처럼 따르지 못하는 기호와 타악기 파트는 재생 막대에 '재생 미반영'으로 알립니다.
 
 ## 배포와 남은 외부 작업
 

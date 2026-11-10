@@ -92,4 +92,25 @@ describe('serialized history snapshots',()=>{
     expect(restored[0].lyricBackup).toBe(backup);
     expect(restored[0].xmlString).toBe('<score-partwise/>');
   });
+  it('keeps the notation backup in string snapshots so undo and redo can still restore the original', () => {
+    const backup = { xml: '<score-partwise><part id="P1"/></score-partwise>' };
+    const converted = { name: 'a.xml', sourceName: 'a.xml', xmlDoc: parseXml('<score-partwise/>'), notationBackup: backup };
+    const first = window.HistoryCore.pushHistoryEntry([], -1, [converted], '악보 표기 변환', 1);
+    // 다른 패널이 커밋하면 보관본은 지워진 채로 다음 기록이 쌓인다.
+    const second = window.HistoryCore.pushHistoryEntry(first.history, first.index, [{ ...converted, notationBackup: undefined }], '조옮김', 2);
+    expect(first.history[0].files[0].notationBackup).toBe(backup);
+    expect(window.HistoryCore.restoreHistoryFiles(second.history[1])[0].notationBackup).toBeUndefined();
+    // 조옮김을 실행 취소(앞 기록으로 복원)하면 보관본이 같은 객체로 돌아온다.
+    const undone = window.HistoryCore.restoreHistoryFiles(second.history[0]);
+    expect(undone[0].notationBackup).toBe(backup);
+    expect(undone[0].xmlString).toBe('<score-partwise/>');
+  });
+  it('counts the notation backup text once in the memory estimate even when snapshots share it', () => {
+    const backup = { xml: '<score-partwise>' + 'x'.repeat(100) + '</score-partwise>' };
+    const file = { name: 'a.xml', xmlDoc: parseXml('<score-partwise/>'), notationBackup: backup };
+    const first = window.HistoryCore.pushHistoryEntry([], -1, [file], '악보 표기 변환', 1);
+    const second = window.HistoryCore.pushHistoryEntry(first.history, first.index, [file], '악보 표기 변환', 2);
+    const plain = window.HistoryCore.pushHistoryEntry([], -1, [{ ...file, notationBackup: undefined }], '변환', 1);
+    expect(window.HistoryCore.estimateHistoryBytes(second.history) - window.HistoryCore.estimateHistoryBytes(plain.history)).toBe(backup.xml.length * 2);
+  });
 });

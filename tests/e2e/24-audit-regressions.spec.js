@@ -9,6 +9,7 @@
 // 그 밖에 B07(히스토리 기준점)·C16(반복 기호 경고)도 여기 있습니다.
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import { openApp, openPanel, fixturesDir, uploadFixture, getPitches } from './helpers.js';
 
 async function uploadMany(page, names) {
@@ -24,7 +25,7 @@ const fileSummary = (page, index) => page.evaluate((i) => {
     parts: doc.querySelectorAll('part-list score-part').length,
     partIds: Array.from(doc.querySelectorAll('part-list score-part'), (sp) => sp.getAttribute('id')),
     notes: doc.querySelectorAll('note').length,
-    romans: doc.querySelectorAll('words[data-roman-analysis]').length,
+    romans: doc.querySelectorAll('words[id^="mxl-roman-"]').length,
     xml: file.xmlString,
   };
 }, index);
@@ -102,21 +103,36 @@ test('@panels B07 history clear keeps a baseline', async ({ page }) => {
   await expect(page.locator('.history-panel__item--current')).toContainText('기준점 (지우기 전 상태)');
 });
 
-// C16: D.C./Fine 같은 이동 기호는 재생이 따르지 않는데 그 사실을 알리지 않던 문제.
+// C16: 재생이 따르지 못하는 이동 기호는 알려야 한다. B-7부터 f17의 Fine + D.C. al Fine은 점프로 따르므로
+// 경고가 없고 마디 순서에 점프가 반영된다. 경고 표시 자체는 따르지 못하는 조합(segno 없는 D.S.)으로 확인한다.
 test('@panels C16 player warns that navigation marks are not followed', async ({ page }) => {
   await openApp(page);
   await uploadFixture(page, 'f17-dacapo.musicxml');
   await expect(page.locator('.score-main-render svg')).toBeVisible();
-  const warning = page.locator('.player__warning');
-  await expect(warning).toHaveAttribute('role', 'status');
-  await expect(warning).toContainText('D.C.');
-  await expect(warning).toContainText('Fine');
-  await expect(warning.locator('.player__warning-text')).toHaveText('⚠ 재생 미반영: Fine · D.C. al Fine');
-  await expect(warning.locator('.visually-hidden')).toHaveText('반복 기호 Fine은(는) 재생에 반영되지 않습니다. 반복 기호 D.C. al Fine은(는) 재생에 반영되지 않습니다.');
-  await expect(warning).toHaveAttribute('title', '반복 기호 Fine은(는) 재생에 반영되지 않습니다.\n반복 기호 D.C. al Fine은(는) 재생에 반영되지 않습니다.');
-  await page.locator('input[type="file"]').setInputFiles(path.join(fixturesDir, 'f01-basic.musicxml'));
+  await expect(page.locator('.player__warning')).toHaveCount(0);
+  const order = await page.evaluate(() => {
+    const state = window.__mxlGetState();
+    return PlaybackCore.extractPlaybackData(state.files[state.activeFile || 0].xmlDoc).measureTimeline.map((entry) => entry.measure);
+  });
+  expect(order).toEqual([1, 2, 3, 4, 1, 2]);
+  // f17의 D.C. al Fine을 segno 없는 D.S. al Fine으로 바꾼 문서: 되돌아갈 곳이 없어 점프하지 않으므로 경고가 남는다.
+  const source = await readFile(path.join(fixturesDir, 'f17-dacapo.musicxml'), 'utf8');
+  const unsupported = source.replace('D.C. al Fine', 'D.S. al Fine').replace('dacapo="yes"', 'dalsegno="segno1"');
+  expect(unsupported).not.toBe(source);
+  await page.locator('input[type="file"]').setInputFiles({ name: 'f17-ds-without-segno.musicxml', mimeType: 'application/vnd.recordare.musicxml+xml', buffer: Buffer.from(unsupported) });
   await expect(page.locator('.file-entry')).toHaveCount(2);
   await page.evaluate(() => window.__mxlSetActiveFile(1));
+  await expect(page.locator('.header__badge')).toContainText('현재: f17-ds-without-segno.musicxml');
+  const warning = page.locator('.player__warning');
+  await expect(warning).toHaveAttribute('role', 'status');
+  await expect(warning).toContainText('D.S.');
+  await expect(warning).toContainText('Fine');
+  await expect(warning.locator('.player__warning-text')).toHaveText('⚠ 재생 미반영: Fine · D.S. al Fine');
+  await expect(warning.locator('.visually-hidden')).toHaveText('반복 기호 Fine은(는) 재생에 반영되지 않습니다. 반복 기호 D.S. al Fine은(는) 재생에 반영되지 않습니다.');
+  await expect(warning).toHaveAttribute('title', '반복 기호 Fine은(는) 재생에 반영되지 않습니다.\n반복 기호 D.S. al Fine은(는) 재생에 반영되지 않습니다.');
+  await page.locator('input[type="file"]').setInputFiles(path.join(fixturesDir, 'f01-basic.musicxml'));
+  await expect(page.locator('.file-entry')).toHaveCount(3);
+  await page.evaluate(() => window.__mxlSetActiveFile(2));
   await expect(page.locator('.header__badge')).toContainText('현재: f01-basic.musicxml');
   await expect(page.locator('.player__warning')).toHaveCount(0);
 });

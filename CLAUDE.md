@@ -17,6 +17,7 @@
    - 새 `alert()`·`prompt()`·`confirm()`은 사용하지 않고 notify와 모달을 사용합니다.
    - 악보 변경은 `xmlDoc` 복제 후 수정하고 `onFilesUpdate(newFiles, '한글 작업 라벨')`로 커밋합니다.
    - 외부 라이브러리는 버전 고정 CDN 또는 npm devDependency로만 추가하고, 실패 시 폴백 경로를 둡니다.
+   - 악보 XML에는 MusicXML 4.0 스키마에 있는 요소·속성만 쓰고, 새 변환은 `tests/e2e/25-schema.spec.js`에 등록합니다.
 
 3. 테스트 우선
    - 새 코어 파일은 같은 변경 묶음에 `tests/unit/*.test.js`를 추가합니다.
