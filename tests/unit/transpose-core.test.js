@@ -175,3 +175,76 @@ describe('tonic fifths, interval transposition and per-staff keys (C05, C06)',()
     expect(pitches(doc)).toEqual(['Db4','B2']);
   });
 });
+describe('TransposeCore percussion keys and TAB frets (Phase B V4·V5)',()=>{
+  // f19: P1 = 기타(TAB 프렛 음표 포함), P2 = 타악기(percussion 음자리표, unpitched). 둘 다 C장조(fifths 0)로 시작합니다.
+  const isDrums=partEl=>partEl.getAttribute('id')==='P2';
+  const parts=doc=>doc.querySelectorAll('score-partwise > part');
+  const fifths=doc=>Array.from(parts(doc),partEl=>partEl.querySelector('key fifths').textContent);
+  it('transposeDocument leaves the key of a part chosen by skipKeyFor unchanged',()=>{
+    const doc=fixture('f19-drums-tab.musicxml');
+    const result=core.transposeDocument(doc,2,{skipKeyFor:isDrums});
+    expect(fifths(doc)).toEqual(['2','0']);
+    expect(result.skippedKeyParts).toBe(1);
+    expect(result.keys).toBe(1);
+  });
+  it('transposeDocument changes every part key when skipKeyFor is absent (old behaviour)',()=>{
+    const doc=fixture('f19-drums-tab.musicxml');
+    const result=core.transposeDocument(doc,2);
+    expect(fifths(doc)).toEqual(['2','2']);
+    expect(result.skippedKeyParts).toBe(0);
+    expect(result.keys).toBe(2);
+  });
+  it('never touches unpitched percussion notes, with or without skipKeyFor',()=>{
+    for(const options of [{},{skipKeyFor:isDrums}]){
+      const doc=fixture('f19-drums-tab.musicxml');
+      core.transposeDocument(doc,5,options);
+      const drums=parts(doc)[1];
+      expect(new Set(Array.from(drums.querySelectorAll('unpitched display-step'),n=>n.textContent))).toEqual(new Set(['C']));
+      expect(new Set(Array.from(drums.querySelectorAll('unpitched display-octave'),n=>n.textContent))).toEqual(new Set(['5']));
+    }
+  });
+  it('transposePartRange neither edits nor inserts a key for a skipped part',()=>{
+    const skipped=fixture('f19-drums-tab.musicxml');
+    const drums=parts(skipped)[1];
+    drums.querySelector('key').remove();               // 시작 마디에 key가 없으면 보통 목표 조표를 삽입합니다.
+    const result=core.transposePartRange(drums,1,4,2,{skipKeyFor:isDrums});
+    expect(result.skippedKeyParts).toBe(1);
+    expect(result.keys).toBe(0);
+    expect(result.insertedKey).toBe(false);
+    expect(drums.querySelectorAll('key')).toHaveLength(0);
+    // 대조: 같은 상황에서 skipKeyFor가 없으면 key가 삽입됩니다.
+    const control=fixture('f19-drums-tab.musicxml');
+    const controlDrums=parts(control)[1];
+    controlDrums.querySelector('key').remove();
+    const controlResult=core.transposePartRange(controlDrums,1,4,2);
+    expect(controlResult.skippedKeyParts).toBe(0);
+    expect(controlResult.insertedKey).toBe(true);
+    expect(controlDrums.querySelector('key fifths').textContent).toBe('2');
+  });
+  it('transposePartRange still moves the key of a part that skipKeyFor does not match',()=>{
+    const doc=fixture('f19-drums-tab.musicxml');
+    const result=core.transposePartRange(parts(doc)[0],1,4,2,{skipKeyFor:isDrums});
+    expect(result.skippedKeyParts).toBe(0);
+    expect(fifths(doc)).toEqual(['2','0']);
+  });
+  it('counts TAB notes whose pitch actually changed and leaves <fret> as it was',()=>{
+    const doc=fixture('f19-drums-tab.musicxml');
+    const result=core.transposeDocument(doc,2);
+    expect(result.tabNotes).toBe(1);
+    expect(doc.querySelector('technical fret').textContent).toBe('0');
+    expect(doc.querySelector('technical string').textContent).toBe('3');
+    // 음높이가 그대로(0반음)이면 TAB 음표라도 세지 않습니다.
+    expect(core.transposeDocument(fixture('f19-drums-tab.musicxml'),0).tabNotes).toBe(0);
+  });
+  it('counts TAB notes in transposePartRange as well',()=>{
+    const doc=fixture('f19-drums-tab.musicxml');
+    expect(core.transposePartRange(parts(doc)[0],1,4,2).tabNotes).toBe(1);
+    // 프렛 음표가 없는 구간(2~4마디)을 옮기면 0입니다.
+    const noTab=fixture('f19-drums-tab.musicxml');
+    expect(core.transposePartRange(parts(noTab)[0],2,4,2).tabNotes).toBe(0);
+  });
+  it('reports no TAB notes for a score without frets',()=>{
+    const doc=fixture('f04-minor-harmony.musicxml');
+    expect(core.transposeDocument(doc,2).tabNotes).toBe(0);
+  });
+});

@@ -23,6 +23,12 @@ const rows = [
     await panel.locator('input[type="number"]').fill('2');
     await panel.getByRole('button', { name: /변환 실행/ }).click();
   } },
+  // 타악기 파트·TAB 음표·옥타브 9 끝 음이 있는 악보도 조옮김 뒤 스키마를 지킵니다(Phase B V3~V5).
+  { name: 'transpose -5 on drums and TAB', fixture: 'f19-drums-tab.musicxml', panel: 'transpose', run: async (panel) => {
+    await panel.getByRole('button', { name: '반음 단위 이동', exact: true }).click();
+    await panel.locator('input[type="number"]').fill('-5');
+    await panel.getByRole('button', { name: /변환 실행/ }).click();
+  } },
   { name: 'keychange per measure', fixture: 'f02-two-parts.musicxml', panel: 'keychange', run: async (panel) => {
     await panel.locator('input[type=number]').fill('3');
     await panel.locator('select').selectOption('7');

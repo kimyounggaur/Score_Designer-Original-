@@ -103,6 +103,16 @@
     if(accidental)accidental.textContent=({'-2':'flat-flat','-1':'flat','0':'natural','1':'sharp','2':'double-sharp'})[result.alter]||'natural';
     return true;
   }
+  // TAB 악보의 줄·프렛(notations > technical > fret)은 음높이를 따라 바뀌지 않습니다. 음높이가 실제로 바뀐 TAB 음표를
+  // result.tabNotes로 세어 호출한 쪽이 "프렛을 직접 확인하세요" 경고를 띄울 수 있게 합니다(Phase B V5, 결정 E6: 경고만).
+  const hasFret=note=>Boolean(note.querySelector(':scope > notations > technical > fret'));
+  const pitchSignature=note=>(note.querySelector(':scope > pitch')?.textContent||'').replace(/\s+/g,'');
+  function transposeNoteCounted(note,interval,result){
+    const tab=hasFret(note),before=tab?pitchSignature(note):'';
+    if(!transposeNoteElement(note,interval))return false;
+    if(tab&&pitchSignature(note)!==before)result.tabNotes++;
+    return true;
+  }
   function transposeMeasureRange(xmlDoc,fromNumber,toNumber,semitones,options={}){
     const result={notes:0,harmonies:0,measures:0};
     for(const measure of xmlDoc.querySelectorAll('part > measure')){
@@ -144,10 +154,13 @@
   // options.startFifths/startMode: 구간 시작 시점의 원래 조. 앞 구간이 이미 바뀐 문서에서도 원본 기준을 쓰기 위해 받습니다.
   // options.targetFifths: 시작 조의 목표 조표(없으면 keyFifthsAfter). 구간 안의 기존 조바꿈은 같은 반음 수만큼 옮겨 상대 관계를 유지합니다.
   // options.ensureKey(기본 true): 시작 마디에 key가 없고 그 앞에 표기된 조표가 목표와 다르면 key를 삽입합니다.
+  // options.skipKeyFor(partEl): true를 돌려주면 이 파트의 key를 고치지 않고 삽입도 하지 않습니다(타악기 파트, Phase B V4).
+  //   그 경우 result.skippedKeyParts가 1입니다. 음표 철자는 그대로 같은 방식으로 정합니다.
   function transposePartRange(partEl,fromNumber,toNumber,semitones,options={}){
     if(!Number.isInteger(semitones))throw new Error('반음 수는 정수여야 합니다.');
     const from=Number(fromNumber),to=Number(toNumber);
-    const result={notes:0,harmonies:0,keys:0,measures:0,insertedKey:false,startFifths:null,targetFifths:null};
+    const skipKey=typeof options.skipKeyFor==='function'&&Boolean(options.skipKeyFor(partEl));
+    const result={notes:0,harmonies:0,keys:0,measures:0,insertedKey:false,startFifths:null,targetFifths:null,skippedKeyParts:skipKey?1:0,tabNotes:0};
     let shownFifths=0,shownMode='major',interval=null,mode='major',started=false;
     // 1번이 아닌 보표의 조표(number="2" 등)도 옮깁니다. 시작 조와 같은 fifths면 같은 목표, 아니면 자기 fifths 기준
     // keyFifthsAfter이고, 그 보표 음표의 철자도 그 조로 정합니다.
@@ -177,20 +190,20 @@
         const target=Number.isFinite(options.targetFifths)?Number(options.targetFifths):keyFifthsAfter(startFifths,semitones,options.preferFlat);
         interval=keyInterval(startFifths,target,semitones,mode);
         result.startFifths=startFifths;result.targetFifths=target;
-        if(keyFifths){keyFifths.textContent=String(target);result.keys++;}
-        else if(options.ensureKey!==false&&shownFifths!==target){insertLeadingKey(measure,target,mode);result.keys++;result.insertedKey=true;}
+        if(keyFifths){if(!skipKey){keyFifths.textContent=String(target);result.keys++;}}
+        else if(!skipKey&&options.ensureKey!==false&&shownFifths!==target){insertLeadingKey(measure,target,mode);result.keys++;result.insertedKey=true;}
         started=true;
       }else if(keyFifths){
         const fifths=Number(keyFifths.textContent)||0;mode=key.querySelector('mode')?.textContent||mode;
         const target=keyFifthsAfter(fifths,semitones,options.preferFlat);
         interval=keyInterval(fifths,target,semitones,mode);
-        keyFifths.textContent=String(target);result.keys++;
+        if(!skipKey){keyFifths.textContent=String(target);result.keys++;}
       }
-      for(const state of others)if(state.fifthsEl){state.fifthsEl.textContent=String(staffTarget(state));result.keys++;}
+      if(!skipKey)for(const state of others)if(state.fifthsEl){state.fifthsEl.textContent=String(staffTarget(state));result.keys++;}
       if(!interval.diatonic&&!interval.chromatic)continue;
       for(const note of measure.querySelectorAll('note')){
         const staffState=staffKeys.get(staffOf(note));
-        if(transposeNoteElement(note,staffState?staffInterval(staffState):interval))result.notes++;
+        if(transposeNoteCounted(note,staffState?staffInterval(staffState):interval,result))result.notes++;
       }
       result.harmonies+=transposeMeasureHarmonies(measure,semitones,{interval});
     }
@@ -200,11 +213,13 @@
   //   조표 목표는 옮긴 으뜸음의 조표, 그 조표가 −7~7 밖이면 keyFifthsAfter로 폴백합니다.
   // options 없음: 음표 철자는 그 음표 보표의 조표(number=staff → 1번 → 공통) 기준 keyInterval입니다.
   // 모든 attributes > key를 number별로 따로 갱신합니다(보표별 조표가 [2,0]으로 남던 C05).
+  // options.skipKeyFor(partEl): true를 돌려주는 파트(타악기)는 key를 고치지 않습니다. 그런 파트 수가 result.skippedKeyParts입니다(Phase B V4).
+  // result.tabNotes: 음높이가 바뀐 TAB 음표(프렛 표기 포함) 수. 프렛은 바뀌지 않으므로 호출한 쪽이 경고합니다(Phase B V5).
   // Sounding pitch = written pitch + instrument transpose. Shifting written notes by the same interval
   // while preserving <transpose> preserves this relation; metadata is always preserved.
   function transposeDocument(xmlDoc,semitones,options={}){
     if(!Number.isInteger(semitones))throw new Error('반음 수는 정수여야 합니다.');
-    const result={notes:0,harmonies:0,keys:0,parts:0};
+    const result={notes:0,harmonies:0,keys:0,parts:0,skippedKeyParts:0,tabNotes:0};
     const fixed=validInterval(options.interval);
     const originalFirstFifths=Number(xmlDoc.querySelector('key fifths')?.textContent||0);
     const targetFor=({fifths,mode})=>{
@@ -214,6 +229,8 @@
     const intervalFor=state=>fixed||keyInterval(state.fifths,targetFor(state),semitones,state.mode);
     for(const part of xmlDoc.querySelectorAll('score-partwise > part')){
       result.parts++;
+      const skipKey=typeof options.skipKeyFor==='function'&&Boolean(options.skipKeyFor(part));
+      if(skipKey)result.skippedKeyParts++;
       const firstKey=part.querySelector('key');
       const states={shared:{fifths:Number(firstKey?.querySelector('fifths')?.textContent||0),mode:firstKey?.querySelector('mode')?.textContent||'major'},byStaff:new Map()};
       for(const measure of part.querySelectorAll(':scope > measure')){
@@ -224,10 +241,10 @@
               const state=readKeyState(key,number===null?states.shared:(states.byStaff.get(number)||states.shared));
               const clean={fifths:state.fifths,mode:state.mode};
               if(number===null){states.shared=clean;states.byStaff.clear();}else states.byStaff.set(number,clean);
-              if(state.fifthsEl){state.fifthsEl.textContent=String(targetFor(clean));result.keys++;}
+              if(state.fifthsEl&&!skipKey){state.fifthsEl.textContent=String(targetFor(clean));result.keys++;}
             }
           }else if(child.localName==='note'){
-            if(transposeNoteElement(child,intervalFor(keyStateFor(states,staffOf(child)))))result.notes++;
+            if(transposeNoteCounted(child,intervalFor(keyStateFor(states,staffOf(child))),result))result.notes++;
           }else if(child.localName==='harmony'){
             if(transposeHarmony(child,semitones,{interval:intervalFor(keyStateFor(states,staffOf(child)))}))result.harmonies++;
           }
