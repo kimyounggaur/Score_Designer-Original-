@@ -102,4 +102,4 @@ Phase A 종료 체크리스트 (기준 문서 4.3)
 - [x] HTML에 `data-roman-analysis`·`baselineRef`·`autoResize:true`가 없다 (grep 0건, 위 B-9 grep 전체도 0건)
 - [x] 기본값 E1~E12가 코드·설명서·context-notes에서 서로 같다 (대응표: context-notes `## Phase B 요약`)
 - [x] README·README-TESTING·검증 보고서·설명서(PDF·SVG)·CLAUDE.md·checklist·context-notes 동기화
-- [ ] PR 열림, CI 통과, 병합 전 보고 (PR을 연 뒤 CI 결과를 확인해 이 줄을 갱신합니다)
+- [x] PR 열림(#5), CI 통과(커밋 ca6693a, 실제 CDN: 단위 257·smoke 7·panels/a11y 178 통과, 6분 36초), 병합 전 보고. 병합은 하지 않았고 병합 여부는 사용자가 결정합니다
