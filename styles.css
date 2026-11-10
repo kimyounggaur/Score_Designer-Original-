@@ -2410,13 +2410,20 @@ body {
 .score-zoom { position:absolute; right:18px; bottom:14px; display:flex; gap:2px; padding:4px; border:1px solid #d7dbe0; border-radius:10px; background:#fffffff2; box-shadow:0 3px 14px #0002; z-index:10; }
 .score-zoom button { border:0; border-radius:6px; background:transparent; padding:8px 10px; font:inherit; color:#222; cursor:pointer; }
 .score-zoom button:hover { background:#edf2f8; }
+/* 인쇄(Phase B O3·O4)
+   화면(#root)은 인쇄하지 않고, 내보내기가 body 직속에 만든 .print-root(쪽마다 .print-page 하나)만 인쇄합니다.
+   용지 크기와 여백은 JS가 넣는 <style id="mxl-print-page">의 @page가 정합니다(여백 0, 여백은 OSMD 쪽 여백).
+   .print-root가 없을 때(Ctrl+P를 직접 눌렀을 때)는 빈 종이 대신 안내 한 줄(.print-hint)만 인쇄됩니다. */
+.print-root, .print-hint { display:none; }
 @media print {
-  @page { margin:10mm; }
-  html,body,#root { height:auto!important; overflow:visible!important; background:white!important; }
-  .header,.activity-bar,.right-activity-bar,.inspector,.analysis,.transport,.toast-stack,.score-zoom,.file-tabs,.score-measure-overlay,.session-restore-banner,.share-modal-backdrop,.progress-overlay,.drawer-backdrop,.mobile-tools { display:none!important; }
-  .app-root { display:block!important; height:auto!important; overflow:visible!important; }
-  .main-score,.score-container { display:block!important; height:auto!important; overflow:visible!important; padding:0!important; background:#fff!important; }
-  .score-main-render svg,.ossia-inline svg { max-width:100%; height:auto; break-inside:avoid; }
+  html, body { height:auto!important; overflow:visible!important; background:#fff!important; margin:0!important; padding:0!important; }
+  body > #root { display:none!important; }
+  .print-root { display:block!important; }
+  .print-page { break-after:page; break-inside:avoid; width:100%; height:100vh; overflow:hidden; box-sizing:border-box; padding:0; }
+  .print-page:last-child { break-after:auto; }
+  .print-page > svg { display:block; width:100%; height:auto; }
+  .print-hint { display:block; margin:24mm 16mm; font:16px/1.6 sans-serif; color:#222; }
+  body.mxl-printing .print-hint { display:none!important; }
 }
 
 /* 네이티브 버튼 의미를 갖는 기존 선택 컨트롤 */

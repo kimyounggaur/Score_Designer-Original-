@@ -52,6 +52,32 @@ const svgButton = (panel) => panel.getByRole('button', { name: '🖼️ SVG 저�
 const zipButton = (panel) => panel.getByRole('button', { name: '📦 전체 파일 PNG (ZIP)', exact: true });
 const headerPng = (page) => page.locator('.header__export-btn[title="PNG 내보내기"]');
 
+const printButton = (page) => page.locator('.header__export-btn[title="인쇄 / PDF로 저장"]');
+// window.print를 바꿔 인쇄 직전의 인쇄 영역(쪽 수·@page·용지 id·제목)을 window.__printed에 담습니다. 인쇄 창은 열리지 않습니다.
+const stubPrint = (page) => page.evaluate(() => {
+  window.__printed = null;
+  window.print = () => {
+    window.__printed = {
+      pages: Array.from(document.querySelectorAll('.print-root .print-page'), (node) => node.querySelectorAll('svg').length),
+      style: document.getElementById('mxl-print-page')?.textContent ?? null,
+      format: document.querySelector('.print-root')?.getAttribute('data-page-format') ?? null,
+      title: document.title,
+      ratio: (() => { const box = (document.querySelector('.print-page > svg')?.getAttribute('viewBox') || '').split(/\s+/).map(Number); return box[3] / box[2]; })(),
+      offscreen: document.querySelectorAll('[data-export-offscreen]').length,
+    };
+  };
+});
+const waitPrinted = async (page) => {
+  await page.waitForFunction(() => window.__printed, null, { timeout: 30_000 });
+  return page.evaluate(() => window.__printed);
+};
+const expectNoPrintLeftovers = async (page) => {
+  await expect(page.locator('.print-root')).toHaveCount(0);
+  await expect(page.locator('#mxl-print-page')).toHaveCount(0);
+  expect(await page.evaluate(() => document.body.classList.contains('mxl-printing'))).toBe(false);
+  expect(await offscreenCount(page)).toBe(0);
+};
+
 test.describe('Phase B B-4 · 이미지 내보내기 통일', () => {
   test('@panels single PNG and ZIP PNG have the same size', async ({ page }) => {
     test.setTimeout(90_000);
@@ -216,5 +242,128 @@ test.describe('Phase B B-4 · 이미지 내보내기 통일', () => {
     await expect(panel.locator('.result-log')).toContainText('ZIP을 내려받지 않았습니다');
     expect(downloads).toBe(0);
     expect(await offscreenCount(page)).toBe(0);
+  });
+});
+
+// Phase B B-5: PDF는 뷰어 화면이 아니라 body 직속 .print-root(쪽마다 .print-page)를 인쇄합니다(O3·O4).
+test.describe('Phase B B-5 · PDF 쪽 나눔 인쇄 영역', () => {
+  test('@panels print root paginates a long score and cleans up after printing', async ({ page }) => {
+    test.setTimeout(60_000);
+    await openApp(page);
+    await uploadFixture(page, FIXTURE);
+    await stubPrint(page);
+    const title = await page.title();
+    await printButton(page).click();
+    const printed = await waitPrinted(page);
+
+    // 64마디는 A4 세로 3쪽 이상으로 나뉘고 쪽마다 .print-page 하나·SVG 하나입니다. 용지·제목은 인쇄 직전에 정해집니다.
+    expect(printed.pages.length).toBeGreaterThanOrEqual(3);
+    expect(printed.pages.every((count) => count === 1)).toBe(true);
+    expect(printed.style).toBe('@page{size:A4 portrait;margin:0}');
+    expect(printed.format).toBe('A4_P');
+    expect(printed.title).toBe(STEM);
+    expect(printed.ratio).toBeCloseTo(297 / 210, 2);
+    expect(printed.offscreen).toBe(0);
+    // 인쇄 뒤에는 인쇄 영역·@page 스타일·표시 클래스·화면 밖 상자와 문서 제목이 남지 않습니다.
+    await expectNoPrintLeftovers(page);
+    expect(await page.title()).toBe(title);
+  });
+
+  test('@panels pdf page count equals the print pages and ignores the window size', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name !== 'chromium', 'page.pdf()는 데스크톱 Chromium에서만 씁니다.');
+    test.setTimeout(90_000);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openApp(page);
+    await uploadFixture(page, FIXTURE);
+    // 시험 전용 훅: 정리를 건너뛰어 인쇄 영역을 남기고, 그 상태에서 page.pdf()로 실제 쪽 수를 셉니다.
+    await page.evaluate(() => { window.__mxlKeepPrintRoot = true; });
+    await stubPrint(page);
+
+    const measure = async () => {
+      await page.evaluate(() => { window.__printed = null; });
+      await printButton(page).click();
+      await waitPrinted(page);
+      const printPages = await page.locator('.print-root .print-page').count();
+      const buffer = await page.pdf({ preferCSSPageSize: true });
+      const pdfPages = (buffer.toString('latin1').match(/\/Type\s*\/Page(?![s\w])/g) || []).length;
+      await page.evaluate(() => {
+        document.querySelector('.print-root')?.remove();
+        document.getElementById('mxl-print-page')?.remove();
+        document.body.classList.remove('mxl-printing');
+      });
+      return { printPages, pdfPages };
+    };
+    const wide = await measure();
+    expect(wide.printPages).toBeGreaterThanOrEqual(3);
+    expect(wide.pdfPages).toBe(wide.printPages);
+
+    // 창을 줄이고 이미지 / PDF 패널을 열어도 쪽 수는 같습니다.
+    await page.setViewportSize({ width: 1000, height: 800 });
+    await openPanel(page, 'export');
+    expect(await measure()).toEqual(wide);
+  });
+
+  test('@panels the paper setting changes the page box and the page ratio', async ({ page }) => {
+    test.setTimeout(90_000);
+    await openApp(page);
+    await uploadFixture(page, FIXTURE);
+    const panel = await openPanel(page, 'export');
+    await expect(panel.getByLabel('용지')).toHaveValue('A4_P');
+    await expect(panel.getByRole('option')).toContainText(['A4 세로', 'A4 가로', 'Letter 세로']);
+    await openPreview(page, panel);
+    await expect(panel).toContainText("인쇄 창에서 대상을 'PDF로 저장'으로 고르면 PDF 파일이 됩니다.");
+    await stubPrint(page);
+    const printNow = () => panel.getByRole('button', { name: '🖨️ 인쇄 / PDF로 저장', exact: true }).click();
+
+    await panel.getByLabel('용지').selectOption('A4_L');
+    await printNow();
+    const landscape = await waitPrinted(page);
+    expect(landscape.style).toBe('@page{size:A4 landscape;margin:0}');
+    expect(landscape.format).toBe('A4_L');
+    expect(landscape.ratio).toBeCloseTo(210 / 297, 2);
+
+    await stubPrint(page);
+    await panel.getByLabel('용지').selectOption('LETTER_P');
+    await printNow();
+    const letter = await waitPrinted(page);
+    expect(letter.style).toBe('@page{size:letter portrait;margin:0}');
+    expect(letter.format).toBe('LETTER_P');
+    expect(letter.ratio).toBeCloseTo(279.4 / 215.9, 2);
+    // 미리보기는 용지와 상관없으므로 용지를 바꿔도 지워지지 않습니다.
+    await expect(svgButton(panel)).toBeVisible();
+    await expectNoPrintLeftovers(page);
+  });
+
+  const addOssia = async (page) => {
+    const ossia = await openPanel(page, 'ossia');
+    await ossia.locator('.measure-input').nth(1).fill('2');
+    await ossia.getByRole('button', { name: '▶ Ossia 추가', exact: true }).click();
+    await expect(page.locator('.ossia-inline svg')).toBeVisible();
+  };
+
+  test('@panels the Ossia shares the first page when it fits', async ({ page }) => {
+    test.setTimeout(60_000);
+    await openApp(page);
+    await uploadFixture(page, 'f01-basic.musicxml');
+    await addOssia(page);
+    await stubPrint(page);
+    await printButton(page).click();
+    // 짧은 악보: 첫 쪽 아래가 비어 있어 Ossia와 본보가 한 쪽(SVG 둘)에 들어갑니다.
+    expect((await waitPrinted(page)).pages).toEqual([2]);
+    await expectNoPrintLeftovers(page);
+  });
+
+  test('@panels the Ossia gets its own first page when the first score page is full', async ({ page }) => {
+    test.setTimeout(60_000);
+    await openApp(page);
+    await uploadFixture(page, FIXTURE);
+    await addOssia(page);
+    await stubPrint(page);
+    await printButton(page).click();
+    // 긴 악보: 첫 쪽이 가득 차 Ossia만 담은 쪽이 맨 앞에 더해지고(3쪽 → 4쪽) 본보 쪽은 그대로입니다.
+    const printed = await waitPrinted(page);
+    expect(printed.pages.length).toBeGreaterThanOrEqual(4);
+    expect(printed.pages.every((count) => count === 1)).toBe(true);
+    await expectNoPrintLeftovers(page);
   });
 });

@@ -93,6 +93,12 @@ describe('PAGE_FORMATS / EXPORT_WIDTHS', () => {
       expect(format.css).toMatch(/^(A4|letter) (portrait|landscape)$/);
     }
     expect(core.PAGE_FORMATS.A4_L.css).toBe('A4 landscape');
+    expect(core.PAGE_FORMATS.LETTER_P.osmd).toBe('Letter_P');
+  });
+  it('gives each paper its 96dpi render width (A4 794, A4 landscape 1123, Letter 816)', () => {
+    expect(core.PAGE_FORMATS.A4_P.width).toBe(794);
+    expect(core.PAGE_FORMATS.A4_L.width).toBe(1123);
+    expect(core.PAGE_FORMATS.LETTER_P.width).toBe(816);
   });
   it('offers three export widths and uses 1100 as the default', () => {
     expect(core.EXPORT_WIDTHS).toEqual([800, 1100, 1400]);

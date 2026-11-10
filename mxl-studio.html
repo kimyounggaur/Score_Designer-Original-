@@ -43,7 +43,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="roman-analysis-core.js?v=3"></script>
 <script src="share-session-core.js?v=1"></script>
 <script src="session-store-core.js?v=2"></script>
-<script src="export-core.js?v=2"></script>
+<script src="export-core.js?v=3"></script>
 </head>
 <body>
 <div id="root"><div id="boot" class="boot" role="status">
@@ -52,6 +52,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
   <div class="boot__status" id="boot-status">불러오는 중입니다.</div>
   <noscript>이 앱은 JavaScript가 필요합니다.</noscript>
 </div></div>
+<div class="print-hint">악보는 이 화면에서 바로 인쇄하지 않습니다. 악보 디자이너의 내보내기에서 '인쇄 / PDF로 저장'을 눌러 인쇄하세요.</div>
 
 <!--
   ================================================================
@@ -587,12 +588,69 @@ const parseChordSymbol=text=>window.ChordSymbolCore.parse(text);
 const harmonyToString=harmony=>window.ChordSymbolCore.toString(harmony);
 
 
-function printScore(name){
-  const previous=document.title;
-  const restore=()=>{document.title=previous;};
-  document.title=(name||'악보').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/\.(mxl|xml|musicxml)$/i,'');
-  window.addEventListener('afterprint',restore,{once:true});
-  try{window.print();}finally{restore();}
+// ---- PDF·인쇄(Phase B O3·O4) ----
+// 인쇄 대상은 뷰어 화면이 아니라 body 직속의 .print-root입니다. 쪽마다 .print-page 하나이고, styles.css의 @media print가
+// #root를 숨기고 .print-root만 보여 줍니다. 용지 크기는 <style id="mxl-print-page">의 @page가 정합니다.
+// 본보는 OSMD 쪽 나눔(setPageFormat)으로 그린 SVG를 쪽마다 옮겨 담으므로 보표가 쪽 경계에서 잘리지 않고 창 크기와도 무관합니다.
+const OSSIA_PRINT_GAP=12;
+async function buildPrintRoot(file,pageFormat='A4_P',{isStale=()=>false}={}){
+  const formats=window.ExportCore.PAGE_FORMATS;
+  const key=formats[pageFormat]?pageFormat:'A4_P';
+  const format=formats[key];
+  document.querySelectorAll('.print-root,#mxl-print-page').forEach(node=>node.remove());
+  const rendered=await renderForExport(file,{width:format.width,pageFormat:key,isStale});
+  if(!rendered)return null;
+  try{
+    if(!rendered.main)throw new Error('악보를 렌더링하지 못했습니다.');
+    const scoreSvgs=rendered.pages.length?rendered.pages:[rendered.main];
+    // Ossia는 본보 첫 쪽 위에 둡니다. 첫 쪽의 내용이 끝나는 곳(getBBox)에 Ossia 높이를 더해도 쪽 안에 들어올 때만이고,
+    // 아니면 Ossia만 담은 쪽을 맨 앞에 둡니다. 크기를 재야 하므로 SVG를 옮기기(속성을 바꾸기) 전, 화면 밖 상자에 있을 때 잽니다.
+    let ossiaOnFirstPage=false;
+    if(rendered.ossia){
+      const pageSize=window.ExportCore.svgIntrinsicSize(scoreSvgs[0]);
+      const ossiaSize=window.ExportCore.svgIntrinsicSize(rendered.ossia);
+      if(pageSize&&ossiaSize){
+        let used=NaN;
+        try{const box=scoreSvgs[0].getBBox();used=box.y+box.height;}catch(_){}
+        ossiaOnFirstPage=Number.isFinite(used)&&used+(ossiaSize.height*pageSize.width/ossiaSize.width)+OSSIA_PRINT_GAP<=pageSize.height;
+      }
+    }
+    const root=document.createElement('div');
+    root.className='print-root';root.setAttribute('data-page-format',key);
+    const makePage=(...svgs)=>{
+      const page=document.createElement('div');page.className='print-page';
+      svgs.forEach(svg=>{svg.setAttribute('width','100%');svg.removeAttribute('height');svg.setAttribute('preserveAspectRatio','xMidYMin meet');page.appendChild(svg);});
+      root.appendChild(page);
+    };
+    if(rendered.ossia&&!ossiaOnFirstPage)makePage(rendered.ossia);
+    scoreSvgs.forEach((svg,index)=>index===0&&rendered.ossia&&ossiaOnFirstPage?makePage(rendered.ossia,svg):makePage(svg));
+    const style=document.createElement('style');
+    style.id='mxl-print-page';style.textContent=`@page{size:${format.css};margin:0}`;
+    document.head.appendChild(style);
+    document.body.appendChild(root);
+    document.body.classList.add('mxl-printing');
+    return {root,style};
+  }finally{rendered.dispose();}
+}
+// 렌더가 끝난 뒤에 인쇄 창을 엽니다. 인쇄 영역과 @page 스타일은 afterprint나 finally에서 지웁니다.
+// beforePrint는 인쇄 창을 열기 직전(진행 표시를 거둘 때)에 부릅니다.
+async function printScore(file,pageFormat='A4_P',{beforePrint=()=>{}}={}){
+  const previousTitle=document.title;
+  let built=null;
+  const cleanup=()=>{
+    document.title=previousTitle;
+    if(window.__mxlKeepPrintRoot)return; // 시험 전용: 쪽 수를 세려고 인쇄 영역을 남겨 둡니다.
+    if(built){built.root.remove();built.style.remove();}
+    document.body.classList.remove('mxl-printing');
+  };
+  try{
+    built=await buildPrintRoot(file,pageFormat);
+    if(!built)return;
+    document.title=(file.name||'악보').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_').replace(/\.(mxl|xml|musicxml)$/i,'');
+    beforePrint();
+    window.addEventListener('afterprint',cleanup,{once:true});
+    window.print();
+  }finally{cleanup();}
 }
 
 function downloadBlob(blob,name){const u=URL.createObjectURL(blob);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(u)}
@@ -2191,6 +2249,7 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
   const [format,setFormat]=useState('png');
   const [scale,setScale]=useState(1.5);
   const [exportWidth,setExportWidth]=useState(window.ExportCore.DEFAULT_EXPORT_WIDTH);
+  const [paper,setPaper]=useState('A4_P');
   const [bgWhite,setBgWhite]=useState(true);
   const [previewing,setPreviewing]=useState(false);
   const [previewReady,setPreviewReady]=useState(false);
@@ -2270,12 +2329,16 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
     hideProgress();
   },[previewReady,previewMatches,scale,bgWhite,files,selIdx,showProgress,hideProgress]);
 
-  // Export as PDF
-  const exportPDF=useCallback(()=>{
+  // PDF·인쇄: 화면 밖에서 용지 쪽 나눔으로 렌더한 인쇄 영역을 만들어 인쇄 창을 엽니다(대상을 'PDF로 저장'으로 고르면 PDF).
+  const exportPDF=useCallback(async()=>{
     const file=files[selIdx]||files[activeFile];
     if(!file){notify('먼저 파일을 업로드하세요.','warn');return;}
-    printScore(file.name);
-  },[files,activeFile,selIdx,notify]);
+    showProgress('인쇄 준비 중...');
+    await new Promise(resolve=>setTimeout(resolve,50));
+    try{await printScore(file,paper,{beforePrint:hideProgress});}
+    catch(e){notify(friendlyError(e),'err');}
+    finally{hideProgress();}
+  },[files,activeFile,selIdx,paper,notify,showProgress,hideProgress]);
 
   // Export all files as PNG zip
   const exportAllPNG=useCallback(async()=>{
@@ -2370,6 +2433,14 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
             </div>
           </div>
         </div>
+        <div className="export-settings__row">
+          <div className="export-settings__field">
+            <label className="form-label" htmlFor="export-paper">용지 (PDF·인쇄)</label>
+            <select id="export-paper" className="form-select" aria-label="용지" value={paper} onChange={e=>setPaper(window.ExportCore.PAGE_FORMATS[e.target.value]?e.target.value:'A4_P')}>
+              {Object.entries(window.ExportCore.PAGE_FORMATS).map(([key,format])=><option key={key} value={key}>{format.label}</option>)}
+            </select>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -2386,9 +2457,10 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
       <div className="export-actions">
         <button className="btn btn--primary" onClick={exportPNG}>📷 PNG 저장</button>
         <button className="btn btn--secondary" onClick={exportSVG}>🖼️ SVG 저장</button>
-        <button className="btn btn--secondary" onClick={exportPDF}>📄 PDF 저장 (인쇄)</button>
+        <button className="btn btn--secondary" onClick={exportPDF}>🖨️ 인쇄 / PDF로 저장</button>
         <button className="btn btn--secondary" onClick={exportAllPNG}>📦 전체 파일 PNG (ZIP)</button>
       </div>
+      <div className="export-settings__hint">인쇄 창에서 대상을 'PDF로 저장'으로 고르면 PDF 파일이 됩니다.</div>
     </div>}
 
     <LogPanel lines={log}/>
@@ -3553,7 +3625,7 @@ function MenuBar({onSelectLeft,onSelectRight,onExportMXL,onExportXML,onExportPNG
       {icon:'⬇',label:'MXL(.mxl) 내보내기',         onClick:()=>close(onExportMXL), dis:!files.length},
       {icon:'⬇',label:'MusicXML(.xml) 내보내기',onClick:()=>close(onExportXML),dis:!files.length},
       {icon:'🖼',label:'PNG 내보내기',         onClick:()=>close(onExportPNG), dis:!files.length},
-      {icon:'📄',label:'PDF 내보내기',         onClick:()=>close(onExportPDF), dis:!files.length},
+      {icon:'📄',label:'인쇄 / PDF로 저장',      onClick:()=>close(onExportPDF), dis:!files.length},
     ]},
     {id:'transform',label:'변환',items:[
       {icon:'🔄',label:'조옮김 (Transpose)',   onClick:()=>sel('left','transpose')},
@@ -3680,7 +3752,6 @@ function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasur
   const [zoom,setZoom]=useState(()=>{try{const value=Number(localStorage.getItem('mxlStudio.zoom'));return Number.isFinite(value)&&value>=.5&&value<=2?value:1;}catch(_){return 1;}});
   const zoomRef=useRef(zoom);zoomRef.current=zoom;
   const readyRef=useRef(false);
-  const printingRef=useRef(false);
   const changeZoom=useCallback(value=>setZoom(Math.round(Math.max(.5,Math.min(2,value))*10)/10),[]);
   const redraw=useCallback(value=>{
     if(!readyRef.current||!osmdRef.current)return;
@@ -3699,11 +3770,9 @@ function ScoreView({files,activeFile,onSelect,onClose,onOsmdReady,playbackMeasur
       if(!(event.ctrlKey||event.metaKey)||/^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName)||event.target?.isContentEditable)return;
       if(['=','+','-','0'].includes(event.key)){event.preventDefault();changeZoom(event.key==='0'?1:zoomRef.current+(event.key==='-'?-.1:.1));}
     };
-    const before=()=>{printingRef.current=true;redraw(1);};
-    const after=()=>{printingRef.current=false;redraw(zoomRef.current);};
-    window.addEventListener('keydown',keydown);window.addEventListener('beforeprint',before);window.addEventListener('afterprint',after);
-    return()=>{window.removeEventListener('keydown',keydown);window.removeEventListener('beforeprint',before);window.removeEventListener('afterprint',after);};
-  },[redraw,changeZoom]);
+    window.addEventListener('keydown',keydown);
+    return()=>window.removeEventListener('keydown',keydown);
+  },[changeZoom]);
   const [rendered,setRendered]=useState(false);
   const [renderError,setRenderError]=useState(null);
   const [ossiaError,setOssiaError]=useState(null);
@@ -4783,11 +4852,22 @@ function App(){
     finally{rendered?.dispose();hideProgress();}
   },[files,activeFile,showProgress,hideProgress]);
 
-  const exportPDF=useCallback(()=>{
+  // 헤더·메뉴의 PDF: 현재 파일을 A4 세로로 인쇄합니다. 용지를 고르려면 이미지 / PDF 패널을 씁니다.
+  const exportPDF=useCallback(async()=>{
     const file=files[activeFile];
     if(!file){notify('먼저 파일을 업로드하세요.','warn');return;}
-    printScore(file.name);
-  },[files,activeFile,notify]);
+    showProgress('인쇄 준비 중...');
+    await new Promise(resolve=>setTimeout(resolve,50));
+    try{await printScore(file,'A4_P',{beforePrint:hideProgress});}
+    catch(e){notify(friendlyError(e),'err');}
+    finally{hideProgress();}
+  },[files,activeFile,notify,showProgress,hideProgress]);
+  // 사용자가 Ctrl+P로 직접 인쇄하면 뷰어 화면 대신 안내 한 줄(.print-hint)만 인쇄되므로, 내보내기 버튼을 쓰라고 알립니다.
+  useEffect(()=>{
+    const warnDirectPrint=()=>{if(!document.querySelector('.print-root'))notify('인쇄는 내보내기의 PDF 버튼을 사용하세요.','info');};
+    window.addEventListener('beforeprint',warnDirectPrint);
+    return()=>window.removeEventListener('beforeprint',warnDirectPrint);
+  },[notify]);
 
   const selectLeftPanel=useCallback(id=>{setLeftPanel(id);setShowLeft(true);},[]);
   const selectRightPanel=useCallback(id=>{setRightPanel(id);setShowRight(true);},[]);
@@ -4840,7 +4920,7 @@ function App(){
           <button className="header__export-btn" onClick={saveSessionSlot} title="세션 관리">세션</button>
           <button className="header__export-btn" onClick={exportMXL} disabled={!files.length} title="MXL 내보내기">MXL</button>
           <button className="header__export-btn" onClick={exportPNG} disabled={!files.length} title="PNG 내보내기">PNG</button>
-          <button className="header__export-btn" onClick={exportPDF} disabled={!files.length} title="PDF 내보내기">PDF</button>
+          <button className="header__export-btn" onClick={exportPDF} disabled={!files.length} title="인쇄 / PDF로 저장">PDF</button>
         </div>
       </div>
     </header>

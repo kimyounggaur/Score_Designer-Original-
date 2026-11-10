@@ -67,11 +67,12 @@
 
   // ---- 이미지·PDF 내보내기(Phase B O1~O4) ----
   // 내보내기 크기는 화면에 보이는 요소가 아니라 이 값으로 정합니다. 같은 파일·같은 설정이면 PNG 저장·ZIP·헤더 PNG의 크기가 같습니다.
-  // PAGE_FORMATS.osmd는 OSMD setPageFormat에 넘기는 id, css는 @page size 값입니다.
+  // PAGE_FORMATS.osmd는 OSMD setPageFormat에 넘기는 id, css는 @page size 값, width는 인쇄용 렌더 폭(CSS px, 96dpi 기준 용지 폭)입니다.
+  // 쪽 높이는 OSMD가 용지 비율(A4 297/210, Letter 11/8.5)로 정합니다.
   const PAGE_FORMATS = {
-    A4_P: { label: 'A4 세로', osmd: 'A4_P', css: 'A4 portrait' },
-    A4_L: { label: 'A4 가로', osmd: 'A4_L', css: 'A4 landscape' },
-    LETTER_P: { label: 'Letter 세로', osmd: 'Letter_P', css: 'letter portrait' },
+    A4_P: { label: 'A4 세로', osmd: 'A4_P', css: 'A4 portrait', width: 794 },
+    A4_L: { label: 'A4 가로', osmd: 'A4_L', css: 'A4 landscape', width: 1123 },
+    LETTER_P: { label: 'Letter 세로', osmd: 'Letter_P', css: 'letter portrait', width: 816 },
   };
   const EXPORT_WIDTHS = [800, 1100, 1400];
   const DEFAULT_EXPORT_WIDTH = 1100;
