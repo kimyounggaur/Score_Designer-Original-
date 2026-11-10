@@ -34,7 +34,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script crossorigin="anonymous" integrity="sha384-fg0GMOE+ryaeFG8a+kaykJwFk/KI5rLyPkxfxxHjlfBbC8HkEuNcl44thRQD6MzE" src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
 <script src="chord-tools-core.js?v=2"></script>
 <script src="chord-symbol-core.js?v=1"></script>
-<script src="history-core.js?v=2"></script>
+<script src="history-core.js?v=3"></script>
 <script src="transpose-core.js?v=4"></script>
 <script src="pitch-core.js?v=1"></script>
 <script src="measure-core.js?v=1"></script>
@@ -211,9 +211,12 @@ function uniqueFileName(name,used){
 function activeDoc(files,activeFile){return (files[activeFile]||files[0])?.xmlDoc||null;}
 // commitFile이 만든 객체는 xmlString이 xmlDoc과 일치함이 보장되므로 App.updateFiles가 다시 직렬화하지 않습니다.
 const committedFiles=new WeakSet();
+// notationBackup(악보 표기 변환 전 원본)은 표기 변환 패널이 extra에 키를 넘길 때만 남습니다(Phase B N8, E12). 다른 패널이 악보를 커밋하면
+// 보관본이 지금 악보와 어긋나므로 지웁니다. lyricBackup은 반대로 계속 물려줍니다. 표기 변환 패널은 보관본을 그대로 넘기거나 지울 때도 키를 넘깁니다.
 function commitFile(file, doc, extra){
   const xmlString=new XMLSerializer().serializeToString(doc);
   const committed={...file,...(extra||{}),xmlDoc:doc,xmlString};
+  if(!extra||!('notationBackup' in extra))delete committed.notationBackup;
   committedFiles.add(committed);
   return committed;
 }
@@ -231,6 +234,26 @@ function trustParsedFile(file){
   const next=migrateLegacyMarkers(file);
   if(next&&typeof next==='object')committedFiles.add(next);
   return next;
+}
+// 악보 표기 변환 전 원본은 파일 객체의 notationBackup({xml})에 문자열 그대로 보관합니다(Phase B N8, E12). 변환할 때마다 이 XML에서 다시 시작하므로
+// 옵션을 바꿔 적용해도 겹치지 않고, 원본 복원은 xmlString까지 바이트 단위로 같게 돌아옵니다. 파일 객체에 있어 패널을 닫아도 남고 작업 기록에는 참조로 실리지만,
+// 세션 저장·공유에는 넣지 않습니다(serializeSessionFiles가 필드를 골라 씀). 다른 패널이 악보를 커밋하면 commitFile이 지웁니다.
+const notationBackupDocs=new WeakMap();
+function parseNotationBackup(backup){
+  const doc=new DOMParser().parseFromString(backup.xml,'text/xml');
+  if(doc.querySelector('parsererror'))throw new Error('보관해 둔 원본 악보를 읽을 수 없습니다.');
+  return doc;
+}
+// 읽기 전용으로 한 번만 파싱해 둔 보관본 문서(파트 목록용). 변환에는 새로 파싱한 사본을 씁니다.
+function notationBackupDoc(backup){
+  let doc=notationBackupDocs.get(backup);
+  if(!doc){doc=parseNotationBackup(backup);notationBackupDocs.set(backup,doc);}
+  return doc;
+}
+// 보관본으로 되돌린 파일: xmlDoc은 보관 XML을 파싱한 것, xmlString은 보관 XML 그대로, notationBackup은 지웁니다.
+function restoreNotationBackup(file){
+  const {notationBackup,...rest}=file;
+  return trustParsedFile({...rest,xmlDoc:parseNotationBackup(notationBackup),xmlString:notationBackup.xml});
 }
 // 적용 대상: scope가 'active'면 현재 파일만, 그 외에는 열린 파일 전체(기본).
 function targetFiles(files,activeFile,scope){
@@ -2136,16 +2159,11 @@ function NotationPanel({files,activeFile=0,scope='all',showProgress,hideProgress
   const [slashPitch,setSlashPitch]=useState(true);
   const [slashKeep,setSlashKeep]=useState(false);
   const [log,setLog]=useState([]);
-  const baselineRef=useRef(null);
-  const lastOutRef=useRef(null);
-
-  useEffect(()=>{
-    if(files===lastOutRef.current||files.length===lastOutRef.current?.length&&files.every((file,index)=>file.xmlDoc===lastOutRef.current[index].xmlDoc))return;
-    baselineRef.current=files;
-  },[files,activeFile]);
-
+  // 변환 전 원본은 파일 객체의 notationBackup(변환 직전 XML)에 있습니다. 파트 목록은 그 원본 기준이라 파트를 제거한 뒤에도 전체가 보입니다.
   const parts=useMemo(()=>{
-    const src=baselineRef.current?.[activeFile]?.xmlDoc||activeDoc(files,activeFile);
+    const file=files[activeFile]||files[0];
+    let src=file?.xmlDoc||null;
+    if(file?.notationBackup){try{src=notationBackupDoc(file.notationBackup);}catch(_){}}
     if(!src)return[];
     const pl=src.querySelector('part-list');if(!pl)return[];
     return Array.from(pl.querySelectorAll('score-part')).map(sp=>({
@@ -2155,17 +2173,38 @@ function NotationPanel({files,activeFile=0,scope='all',showProgress,hideProgress
 
   useEffect(()=>{const s={};parts.forEach(p=>s[p.id]=false);setHideStaff(s)},[parts]);
 
+  // 보관한 원본으로 되돌립니다. 보관본이 없는 파일은 그대로 두고 알리며, 되돌린 파일이 하나도 없으면 악보와 작업 기록을 바꾸지 않습니다.
+  const restore=useCallback(async()=>{
+    if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    setLog([]);showProgress('원본 복원 중...');await new Promise(r=>setTimeout(r,50));
+    try{
+      const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];let restored=0;
+      for(const {file} of targetFiles(files,activeFile,scope)){
+        if(!file.notationBackup){updatedFiles.push(file);lines.push({m:`ℹ ${file.name}: 복원할 원본이 없습니다.`,t:'info'});continue}
+        updatedFiles.push(restoreNotationBackup(file));restored++;
+        lines.push({m:`✓ ${file.name} (원본 복원)`,t:'ok'});
+      }
+      if(restored){
+        onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('악보 표기 원본 복원',files,scope));
+        lines.push({m:'✅ 복원 완료!',t:'ok'});
+      }
+      setLog(lines);
+    }catch(e){setLog(l=>[...l,{m:'❌ '+friendlyError(e),t:'err'}])}
+    hideProgress();
+  },[files,activeFile,scope,notify,showProgress,hideProgress,onFilesUpdate]);
+
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     const hIds=Object.entries(hideStaff).filter(([_,v])=>v).map(([k])=>k);
+    // 아무 변환도 고르지 않고 실행하면 원본 복원과 같습니다.
+    if(!hIds.length&&!lyrics&&!chords&&!oneLine&&!slash)return restore();
     setLog([]);showProgress('표기 변환 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
-      const baseline=baselineRef.current||files;
-      if(!baselineRef.current)baselineRef.current=baseline;
-      for(const {file,index:fi} of targetFiles(files,activeFile,scope)){
-        const baseDoc=baseline[fi]?.xmlDoc||file.xmlDoc;
-        const doc=cloneDoc(baseDoc);const ch=[];
+      for(const {file} of targetFiles(files,activeFile,scope)){
+        // 변환 직전 XML을 파일에 보관하고(이미 있으면 그대로 물려줌) 언제나 그 원본에서 다시 시작합니다. 옵션을 바꿔 다시 실행해도 변환이 겹치지 않습니다.
+        const backup=file.notationBackup||{xml:file.xmlString};
+        const doc=file.notationBackup?parseNotationBackup(file.notationBackup):cloneDoc(file.xmlDoc);const ch=[];
         if(hIds.length){hIds.forEach(id=>{doc.querySelector(`part-list score-part[id="${id}"]`)?.remove();doc.querySelector(`part[id="${id}"]`)?.remove()});ch.push(`${hIds.length}파트 제거`)}
         if(lyrics){const ls=doc.querySelectorAll('lyric');ch.push(`가사 ${ls.length}개 제거`);ls.forEach(l=>l.remove())}
         if(chords){const hs=doc.querySelectorAll('harmony');ch.push(`코드 ${hs.length}개 제거`);hs.forEach(h=>h.remove())}
@@ -2190,20 +2229,20 @@ function NotationPanel({files,activeFile=0,scope='all',showProgress,hideProgress
           if(!slashKeep)doc.querySelectorAll('harmony').forEach(h=>h.remove());
           ch.push(`슬래시 ${sc}개`);
         }
-        updatedFiles.push(commitFile(file,doc));
-        const label=ch.length?'':' (원본 복원)';
-        lines.push({m:`✓ ${file.name}${label}`,t:'ok'});ch.forEach(c=>lines.push({m:`    ${c}`}));
+        updatedFiles.push(commitFile(file,doc,{notationBackup:backup}));
+        lines.push({m:`✓ ${file.name}`,t:'ok'});ch.forEach(c=>lines.push({m:`    ${c}`}));
       }
-      lastOutRef.current=mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles);
       onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('악보 표기 변환',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+friendlyError(e),t:'err'}])}
     hideProgress();
-  },[files,activeFile,scope,hideStaff,lyrics,chords,oneLine,slash,rmAcc,rmKey,slashPitch,slashKeep,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,hideStaff,lyrics,chords,oneLine,slash,rmAcc,rmKey,slashPitch,slashKeep,showProgress,hideProgress,onFilesUpdate,restore]);
 
+  const hasBackup=targetFiles(files,activeFile,scope).some(({file})=>file.notationBackup);
   return <div>
     <h2 className="panel__heading">악보 표기 변환</h2>
     <p className="panel__description">악보 요소를 숨기거나 변환합니다. 여러 옵션을 동시에 적용할 수 있습니다.</p>
+    <div role="status">{hasBackup&&<p className="card__text">표기 변환 전 원본을 보관 중입니다. 다른 도구로 악보를 바꾸면 보관본은 사라집니다.</p>}</div>
     <div className="card"><div className="card__title">👁️‍🗨️ 파트 제거</div>
       {!parts.length?<div className="card__text">파일을 업로드하면 파트 목록이 표시됩니다.</div>:
       <div className="parts-list">{parts.map(p=>
@@ -2234,7 +2273,7 @@ function NotationPanel({files,activeFile=0,scope='all',showProgress,hideProgress
         <div><div className="slash-preview__label">슬래시</div><div className="slash-preview__converted">⧸ ⧸ ⧸</div></div>
       </div></>}
     </div>
-    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 표기 변환 실행</button></div>
+    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 표기 변환 실행</button><button className="btn btn--secondary" onClick={restore}>↩ 원본 복원</button></div>
     <LogPanel lines={log}/>
   </div>;
 }

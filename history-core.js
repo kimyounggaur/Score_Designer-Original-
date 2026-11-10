@@ -9,8 +9,8 @@
     const snapshots=mode==='clone'?cloneFiles(files):Array.from(files||[],(file,fileIndex)=>{
       const xml=file.xmlDoc?write(file.xmlDoc):(file.xmlString||file.xml||'');
       const same=previous[fileIndex];
-      // lyricBackup(숫자 악보 원본 가사 백업)은 불변 객체라 참조로 담습니다. 실행 취소 뒤에도 복원할 수 있게 합니다.
-      return {name:file.name,sourceName:file.sourceName,xml:same?.xml===xml?same.xml:xml,ossiaMxml:file.ossiaMxml,ossiaMeta:file.ossiaMeta?{...file.ossiaMeta}:undefined,lyricBackup:file.lyricBackup};
+      // lyricBackup(숫자 악보 원본 가사 백업)과 notationBackup(악보 표기 변환 전 원본)은 불변 객체라 참조로 담습니다. 실행 취소 뒤에도 복원할 수 있게 합니다.
+      return {name:file.name,sourceName:file.sourceName,xml:same?.xml===xml?same.xml:xml,ossiaMxml:file.ossiaMxml,ossiaMeta:file.ossiaMeta?{...file.ossiaMeta}:undefined,lyricBackup:file.lyricBackup,notationBackup:file.notationBackup};
     });
     const entry={files:snapshots,label:label||'변환',timestamp:timestamp??Date.now()};
     const nextHistory=[...truncated,entry].slice(-MAX_HISTORY);
@@ -27,7 +27,7 @@
   }
   function estimateHistoryBytes(history){
     const unique=new Set();
-    for(const entry of history||[])for(const file of entry.files||[]){if(typeof file.xml==='string')unique.add(file.xml);if(file.ossiaMxml)unique.add(file.ossiaMxml);}
+    for(const entry of history||[])for(const file of entry.files||[]){if(typeof file.xml==='string')unique.add(file.xml);if(file.ossiaMxml)unique.add(file.ossiaMxml);if(typeof file.notationBackup?.xml==='string')unique.add(file.notationBackup.xml);}
     // Approximation of unique UTF-16 text storage; DOM/object/engine overhead excluded.
     return [...unique].reduce((sum,xml)=>sum+xml.length*2,0);
   }
