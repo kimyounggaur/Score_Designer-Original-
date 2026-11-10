@@ -28,7 +28,7 @@ f09에서 12회 조옮김한 13개 기록의 고유 UTF-16 문자열 추정치�
 
 ## 구현 범위와 남은 외부 검증
 
-기준 설계의 Phase 0~8 로컬 구현과 문서 동기화를 마쳤습니다. 선택 Phase 9의 주석·청음·난이도·운지·QR·AI·클라우드 기능과 D.C./D.S./Fine/코다 재생 이동은 현재 범위에 포함되지 않습니다.
+기준 설계의 Phase 0~8 로컬 구현과 문서 동기화를 마쳤습니다. 선택 Phase 9의 주석·청음·난이도·운지·QR·AI·클라우드 기능은 현재 범위에 포함되지 않습니다. D.C./D.S./Fine/코다 재생 이동은 Phase B에서 한 번 점프 규칙으로 구현했고, 중첩·복수 점프는 지원하지 않습니다.
 
 GitHub Pages 대상은 `https://kimyounggaur.github.io/Score_Designer-Original-/mxl-studio.html`입니다. 푸시 후 Pages 배포와 Linux CI를 실행하고, Linux 기준 이미지 3장을 반영해야 P7-2의 두 번째 완료 조건이 충족됩니다.
 

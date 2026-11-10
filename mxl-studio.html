@@ -39,7 +39,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="pitch-core.js?v=1"></script>
 <script src="measure-core.js?v=1"></script>
 <script src="numbering-core.js?v=1"></script>
-<script src="playback-core.js?v=2"></script>
+<script src="playback-core.js?v=3"></script>
 <script src="roman-analysis-core.js?v=3"></script>
 <script src="share-session-core.js?v=1"></script>
 <script src="session-store-core.js?v=2"></script>
@@ -4032,6 +4032,8 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
   const totalMeasures=Math.max(1,playbackData.totalMeasures||1);
   const currentTimeline=window.PlaybackCore?.measureAtTime(playbackData.measureTimeline,positionSec);
   const currentMeasure=currentTimeline?.measure??0;
+  // 재생이 반영하지 못하는 것: 따르지 못한 이동 기호와 소리가 나지 않는 타악기 파트(B-7). 둘 다 없으면 경고 줄을 그리지 않습니다.
+  const skippedPlayback=[...(playbackData.navigationMarks||[]),...(playbackData.mutedParts||[]).map(label=>`타악기 ${label}`)];
   const progressPct=totalDuration?Math.min(100,Math.max(0,(positionSec/totalDuration)*100)):0;
   const getMeasureStart=useCallback(measure=>playbackData.measureTimeline[Math.max(0,measure-1)]?.startSec??0,[playbackData.measureTimeline]);
   const getMeasureEnd=useCallback(measure=>playbackData.measureTimeline[Math.max(0,measure-1)]?.endSec??totalDuration,[playbackData.measureTimeline,totalDuration]);
@@ -4259,11 +4261,11 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
           value={Math.min(positionSec,totalDuration)} onChange={handleSeek}/>
         <div className="midi-player__time">
           <span>{formatSeconds(positionSec)}</span>
-          {/* C16: 재생이 따르지 않는 이동 기호. 고정 높이 재생 막대가 늘지 않도록 시간 줄 가운데 한 줄에 표기만 짧게 보이고,
-              전체 문장은 title과 화면 낭독기용 숨김 글로 둡니다. */}
-          {playbackData.warnings?.length>0&&<div className="player__warning" role="status" title={playbackData.warnings.join('\n')}>
-            <span className="player__warning-text" aria-hidden="true">⚠ 재생 미반영: {(playbackData.navigationMarks||[]).join(' · ')}</span>
-            <span className="visually-hidden">{playbackData.warnings.join(' ')}</span>
+          {/* C16·R1: 재생이 반영하지 못하는 이동 기호와 타악기 파트. 고정 높이 재생 막대가 늘지 않도록 시간 줄 가운데 한 줄에
+              표기만 짧게(예: ⚠ 재생 미반영: D.S. · 타악기 Drums) 보이고, 전체 문장은 title과 화면 낭독기용 숨김 글로 둡니다. */}
+          {skippedPlayback.length>0&&<div className="player__warning" role="status" title={(playbackData.warnings||[]).join('\n')}>
+            <span className="player__warning-text" aria-hidden="true">⚠ 재생 미반영: {skippedPlayback.join(' · ')}</span>
+            <span className="visually-hidden">{(playbackData.warnings||[]).join(' ')}</span>
           </div>}
           <span>{formatSeconds(playbackData.totalDuration||0)}</span>
         </div>

@@ -389,3 +389,39 @@ test.describe('Phase B B-6 · 긴 악보 진행 표시', () => {
     expect(await renderCount(page)).toBe(2); // 세 번 눌렀어도 마지막 값 한 번만
   });
 });
+
+// Phase B B-7: 높이 없는 타악기(unpitched) 파트는 재생 이벤트가 0개라 소리가 나지 않는데 알리지 않던 문제(R1).
+// 플레이어의 "재생 미반영" 줄이 따르지 못한 이동 기호와 소리 없는 타악기 파트를 함께 보여 줍니다.
+test.describe('Phase B B-7 · 재생: 타악기 안내', () => {
+  test('@panels unpitched part is reported as muted', async ({ page }) => {
+    await openApp(page);
+    await uploadFixture(page, 'f19-drums-tab.musicxml');
+    await expect(page.locator('.score-main-render svg').first()).toBeVisible();
+    const warning = page.locator('.player__warning');
+    await expect(warning).toHaveAttribute('role', 'status');
+    await expect(warning).toContainText('타악기');
+    await expect(warning.locator('.player__warning-text')).toHaveText('⚠ 재생 미반영: 타악기 Drums');
+    await expect(warning.locator('.visually-hidden')).toHaveText('타악기 파트 Drums은(는) 재생되지 않습니다.');
+    await expect(warning).toHaveAttribute('title', '타악기 파트 Drums은(는) 재생되지 않습니다.');
+    // 소리가 나는 기타 파트는 그대로 재생 이벤트가 있고, 타악기 파트는 0개입니다.
+    const counts = await page.evaluate(() => {
+      const events = PlaybackCore.extractPlaybackData(window.__mxlGetState().files[0].xmlDoc).events;
+      return { guitar: events.filter((event) => event.partId === 'P1').length, drums: events.filter((event) => event.partId === 'P2').length };
+    });
+    expect(counts.drums).toBe(0);
+    expect(counts.guitar).toBeGreaterThan(0);
+  });
+
+  test('@panels the warning line shows unfollowed marks and muted parts together', async ({ page }) => {
+    // f19의 기타 2마디 첫머리에 segno 없는 D.S.를 넣은 문서: 되돌아갈 곳이 없어 점프하지 않고, 타악기 파트는 소리가 없습니다.
+    const source = await readFile(path.join(fixturesDir, 'f19-drums-tab.musicxml'), 'utf8');
+    const withJump = source.replace('<measure number="2">', '<measure number="2"><direction placement="above"><direction-type><words>D.S.</words></direction-type><sound dalsegno="s1"/></direction>');
+    expect(withJump).not.toBe(source);
+    await openApp(page);
+    await page.locator('input[type="file"]').setInputFiles({ name: 'f19-ds-without-segno.musicxml', mimeType: 'application/vnd.recordare.musicxml+xml', buffer: Buffer.from(withJump) });
+    await expect(page.locator('.score-main-render svg').first()).toBeVisible();
+    const warning = page.locator('.player__warning');
+    await expect(warning.locator('.player__warning-text')).toHaveText('⚠ 재생 미반영: D.S. · 타악기 Drums');
+    await expect(warning.locator('.visually-hidden')).toHaveText('반복 기호 D.S.은(는) 재생에 반영되지 않습니다. 타악기 파트 Drums은(는) 재생되지 않습니다.');
+  });
+});

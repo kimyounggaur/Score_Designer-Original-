@@ -17,8 +17,11 @@
     }
     return result;
   }
-  function expandMeasureOrder(measures,expandRepeats=true){
-    if(!expandRepeats)return measures.map((_,index)=>index);
+  // 연주 순서 길이 상한. 반복 전개의 걸음 수와, 점프를 더한 전체 순서 길이에 모두 적용한다.
+  const ORDER_LIMIT=20000;
+  const unique=list=>Array.from(new Set(list));
+  // repeat·ending 표기를 마디 인덱스 기준 구조({ranges,endings})로 정리한다.
+  function repeatStructure(measures){
     const stack=[],ranges=[],endings=[];let currentEnding=null;
     measures.forEach((measure,index)=>{
       if(measure.querySelector('repeat[direction="forward"]'))stack.push(index);
@@ -28,13 +31,21 @@
       const backward=measure.querySelector('repeat[direction="backward"]');
       if(backward)ranges.push({start:stack.pop()??0,end:index,times:Math.max(1,Math.min(16,Number(backward.getAttribute('times'))||2))});
     });
-    const passes=new Map(),order=[];let index=0,lastPass=1,steps=0;
-    while(index<measures.length&&steps++<20000){
+    return {ranges,endings};
+  }
+  // 반복·볼타만 따라 [from..to] 마디의 연주 순서(마디 인덱스)를 만든다.
+  // lastPassOnly는 점프 뒤에 쓴다: 되돌아가지 않고 각 반복 구간을 마지막 통과로 한 번만 지나므로 마지막 괄호만 연주된다.
+  function expandRepeatsOnly(measures,{from=0,to=measures.length-1,lastPassOnly=false,structure}={}){
+    const {ranges,endings}=structure||repeatStructure(measures);
+    const passes=new Map(),order=[];let index=from,steps=0;
+    let lastPass=ranges.filter(r=>r.end<from).sort((a,b)=>b.end-a.end)[0]?.times||1;
+    while(index<=to&&steps++<ORDER_LIMIT){
       const range=ranges.filter(r=>r.start<=index&&index<=r.end).sort((a,b)=>(a.end-a.start)-(b.end-b.start))[0];
-      const pass=range?(passes.get(range.end)||1):lastPass;
+      const pass=range?(lastPassOnly?range.times:(passes.get(range.end)||1)):lastPass;
       if(!endings[index]?.size||endings[index].has(pass))order.push(index);
       const end=ranges.find(r=>r.end===index);
-      if(end){
+      if(end&&lastPassOnly)lastPass=end.times;
+      else if(end){
         const iteration=passes.get(end.end)||1;
         if(iteration<end.times){
           passes.set(end.end,iteration+1);
@@ -47,6 +58,63 @@
     }
     return order;
   }
+  // 표식이 있는 마디 후보({index,value}) 중 id가 맞는 하나를 고른다. 맞는 id가 없으면 후보가 하나뿐일 때만 그것으로 본다.
+  function pick(items,id){
+    const exact=typeof id==='string'?items.filter(item=>item.value===id):[];
+    if(exact.length)return exact.length===1?exact[0]:null;
+    return items.length===1?items[0]:null;
+  }
+  // 이동 기호로 점프 계획을 세운다(한 번만 점프). 점프 표식(D.C./D.S.)이 하나도 없으면 null,
+  // 표식이 둘 이상이거나 필요한 표식이 없거나 위치가 맞지 않으면 {unsupported:[점프 라벨…]}(점프하지 않는다).
+  function planJump(marks){
+    const jumps=[];
+    marks.forEach((entry,index)=>{if(entry.dacapo)jumps.push({index,kind:'dacapo'});if(entry.dalsegno)jumps.push({index,kind:'dalsegno'});});
+    if(!jumps.length)return null;
+    const labelsAt=(index,kind)=>marks[index].labels[kind]||[];
+    const written=unique(jumps.flatMap(jump=>labelsAt(jump.index,jump.kind)));
+    const names=written.length?written:unique(jumps.map(jump=>jump.kind==='dacapo'?'D.C.':'D.S.'));
+    const fail=()=>({unsupported:names});
+    if(jumps.length>1)return fail();
+    const {index:from,kind}=jumps[0],here=marks[from];
+    const where=key=>marks.map((entry,index)=>({index,value:entry[key]})).filter(item=>item.value);
+    const applied=[...labelsAt(from,kind),...labelsAt(from,'alfine'),...labelsAt(from,'alcoda')];
+    let target=0;
+    if(kind==='dalsegno'){
+      const segno=pick(where('segno'),here.dalsegno);
+      if(!segno||segno.index>from)return fail();
+      target=segno.index;applied.push(...labelsAt(target,'segno'));
+    }
+    // 끝맺는 방식: 글자에 al Fine/al Coda가 있으면 그것, 없으면 Fine이 있을 때 al Fine, To Coda·Coda가 모두 있을 때 al Coda, 아니면 끝까지.
+    const fines=where('fine');
+    const mode=here.alFine&&here.alCoda?null:here.alFine?'fine':here.alCoda?'coda':fines.length?'fine':where('tocoda').length&&where('coda').length?'coda':'plain';
+    if(!mode)return fail();
+    const plan={from,target,mode,applied,names};
+    if(mode==='fine'){
+      const fine=pick(fines);
+      if(!fine||fine.index<target)return fail();
+      plan.fine=fine.index;applied.push(...labelsAt(fine.index,'fine'));
+    }else if(mode==='coda'){
+      const toCoda=pick(where('tocoda')),coda=toCoda&&pick(where('coda'),toCoda.value);
+      if(!toCoda||!coda||toCoda.index<target||coda.index<=toCoda.index)return fail();
+      plan.toCoda=toCoda.index;plan.coda=coda.index;applied.push(...labelsAt(toCoda.index,'tocoda'),...labelsAt(coda.index,'coda'));
+    }
+    return plan;
+  }
+  // 연주 순서와 이동 기호 적용 결과를 함께 돌려준다: {order, applied:[따른 표식 라벨…], unsupported:[따르지 못한 점프 라벨…]}.
+  // 반복 전개로 순서를 만들다가 D.C./D.S. 마디의 마지막 통과가 끝나면 한 번만 점프한다. 점프 뒤에는 반복을 돌지 않는다.
+  function expandMeasureOrderDetailed(measures,expandRepeats=true,{jumps=true,marks}={}){
+    if(!expandRepeats)return {order:measures.map((_,index)=>index),applied:[],unsupported:[]};
+    const structure=repeatStructure(measures),order=expandRepeatsOnly(measures,{structure});
+    const plan=jumps?planJump(marks||collectNavigation(measures)):null;
+    if(!plan)return {order,applied:[],unsupported:[]};
+    if(plan.unsupported)return {order,applied:[],unsupported:plan.unsupported};
+    const last=order.lastIndexOf(plan.from);
+    if(last<0)return {order,applied:[],unsupported:plan.names};
+    const walk=(from,to)=>expandRepeatsOnly(measures,{from,to,lastPassOnly:true,structure}),end=measures.length-1;
+    const again=plan.mode==='fine'?walk(plan.target,plan.fine):plan.mode==='coda'?[...walk(plan.target,plan.toCoda),...walk(plan.coda,end)]:walk(plan.target,end);
+    return {order:order.slice(0,last+1).concat(again).slice(0,ORDER_LIMIT),applied:unique(plan.applied),unsupported:[]};
+  }
+  function expandMeasureOrder(measures,expandRepeats=true,options){return expandMeasureOrderDetailed(measures,expandRepeats,options).order;}
   function tempoInDirection(direction){
     const sound=direction.querySelector('sound[tempo]');const bpm=Number(sound?.getAttribute('tempo'));
     if(bpm>0)return bpm;
@@ -100,6 +168,7 @@
     const parts=elements.map((part,index)=>({id:part.getAttribute('id')||`part-${index+1}`,index,label:labels.get(part.getAttribute('id'))||`Part ${index+1}`}));
     const parsed=elements.map((part,index)=>parsePart(part,index,parts[index].id));
     const sourceMeasures=children(elements[0],'measure'),source=[];
+    const measureLists=elements.map(part=>children(part,'measure'));
     let initialTempo=120;
     for(const part of parsed){const first=part[0]?.tempos.find(tempo=>tempo.quarter===0);if(first){initialTempo=first.bpm;break;}}
     // bpm is an initial-tempo override. Later score tempos preserve their ratio
@@ -116,7 +185,9 @@
       currentTempo=tempos[tempos.length-1].bpm;
       source.push({rows,length,tempos});
     }
-    const order=expandMeasureOrder(sourceMeasures,expandRepeats),measureTimeline=[],rawEvents=[];
+    // 이동 기호는 모든 파트의 같은 위치 마디에서 모은다(파트마다 같은 기호가 있어도 한 번으로 센다).
+    const marks=collectNavigation(sourceMeasures.map((_,index)=>measureLists.map(list=>list[index]).filter(Boolean)));
+    const {order,applied}=expandMeasureOrderDetailed(sourceMeasures,expandRepeats,{marks}),measureTimeline=[],rawEvents=[];
     let totalDuration=0;
     order.forEach((sourceIndex,index)=>{
       const measure=source[sourceIndex];if(!measure)return;
@@ -144,40 +215,106 @@
       else events.push(note);
       if(note.tieStart)ties.set(key,current);else ties.delete(key);
     }
-    // TODO: D.C., D.S., Fine and Coda navigation require a separate jump graph.
-    const navigationMarks=navigationLabels(xmlDoc);
-    const warnings=navigationMarks.map(label=>`반복 기호 ${label}은(는) 재생에 반영되지 않습니다.`);
-    return {events,parts,measureTimeline,totalMeasures:measureTimeline.length,totalDuration,warnings,navigationMarks};
+    // 따른 이동 기호(applied)는 안내에서 뺀다. 따르지 못한 것만 navigationMarks·warnings에 남는다.
+    const appliedKeys=new Set(applied.map(label=>label.toLowerCase()));
+    const navigationMarks=navigationLabels(xmlDoc).filter(label=>!appliedKeys.has(label.toLowerCase()));
+    // 높이 없는 타악기(unpitched) 음표는 소리를 내지 않는다. 그런 음표가 든 파트를 알린다.
+    const unpitchedParts=parts.filter((part,index)=>elements[index].querySelector('note > unpitched')).map(part=>part.label);
+    const warnings=[...navigationMarks.map(label=>`반복 기호 ${label}은(는) 재생에 반영되지 않습니다.`),...unpitchedParts.map(label=>`타악기 파트 ${label}은(는) 재생되지 않습니다.`)];
+    return {events,parts,measureTimeline,totalMeasures:measureTimeline.length,totalDuration,warnings,navigationMarks,unpitchedParts,mutedParts:unpitchedParts.slice()};
   }
-  // 재생이 따르지 않는 이동 기호(D.C., D.S., Fine, Coda, Segno)를 악보에 적힌 표기 그대로 문서 순서로 모읍니다.
-  // 같은 direction에 글자 표기와 sound 속성이 함께 있으면 글자 표기 하나만 씁니다.
+  // 이동 기호(D.C., D.S., Fine, Coda, Segno) 읽기.
+  // NAVIGATION_WORDS는 악보에 적힌 글자 중 이동 기호처럼 보이는 문구를 가려 안내 라벨로 쓰고,
+  // WORD_KINDS는 문장 전체가 맞는 것만 점프 종류로 인정한다("fine tuning" 같은 일반 문구로는 점프하지 않는다).
   const NAVIGATION_WORDS=/\b(D\.?\s*C\.?|D\.?\s*S\.?|Fine|Coda|al\s+Fine|al\s+Coda)\b/i;
   const SOUND_JUMPS=[['dacapo','D.C.'],['dalsegno','D.S.'],['fine','Fine'],['tocoda','To Coda']];
+  const WORD_KINDS=[
+    ['dacapo',/^(?:d\.?\s*c\.?|da\s+capo)(?:\s*al\s+(fine|coda))?\.?$/i],
+    ['dalsegno',/^(?:d\.?\s*s\.?|dal\s+segno)(?:\s*al\s+(fine|coda))?\.?$/i],
+    ['fine',/^fine\.?$/i],
+    ['tocoda',/^to\s+coda\.?$/i],
+    ['coda',/^coda\.?$/i],
+    ['segno',/^segno\.?$/i],
+    ['alfine',/^al\s+fine\.?$/i],
+    ['alcoda',/^al\s+coda\.?$/i],
+  ];
+  const NAVIGATION_ELEMENTS=['direction','sound','barline'];
+  const labelText=raw=>{const label=String(raw||'').replace(/\s+/g,' ').trim();return label.length>40?label.slice(0,39)+'…':label;};
+  function classifyWords(text){
+    for(const [kind,pattern] of WORD_KINDS){const match=pattern.exec(text);if(match)return {kind,al:match[1]?match[1].toLowerCase():null};}
+    return null;
+  }
+  // direction·sound·barline 하나가 가리키는 이동 기호: [{kind,id,al,label,shift}].
+  // kind는 dacapo|dalsegno|fine|tocoda|segno|coda|alfine|alcoda, 종류를 가리지 못한 이동 문구는 kind=null(라벨만 남긴다).
+  // 같은 direction에 글자 표기와 sound 속성이 함께 있으면 글자 표기 하나만 라벨로 쓴다.
+  // shift: 오른쪽(기본) 막대선에 붙은 segno·coda는 다음 마디 첫머리의 기호이므로 1.
+  function readMarks(element){
+    const found=new Map(),loose=[];
+    const note=(kind,{id=null,al=null,label=null}={})=>{const prev=found.get(kind)||{};found.set(kind,{id:prev.id||id,al:prev.al||al,label:prev.label||label});};
+    const fromSound=sound=>{
+      if(!sound)return;
+      for(const [attribute,label] of SOUND_JUMPS){
+        if(!sound.hasAttribute(attribute))continue;
+        const value=sound.getAttribute(attribute),yesNo=attribute==='dacapo'||attribute==='fine';
+        if(yesNo?value==='yes':value)note(attribute,{id:yesNo?null:value,label});else loose.push(label);
+      }
+      for(const attribute of ['segno','coda']){const id=sound.getAttribute(attribute);if(id)note(attribute,{id});}
+    };
+    if(element.localName==='barline'){
+      const location=element.getAttribute('location'),shift=location==='left'||location==='middle'?0:1;
+      if(child(element,'segno'))note('segno',{label:'Segno'});
+      if(child(element,'coda'))note('coda',{label:'Coda'});
+      return Array.from(found,([kind,info])=>({kind,id:null,al:null,label:info.label,shift}));
+    }
+    let words='',named=false;
+    if(element.localName==='direction'){
+      const types=children(element,'direction-type');
+      words=types.flatMap(type=>children(type,'words')).map(node=>node.textContent).join(' ').replace(/\s+/g,' ').trim();
+      const kind=words?classifyWords(words):null;
+      if(kind)note(kind.kind,{al:kind.al});
+      named=!!kind||NAVIGATION_WORDS.test(words);
+      fromSound(child(element,'sound'));
+      // 점프 표식과 한 direction에 든 기호 그림은 그 표식의 일부이지 segno·coda 위치가 아니다.
+      if(!found.has('dalsegno')&&types.some(type=>child(type,'segno')))note('segno',{label:'Segno'});
+      if(!found.has('tocoda')&&types.some(type=>child(type,'coda')))note('coda',{label:'Coda'});
+    }else fromSound(element);
+    const records=Array.from(found,([kind,info])=>({kind,id:info.id,al:info.al,label:named?words:info.label}));
+    if(named){if(!records.length)records.push({kind:null,label:words});}
+    else for(const label of loose)records.push({kind:null,label});
+    return records;
+  }
+  const measureMarks=measure=>children(measure).filter(element=>NAVIGATION_ELEMENTS.includes(element.localName)).flatMap(element=>readMarks(element));
+  // 재생이 따르지 않는 이동 기호를 악보에 적힌 표기 그대로 문서 순서로 모은다(중복 제거).
   function navigationLabels(xmlDoc){
     const labels=[],seen=new Set();
-    const add=raw=>{
-      let label=String(raw||'').replace(/\s+/g,' ').trim();if(!label)return;
-      if(label.length>40)label=label.slice(0,39)+'…';
-      const key=label.toLowerCase();if(seen.has(key))return;
+    for(const part of children(xmlDoc?.documentElement,'part'))for(const measure of children(part,'measure'))for(const record of measureMarks(measure)){
+      const label=labelText(record.label);if(!label)continue;
+      const key=label.toLowerCase();if(seen.has(key))continue;
       seen.add(key);labels.push(label);
-    };
-    const fromSound=sound=>{for(const [attribute,label] of SOUND_JUMPS)if(sound?.hasAttribute(attribute))add(label);};
-    for(const element of xmlDoc?.querySelectorAll('direction,sound,barline')||[]){
-      if(element.localName==='direction'){
-        const types=children(element,'direction-type');
-        const words=types.flatMap(type=>children(type,'words')).map(node=>node.textContent).join(' ');
-        if(NAVIGATION_WORDS.test(words)){add(words);continue;}
-        if(types.some(type=>child(type,'segno')))add('Segno');
-        if(types.some(type=>child(type,'coda')))add('Coda');
-        fromSound(child(element,'sound'));
-      }else if(element.localName==='sound'){
-        if(element.parentElement?.localName!=='direction')fromSound(element);
-      }else{
-        if(child(element,'segno'))add('Segno');
-        if(child(element,'coda'))add('Coda');
-      }
     }
     return labels;
+  }
+  // 마디 인덱스별 이동 기호 표: {dacapo,dalsegno,segno,fine,tocoda,coda,alFine,alCoda,labels}.
+  // dalsegno·segno·tocoda·coda는 없으면 false, 있으면 id 문자열(없으면 true). measures의 각 항목은 마디 하나이거나
+  // 같은 위치 마디를 파트별로 묶은 배열이다(파트마다 같은 기호가 있어도 한 번으로 센다). labels는 종류별 안내 라벨.
+  const blankMarks=()=>({dacapo:false,dalsegno:false,segno:false,fine:false,tocoda:false,coda:false,alFine:false,alCoda:false,labels:{}});
+  function collectNavigation(measures){
+    const marks=measures.map(()=>blankMarks());
+    measures.forEach((item,index)=>{
+      for(const measure of [].concat(item||[]))for(const record of measureMarks(measure)){
+        const entry=marks[index+(record.shift||0)],{kind}=record;
+        if(!entry||!kind)continue;
+        if(kind==='alfine')entry.alFine=true;
+        else if(kind==='alcoda')entry.alCoda=true;
+        else if(kind==='dacapo'||kind==='fine')entry[kind]=true;
+        else entry[kind]=record.id||(typeof entry[kind]==='string'?entry[kind]:true);
+        if(record.al==='fine')entry.alFine=true;
+        if(record.al==='coda')entry.alCoda=true;
+        const label=labelText(record.label);
+        if(label&&!(entry.labels[kind]||(entry.labels[kind]=[])).includes(label))entry.labels[kind].push(label);
+      }
+    });
+    return marks;
   }
   function measureAtTime(timeline,sec){
     if(!timeline?.length)return null;
@@ -185,5 +322,5 @@
     while(low<=high){const middle=(low+high)>>1;if(timeline[middle].startSec<=sec){answer=middle;low=middle+1;}else high=middle-1;}
     return timeline[answer];
   }
-  global.PlaybackCore={extractPlaybackData,measureAtTime,midiToToneNote,expandMeasureOrder};
+  global.PlaybackCore={extractPlaybackData,measureAtTime,midiToToneNote,expandMeasureOrder,expandMeasureOrderDetailed,collectNavigation};
 })(window);
