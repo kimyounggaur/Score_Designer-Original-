@@ -2201,12 +2201,11 @@ body {
 .composer-tag { color: var(--accent); font-weight: 600; }
 
 /* ===== PROGRESS OVERLAY ===== */
+/* backdrop-filter는 쓰지 않습니다. 회전하는 스피너와 겹치면 악보 렌더(OSMD가 레이아웃을 수천 번 읽는 동안)가 40% 가까이 느려집니다(B-6 측정). */
 .progress-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(255, 255, 255, 0.6);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  background: rgba(255, 255, 255, 0.78);
   z-index: 200;
   display: flex;
   justify-content: center;
