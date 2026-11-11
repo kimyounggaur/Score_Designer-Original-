@@ -109,10 +109,12 @@
     return Promise.resolve(sortSessions(sessions));
   }
 
+  // 본문을 지우지 못하면 목록은 그대로 두고 false를 돌려줍니다(D13). 본문이 남은 채 목록에서만 빠지면
+  // 목록과 본문이 어긋나 loadSession이 지운 세션을 다시 읽습니다.
   function localDeleteSession(id){
     const storage = getLocalStorage();
     if(!storage)return Promise.resolve(true);
-    try{storage.removeItem(localSessionKey(id))}catch(_){}
+    try{storage.removeItem(localSessionKey(id))}catch(_){return Promise.resolve(false)}
     const ids = localListIds();
     if(!ids.includes(id))return Promise.resolve(true);
     // 목록을 못 고쳐도 본문이 없으니 목록 읽기에서 걸러집니다. 결과로만 알립니다.
@@ -247,15 +249,21 @@
     return localListSessions();
   }
 
+  // 지웠으면 true, 어느 저장소에서든 지우지 못했으면 false(D13). IndexedDB를 쓸 수 있으면 두 저장소 모두에서 지워야 true입니다.
+  // 본문이 하나라도 남으면 loadSession이 지운 세션을 다시 읽을 수 있기 때문입니다. 삭제 트랜잭션은 저장과 같이 complete까지 기다립니다.
   async function deleteSession(id){
     const key = id || AUTOSAVE_ID;
     // IndexedDB 성공 여부와 관계없이 자동 복구용 로컬 사본도 제거합니다.
     const localResult = await localDeleteSession(key);
-    const result = await idbStore(SESSION_STORE,'readwrite',async store=>{
+    const db = await openDb();
+    if(!db)return localResult;
+    const idbResult = await idbStore(SESSION_STORE,'readwrite',async (store,tx)=>{
+      const done = transactionDone(tx);
       await requestAsPromise(store.delete(key));
+      await done;
       return true;
     });
-    return result || localResult;
+    return idbResult === true && localResult;
   }
 
   async function getMeta(key){

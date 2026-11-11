@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { IDBFactory } from 'fake-indexeddb';
+import { IDBFactory, IDBObjectStore } from 'fake-indexeddb';
 
 async function loadCore({ idb = true } = {}) {
   vi.resetModules();
@@ -101,6 +101,56 @@ describe('SessionStoreCore', () => {
     expect(core.loadLocalSession('slot-delete')).toBeNull();
     expect(await core.listSessions()).toEqual([]);
   });
+  // D13: 삭제를 못 했으면 true를 돌려주지 않고, 목록과 본문이 어긋나지 않는다.
+  it('returns true only when both stores really lose the session', async () => {
+    const core = await loadCore();
+    await core.saveSession(makeSession('slot-ok'));
+
+    expect(await core.deleteSession('slot-ok')).toBe(true);
+    expect(await core.loadSession('slot-ok')).toBeNull();
+    expect(await core.deleteSession('never-saved')).toBe(true);
+  });
+
+  it('reports a failed delete when localStorage cannot remove the body and keeps list and body consistent', async () => {
+    const core = await loadCore({ idb: false });
+    await core.saveSession(makeSession('slot-stuck'));
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
+
+    const deleted = await core.deleteSession('slot-stuck');
+    vi.restoreAllMocks();
+
+    expect(deleted).toBe(false);
+    // 목록에서도 빠지지 않아 화면과 저장소가 같은 상태입니다.
+    expect((await core.listSessions()).map((session) => session.id)).toEqual(['slot-stuck']);
+    expect((await core.loadSession('slot-stuck'))?.id).toBe('slot-stuck');
+    expect(JSON.parse(localStorage.getItem(INDEX_KEY))).toContain('slot-stuck');
+  });
+
+  it('reports a failed delete when IndexedDB rejects it even though the local copy is gone', async () => {
+    const core = await loadCore();
+    await core.saveSession(makeSession('slot-idb'));
+    vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(() => { throw new DOMException('closed', 'InvalidStateError'); });
+
+    const deleted = await core.deleteSession('slot-idb');
+    vi.restoreAllMocks();
+
+    expect(deleted).toBe(false);
+    expect((await core.listSessions()).map((session) => session.id)).toEqual(['slot-idb']);
+  });
+
+  it('reports a failed delete when the local copy survives an IndexedDB delete', async () => {
+    const core = await loadCore();
+    await core.saveSession(makeSession('slot-mirror'));
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new DOMException('blocked', 'SecurityError'); });
+
+    const deleted = await core.deleteSession('slot-mirror');
+    vi.restoreAllMocks();
+
+    // IndexedDB에서는 지워졌지만 남은 로컬 사본이 loadSession으로 되살아나므로 성공이라고 하지 않습니다.
+    expect(deleted).toBe(false);
+    expect((await core.loadSession('slot-mirror'))?.id).toBe('slot-mirror');
+  });
+
   it('reports no-storage when neither IndexedDB nor localStorage is available', async () => {
     vi.spyOn(window, 'localStorage', 'get').mockReturnValue(undefined);
     const core = await loadCore({ idb: false });

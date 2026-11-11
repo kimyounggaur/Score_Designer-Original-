@@ -652,3 +652,8 @@ B-1 이전 호출을 `trustParsedFile` 한 곳에 둠·로마 숫자 '삽입 제
 - D01: 원인은 `preserveNoChordHarmonies(doc)`가 덮어쓰기를 켜면 문서의 코드를 먼저 모두 지운 뒤 확정한 마디에만 다시 넣던 것. 삽입을 `ChordToolsCore.insertAutoChords(doc, groups, {replaceExisting})` 순수 함수로 옮기고, 지우기는 코드를 확정해 실제로 넣는 마디에서만 한다(같은 마디 위치의 다른 파트 코드도 함께 교체). 확정하지 못한 마디·N.C. 마디·기호를 읽지 못한 마디는 건드리지 않는다. 로그: 미확정 마디마다 `(기존 코드 N개는 그대로 둡니다)`, 요약에 `기존 코드 R개 교체, 미확정 마디의 기존 코드 K개 유지`(덮어쓰기 끔이면 `기존 코드가 있는 N마디는 건너뜀`). `preserveNoChordHarmonies`는 남기되 패널은 쓰지 않는다.
 - D04·D12: 훅 `useAnalysisTargets`가 결과를 만든 대상 파일 객체 목록을 기억하고, 현재 대상 목록과 하나라도 다르면(파일 전환·범위 변경·편집·실행 취소·파일 추가) 결과를 지운다. 통계는 기본·작곡 결과를 함께 지우고 `분석 대상: 현재 파일(이름)` 또는 `열린 파일 N개`를 적는다. 로마 숫자 패널의 기존 `[file]` 효과는 그대로.
 - 기본값 결정: 결과를 "이전 파일 결과로 남겨 표시"하지 않고 "지움"으로 통일했다(보고서가 둘 다 허용).
+
+## 2026-11-11 · F-2 세션·공유 구조 검증, 세션 삭제 실패 (D02·D13)
+
+- D02: 업로드만 `unsupportedScoreReason`을 써서 `<score-partwise><part-list/></score-partwise>` 같은 악보를 세션 JSON·저장 세션·공유 링크는 0파트로 받아들였다. 판정을 `MeasureCore.unsupportedScoreReason`(루트·파트·마디 사유 5종)으로 옮기고 HTML의 같은 이름 함수는 위임만 한다. `hydrateSessionFilesDetailed`가 파일마다 같은 검사를 하고 `{files, failures}`를 돌려주며(`hydrateSessionFiles`는 files만), 세션 JSON 가져오기·저장 세션 불러오기는 한 파일이라도 실패하면 `세션 안의 … 읽을 수 없습니다. 이름: 사유`로 거절하고 현재 작업·작업 기록을 바꾸지 않는다. 자동 저장 복구 배너는 읽을 수 있는 파일만 복원하는 기존 동작을 유지. 공유 링크는 같은 사유로 거절하고 작업 기록 알림에 `공유 링크를 읽지 못했습니다: …`를 남긴다.
+- D13: `localDeleteSession`이 `removeItem` 예외를 삼킨 채 목록에서만 빼고 true를 돌려주던 것을, 본문을 못 지우면 목록을 그대로 두고 false로 바꿨다. `deleteSession`은 IndexedDB를 쓸 수 있으면 삭제 트랜잭션 complete까지 기다리고 `IDB 삭제 && 로컬 사본 삭제`일 때만 true(로컬 사본이 남으면 `loadSession`이 지운 세션을 되살리므로). 화면은 false면 `세션을 완전히 삭제하지 못했습니다…` 오류 알림만 띄우고 목록은 저장소 상태 그대로 다시 읽는다.

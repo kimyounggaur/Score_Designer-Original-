@@ -37,12 +37,12 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="history-core.js?v=3"></script>
 <script src="transpose-core.js?v=4"></script>
 <script src="pitch-core.js?v=1"></script>
-<script src="measure-core.js?v=1"></script>
+<script src="measure-core.js?v=2"></script>
 <script src="numbering-core.js?v=1"></script>
 <script src="playback-core.js?v=3"></script>
 <script src="roman-analysis-core.js?v=4"></script>
 <script src="share-session-core.js?v=1"></script>
-<script src="session-store-core.js?v=2"></script>
+<script src="session-store-core.js?v=3"></script>
 <script src="export-core.js?v=3"></script>
 </head>
 <body>
@@ -318,17 +318,9 @@ function transposeNoticeLines(label,result,lines){
   if(result?.skippedKeyParts)lines.push({m:`ℹ ${label}: 타악기 파트 ${result.skippedKeyParts}개는 조표를 바꾸지 않았습니다.`,t:'info'});
   if(result?.tabNotes)lines.push({m:`⚠ ${label}: TAB 프렛 표기 ${result.tabNotes}개는 바뀌지 않습니다. 줄·프렛을 직접 확인하세요.`,t:'warn'});
 }
-// 읽어 들인 XML을 이 앱이 열 수 없을 때 사유 문장을 돌려주고, 열 수 있으면 null입니다(Phase B U1).
-// 사용자가 "왜 안 열리는지"를 알고 악보 프로그램에서 다시 내보낼 수 있도록 원인별로 나눕니다.
-function unsupportedScoreReason(xmlDoc){
-  const root=xmlDoc?.documentElement,name=root?.localName||'';
-  if(name==='score-timewise')return '마디 우선(score-timewise) 형식은 지원하지 않습니다. 악보 프로그램에서 MusicXML(partwise)로 다시 내보내 주세요.';
-  if(name==='opus')return '여러 악보 묶음(opus) 파일은 지원하지 않습니다. 악보를 하나씩 내보내 주세요.';
-  if(name!=='score-partwise')return `지원하는 MusicXML 악보가 아닙니다. (루트 요소: ${name||'없음'})`;
-  if(!root.querySelector(':scope > part'))return '악보에 파트가 없습니다.';
-  if(!root.querySelector(':scope > part > measure'))return '악보에 마디가 없습니다.';
-  return null;
-}
+// 읽어 들인 XML을 이 앱이 열 수 없을 때 사유 문장을 돌려주고, 열 수 있으면 null입니다(Phase B U1, D02).
+// 판정은 MeasureCore.unsupportedScoreReason 한 곳이며 업로드·세션 복원·세션 JSON·공유 링크가 같은 기준을 씁니다.
+function unsupportedScoreReason(xmlDoc){return window.MeasureCore.unsupportedScoreReason(xmlDoc);}
 function validOssia(xml){
   if(typeof xml!=='string'||!xml)return undefined;
   const doc=new DOMParser().parseFromString(xml,'text/xml');
@@ -457,20 +449,33 @@ function serializeSessionFiles(files){
     ossiaMeta:file.ossiaMeta,
   }));
 }
-function hydrateSessionFiles(session){
-  return Array.from(session?.files||[]).map(file=>{
-    const xmlString=file.xml||file.xmlString||'';
+// 세션 JSON·저장 세션의 파일을 파일 객체로 만듭니다. 읽을 수 없거나 업로드와 같은 구조 검사를 통과하지 못한 파일(파트·마디가 없는 악보 등)은
+// files에 넣지 않고 failures에 이름과 사유를 담습니다(D02).
+function hydrateSessionFilesDetailed(session){
+  const files=[],failures=[];
+  Array.from(session?.files||[]).forEach((file,index)=>{
+    const xmlString=file?.xml||file?.xmlString||'';
+    const name=file?.name||file?.sourceName||'복원된 악보.musicxml';
     const xmlDoc=new DOMParser().parseFromString(xmlString,'text/xml');
+    const reason=!xmlString?'악보 내용이 비어 있습니다.':xmlDoc.querySelector('parsererror')?'XML 파싱 오류입니다.':unsupportedScoreReason(xmlDoc);
+    if(reason){failures.push({index,name,reason});return;}
     const ossiaMxml=validOssia(file.ossiaMxml);
-    return trustParsedFile({
+    files.push(trustParsedFile({
       ossiaMxml,
       ossiaMeta:ossiaMxml?file.ossiaMeta:undefined,
-      name:file.name||file.sourceName||'복원된 악보.musicxml',
+      name,
       sourceName:file.sourceName||file.name,
       xmlString,
       xmlDoc,
-    });
-  }).filter(file=>file.xmlString&&!file.xmlDoc.querySelector('parsererror'));
+    }));
+  });
+  return {files,failures};
+}
+function hydrateSessionFiles(session){return hydrateSessionFilesDetailed(session).files;}
+// 복원하지 못한 파일을 한 문장으로 요약합니다(처음 3개까지).
+function sessionFailureText(failures){
+  const shown=failures.slice(0,3).map(item=>`${item.name}: ${item.reason}`).join(' / ');
+  return failures.length>3?`${shown} 외 ${failures.length-3}개`:shown;
 }
 function formatBytes(value){
   if(!Number.isFinite(value))return '-';
@@ -4500,7 +4505,13 @@ function SessionModal({open,onClose,files,activeFile,onRestore,notify,sessionSta
   };
   const confirm=()=>perform(async()=>{
     if(pending.type==='restore')await restore(pending.session);
-    else{await window.SessionStoreCore.deleteSession(pending.id);setPending(null);await refresh();notify('세션을 삭제했습니다.','ok');}
+    else{
+      // 지우지 못했으면 성공이라고 알리지 않고 목록을 저장소 상태 그대로 다시 읽습니다(D13).
+      const deleted=await window.SessionStoreCore.deleteSession(pending.id);
+      setPending(null);await refresh();
+      if(deleted)notify('세션을 삭제했습니다.','ok');
+      else notify('세션을 완전히 삭제하지 못했습니다. 브라우저 저장소 상태를 확인한 뒤 다시 시도하세요.','err');
+    }
   });
   const exportJson=session=>{
     const safe=(session.name||session.id||'세션').replace(/[<>:"/\\|?*\x00-\x1f]/g,'_');
@@ -4513,8 +4524,8 @@ function SessionModal({open,onClose,files,activeFile,onRestore,notify,sessionSta
       if(file.size>4*1024*1024)throw new Error('세션 JSON은 4MB 이하만 가져올 수 있습니다.');
       const session=JSON.parse(await file.text());
       if(session?.version!==1||!Array.isArray(session.files)||!session.files.length||session.files.length>MAX_FILES)throw new Error('지원하는 세션 JSON 형식이 아닙니다.');
-      const restored=hydrateSessionFiles(session);
-      if(restored.length!==session.files.length||restored.some(file=>file.xmlDoc.documentElement.localName!=='score-partwise'))throw new Error('세션 안의 MusicXML 악보를 읽을 수 없습니다.');
+      const {failures}=hydrateSessionFilesDetailed(session);
+      if(failures.length)throw new Error(`세션 안의 MusicXML 악보를 읽을 수 없습니다. ${sessionFailureText(failures)}`);
       await askRestore({...session,name:session.name||file.name});
     });
   };
@@ -4711,8 +4722,8 @@ function App(){
 
   const saveSessionSlot=useCallback(()=>setSessionModalOpen(true),[]);
   const restoreManagedSession=useCallback(async session=>{
-    const restored=hydrateSessionFiles(session);
-    if(!restored.length||restored.length!==session.files?.length)throw new Error('세션 안의 악보를 읽을 수 없습니다.');
+    const {files:restored,failures}=hydrateSessionFilesDetailed(session);
+    if(!restored.length||failures.length||restored.length!==session.files?.length)throw new Error(`세션 안의 악보를 읽을 수 없습니다.${failures.length?` ${sessionFailureText(failures)}`:''}`);
     setFiles(restored);
     setActiveFile(Math.max(0,Math.min(Number(session.activeFile)||0,restored.length-1)));
     pushHistory(restored,`세션 불러오기: ${session.name||session.id||'가져온 세션'}`);
@@ -4769,6 +4780,8 @@ function App(){
         if(cancelled||!shared?.xml)return;
         const xmlDoc=new DOMParser().parseFromString(shared.xml,'text/xml');
         if(xmlDoc.querySelector('parsererror'))throw new Error('공유 악보 XML을 읽을 수 없습니다.');
+        const reason=unsupportedScoreReason(xmlDoc);
+        if(reason)throw new Error(reason);
         const restored=[trustParsedFile({
           name:shared.name||'공유 악보.musicxml',
           sourceName:shared.sourceName||shared.name||'공유 악보.musicxml',
