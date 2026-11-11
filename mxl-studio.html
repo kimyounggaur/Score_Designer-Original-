@@ -36,7 +36,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="chord-symbol-core.js?v=1"></script>
 <script src="history-core.js?v=3"></script>
 <script src="transpose-core.js?v=4"></script>
-<script src="pitch-core.js?v=2"></script>
+<script src="pitch-core.js?v=3"></script>
 <script src="measure-core.js?v=2"></script>
 <script src="numbering-core.js?v=2"></script>
 <script src="playback-core.js?v=4"></script>
@@ -197,6 +197,12 @@ function fmtNote(n){return n?n.step+(n.alter>0?'#'.repeat(n.alter):n.alter<0?'�
 function keyDisplayName(fifths,mode){
   const index=keyIndexOfFifths(fifths);
   return (mode==='minor'?MINOR_KEY_NAMES:KEY_NAMES)[index]??String(fifths);
+}
+// 안내 문구에 적는 숫자 범위와 실행 때의 검증이 같은 값을 쓰도록 한곳에 둡니다(D16).
+const SEMITONE_LIMIT=12,OSSIA_OCTAVE_LIMIT=2;
+// 정수 value가 -limit~+limit 안이면 빈 글, 아니면 안내 문장을 돌려줍니다. subject는 조사까지 붙인 주어입니다(예: '이동할 반음 수는').
+function limitProblem(value,limit,subject){
+  return Number.isInteger(value)&&Math.abs(value)<=limit?'':`${subject} -${limit} ~ +${limit} 사이여야 합니다.`;
 }
 function parseNoteStr(s){const m=s.match(/^([A-G])([#b]?)(\d+)$/);if(!m)return null;return{step:m[1],alter:m[2]==='#'?1:m[2]==='b'?-1:0,octave:parseInt(m[3])}}
 function cloneDoc(d){return new DOMParser().parseFromString(new XMLSerializer().serializeToString(d),'text/xml')}
@@ -899,6 +905,7 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
   const [selKey,setSelKey]=useState(0);
   const [direction,setDirection]=useState('nearest');
   const [semi,setSemi]=useState(0);
+  const semiProblem=limitProblem(semi,SEMITONE_LIMIT,'이동할 반음 수는');
   const [ivNum,setIvNum]=useState(3);
   const [ivQual,setIvQual]=useState('major');
   const [ivDir,setIvDir]=useState(1);
@@ -908,6 +915,7 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
 
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    if(mode==='semitone'&&semiProblem){notify(semiProblem,'warn');return}
     setLog([]);showProgress('조옮김 처리 중...');
     await new Promise(r=>setTimeout(r,50));
     try{
@@ -978,7 +986,7 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
       }
     }catch(e){setLog(l=>[...l,{m:'❌ '+friendlyError(e),t:'err'}])}
     hideProgress();
-  },[files,activeFile,scope,mode,spelling,selKey,direction,semi,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,mode,spelling,selKey,direction,semi,semiProblem,ivNum,ivQual,ivDir,showProgress,hideProgress,onFilesUpdate]);
 
   function transposeDoc(xmlDoc,semitones,targetKeyIdx,extra={}){
     const doc=cloneDoc(xmlDoc);
@@ -1024,9 +1032,11 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
     </div>}
 
     {mode==='semitone' && <div className="card"><div className="card__title">↕️ 반음 이동</div>
-      <label className="form-label">이동할 반음 수 (-12 ~ +12)</label>
-      <input className="form-input form-input--mono" type="number" value={semi} min={-12} max={12}
+      <label className="form-label" htmlFor="transpose-semitone">이동할 반음 수 (-{SEMITONE_LIMIT} ~ +{SEMITONE_LIMIT})</label>
+      <input id="transpose-semitone" className="form-input form-input--mono" type="number" value={semi} min={-SEMITONE_LIMIT} max={SEMITONE_LIMIT}
+        aria-invalid={Boolean(semiProblem)} aria-describedby={semiProblem?'transpose-semitone-error':undefined}
         onChange={e=>setSemi(parseInt(e.target.value)||0)}/>
+      {semiProblem&&<p className="card__text" id="transpose-semitone-error">{semiProblem}</p>}
     </div>}
 
     {mode==='interval' && <div className="card"><div className="card__title">🎼 음정 (Interval) 이동</div>
@@ -1049,7 +1059,7 @@ function TransposePanel({files,activeFile=0,scope='all',showProgress,hideProgres
     <div className="card"><div className="card__title">철자 선택</div><div className="chip-group">
       <Chip on={spelling==='auto'} onClick={()=>setSpelling('auto')}>자동</Chip><Chip on={spelling==='sharp'} onClick={()=>setSpelling('sharp')}>♯ 우선</Chip><Chip on={spelling==='flat'} onClick={()=>setSpelling('flat')}>♭ 우선</Chip>
     </div><p className="card__text">현재 조: {keyNames[((Number(activeDoc(files,activeFile)?.querySelector('key fifths')?.textContent||0)*7)%12+12)%12]} {isMinor?'단조':'장조'}.</p></div>
-    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 변환 실행</button></div>
+    <div className="btn-row"><button className="btn btn--primary" onClick={run} disabled={mode==='semitone'&&Boolean(semiProblem)} aria-describedby={mode==='semitone'&&semiProblem?'transpose-semitone-error':undefined}>▶ 변환 실행</button></div>
     <LogPanel lines={log}/>
   </div>;
 }
@@ -1065,12 +1075,25 @@ function RangePanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
   const [log,setLog]=useState([]);
 
   const range=INSTRUMENT_RANGES[instr];
+  // 사용자 지정 음역은 입력할 때마다 읽어 형식·옥타브 범위(악보에 쓸 수 있는 0~9)·높낮이를 미리 검사합니다.
+  // 옥타브가 터무니없이 큰 값(C1000000000 등)도 여기서 바로 거절되어 이동량 계산까지 가지 않습니다(D09).
+  const octaveLimits={minOctave:window.ExportCore?.MIN_OCTAVE??0,maxOctave:window.ExportCore?.MAX_OCTAVE??9};
+  const custom=useMemo(()=>{
+    if(instr!=='custom')return null;
+    const entries=[['최저음',customLow],['최고음',customHigh]].map(([label,text])=>({label,text,parsed:PitchCore.parseNoteName(text,octaveLimits)}));
+    const [low,high]=entries;
+    const reason=({label,text,parsed})=>parsed.error==='format'?`${label} 형식이 올바르지 않습니다. 음 이름(A~G), 선택 ♯(#)·♭(b), 옥타브 숫자 순으로 적으세요. 예: C4, F#3, Bb5`
+      :parsed.error==='octave'?`${label}의 옥타브는 ${octaveLimits.minOctave}~${octaveLimits.maxOctave}여야 합니다 (입력: ${String(text).trim().slice(0,16)}).`:'';
+    const entryProblem=entries.map(reason).find(Boolean)||'';
+    const order=!entryProblem&&PitchCore.pitchToMidi(low.parsed.pitch)>PitchCore.pitchToMidi(high.parsed.pitch)?'최저음이 최고음보다 높습니다.':'';
+    return {low:low.parsed.pitch,high:high.parsed.pitch,lowBad:Boolean(reason(low))||Boolean(order),highBad:Boolean(reason(high))||Boolean(order),problem:entryProblem||order};
+  },[instr,customLow,customHigh,octaveLimits.minOctave,octaveLimits.maxOctave]);
 
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     if(!instr){notify('악기를 선택해주세요.','warn');return}
     let low,high;
-    if(instr==='custom'){low=parseNoteStr(customLow);high=parseNoteStr(customHigh);if(!low||!high){notify('올바른 음표 형식을 입력해주세요','warn');return}}
+    if(instr==='custom'){if(custom.problem){notify(custom.problem,'warn');return}low=custom.low;high=custom.high}
     else{low={step:range.low.step,octave:range.low.oct,alter:0};high={step:range.high.step,octave:range.high.oct,alter:0}}
     const lm=PitchCore.pitchToMidi(low),hm=PitchCore.pitchToMidi(high);
     if(lm>hm){notify('최저음이 최고음보다 높습니다.','warn');return}
@@ -1081,11 +1104,11 @@ function RangePanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
         const doc=cloneDoc(file.xmlDoc);let moved=0,skipped=0;
         doc.querySelectorAll('note').forEach(note=>{
           const pitch=PitchCore.readPitch(note);if(!pitch)return;
-          // 옥타브만 옮겨 철자(step·alter)와 임시표를 보존합니다.
-          const midi=PitchCore.pitchToMidi(pitch);let octaves=0;
-          while(midi+octaves*12<lm)octaves++;
-          while(midi+octaves*12>hm)octaves--;
-          if(midi+octaves*12<lm){skipped++;return}
+          // 옥타브만 옮겨 철자(step·alter)와 임시표를 보존합니다. 이동량은 반복 없이 산술로 구합니다(D09).
+          const midi=PitchCore.pitchToMidi(pitch);
+          if(!Number.isFinite(midi))return;
+          const {octaves,fits}=PitchCore.octavesToFit(midi,lm,hm);
+          if(!fits){skipped++;return}
           if(PitchCore.shiftNoteOctave(note,octaves))moved++;
         });
         // 사용자 지정 음역이 옥타브 0~9 밖이면 옮긴 음도 범위를 벗어날 수 있으므로 커밋 전에 막습니다.
@@ -1097,13 +1120,13 @@ function RangePanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
       setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+friendlyError(e),t:'err'}])}
     hideProgress();
-  },[files,activeFile,scope,instr,customLow,customHigh,range,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,instr,custom,range,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">음역대 자동 조정</h2>
     <p className="panel__description">특정 악기의 음역대에 맞게 옥타브를 자동 조정합니다.</p>
     <div className="card"><div className="card__title">🎹 악기 선택</div>
-      <select className="form-select" value={instr} onChange={e=>setInstr(e.target.value)}>
+      <select className="form-select" aria-label="음역대를 맞출 악기" value={instr} onChange={e=>setInstr(e.target.value)}>
         <option value="">악기를 선택하세요</option>
         {Object.entries(INSTRUMENT_RANGES).map(([k,v])=><option key={k} value={k}>{v.name}</option>)}
         <option value="custom">사용자 지정</option>
@@ -1117,11 +1140,13 @@ function RangePanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
     </div>
     {instr==='custom' && <div className="card"><div className="card__title">✏️ 사용자 지정</div>
       <div className="two-col">
-        <div><label className="form-label">최저음</label><input className="form-input form-input--mono" value={customLow} onChange={e=>setCustomLow(e.target.value)}/></div>
-        <div><label className="form-label">최고음</label><input className="form-input form-input--mono" value={customHigh} onChange={e=>setCustomHigh(e.target.value)}/></div>
+        <div><label className="form-label" htmlFor="range-custom-low">최저음</label><input id="range-custom-low" className="form-input form-input--mono" value={customLow} aria-invalid={custom.lowBad} aria-describedby="range-custom-hint" onChange={e=>setCustomLow(e.target.value)}/></div>
+        <div><label className="form-label" htmlFor="range-custom-high">최고음</label><input id="range-custom-high" className="form-input form-input--mono" value={customHigh} aria-invalid={custom.highBad} aria-describedby="range-custom-hint" onChange={e=>setCustomHigh(e.target.value)}/></div>
       </div>
+      <p className="card__text" id="range-custom-hint">음 이름(A~G) + ♯(#) 또는 ♭(b) + 옥타브({octaveLimits.minOctave}~{octaveLimits.maxOctave}). 예: C4, F#3, Bb5</p>
+      {custom.problem&&<p className="card__text" id="range-custom-error">{custom.problem}</p>}
     </div>}
-    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 음역대 조정 실행</button></div>
+    <div className="btn-row"><button className="btn btn--primary" onClick={run} disabled={Boolean(custom?.problem)} aria-describedby={custom?.problem?'range-custom-error':undefined}>▶ 음역대 조정 실행</button></div>
     <LogPanel lines={log}/>
   </div>;
 }
@@ -1195,7 +1220,7 @@ function InstrumentPanel({files,activeFile=0,scope='all',showProgress,hideProgre
       </div>
     </div>
     <div className="card"><div className="card__title">🎺 악기 선택</div>
-      <select className="form-select" value={sel} onChange={e=>setSel(e.target.value)}>
+      <select className="form-select" aria-label="이조 악기 선택" value={sel} onChange={e=>setSel(e.target.value)}>
         <option value="">악기를 선택하세요</option>
         {[...new Set(Object.values(TRANS_INSTRUMENTS).map(v=>v.cat))].map(cat=>
           <optgroup key={cat} label={cat}>
@@ -1217,8 +1242,8 @@ function InstrumentPanel({files,activeFile=0,scope='all',showProgress,hideProgre
       </div></div>}
     </div>
     {sel==='custom_instr' && <div className="card"><div className="card__title">✏️ 사용자 지정</div>
-      <label className="form-label">기보음 대비 실음 차이 (반음 수)</label>
-      <input className="form-input form-input--mono" type="number" value={customSemi} onChange={e=>setCustomSemi(parseInt(e.target.value)||0)}/>
+      <label className="form-label" htmlFor="instrument-custom-semitone">기보음 대비 실음 차이 (반음 수)</label>
+      <input id="instrument-custom-semitone" className="form-input form-input--mono" type="number" value={customSemi} onChange={e=>setCustomSemi(parseInt(e.target.value)||0)}/>
     </div>}
     {preview.length>0 && <div className="card"><div className="card__title">🎯 변환 예시</div>
       <div className="preview-grid">{preview.map((p,i)=>
@@ -1321,7 +1346,7 @@ function TempoPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
         <div className="tempo-display__term">{getTempoTerm(bpm)}</div>
       </div>
       <div className="tempo-slider-wrap">
-        <input className="tempo-slider" type="range" min={20} max={300} value={bpm}
+        <input className="tempo-slider" type="range" min={20} max={300} value={bpm} aria-label="목표 템포 (BPM)"
           style={{'--fill':fillPct+'%'}}
           onChange={e=>setBpm(parseInt(e.target.value))}/>
         <div className="tempo-marks">
@@ -1917,6 +1942,8 @@ function OssiaPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
   const [endMeasure,setEndMeasure]=useState(1);
   const [transposeSemi,setTransposeSemi]=useState(0);
   const [octaveShift,setOctaveShift]=useState(0);
+  const semiProblem=limitProblem(transposeSemi,SEMITONE_LIMIT,'조옮김은');
+  const octaveProblem=limitProblem(octaveShift,OSSIA_OCTAVE_LIMIT,'옥타브 이동은');
   const [ossiaLabel,setOssiaLabel]=useState('Ossia');
   const [log,setLog]=useState([]);
 
@@ -1932,6 +1959,7 @@ function OssiaPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     if(startMeasure>endMeasure){notify('시작 마디가 끝 마디보다 클 수 없습니다.','warn');return}
+    if(semiProblem||octaveProblem){notify(semiProblem||octaveProblem,'warn');return}
     setLog([]);showProgress('Ossia 오버레이 생성 중...');
     await new Promise(r=>setTimeout(r,50));
 
@@ -2036,7 +2064,7 @@ function OssiaPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
       setLog(l=>[...l,{m:'❌ '+friendlyError(e),t:'err'}]);
     }
     hideProgress();
-  },[files,activeFile,scope,startMeasure,endMeasure,transposeSemi,octaveShift,ossiaLabel,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,startMeasure,endMeasure,transposeSemi,octaveShift,semiProblem,octaveProblem,ossiaLabel,showProgress,hideProgress,onFilesUpdate]);
 
   const clearOssia=useCallback(()=>{
     if(!files.length)return;
@@ -2063,13 +2091,13 @@ function OssiaPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
       <div className="change-entry">
         <div className="change-entry__field change-entry__field--narrow">
           <span className="change-entry__micro">시작 마디</span>
-          <input className="measure-input" type="number" min={firstNumber} max={lastNumber}
+          <input className="measure-input" type="number" min={firstNumber} max={lastNumber} aria-label="Ossia 시작 마디"
             value={startMeasure} onChange={e=>setStartMeasure(e.target.value===''?firstNumber:Number(e.target.value))}/>
         </div>
         <span className="change-entry__arrow">~</span>
         <div className="change-entry__field change-entry__field--narrow">
           <span className="change-entry__micro">끝 마디</span>
-          <input className="measure-input" type="number" min={firstNumber} max={lastNumber}
+          <input className="measure-input" type="number" min={firstNumber} max={lastNumber} aria-label="Ossia 끝 마디"
             value={endMeasure} onChange={e=>setEndMeasure(e.target.value===''?firstNumber:Number(e.target.value))}/>
         </div>
       </div>
@@ -2077,22 +2105,26 @@ function OssiaPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
 
     <div className="card">
       <div className="card__title">🎵 변형 옵션</div>
-      <label className="form-label">조옮김 (반음, -12 ~ +12)</label>
-      <input className="form-input form-input--mono" type="number" value={transposeSemi} min={-12} max={12}
+      <label className="form-label" htmlFor="ossia-semitone">조옮김 (반음, -{SEMITONE_LIMIT} ~ +{SEMITONE_LIMIT})</label>
+      <input id="ossia-semitone" className="form-input form-input--mono" type="number" value={transposeSemi} min={-SEMITONE_LIMIT} max={SEMITONE_LIMIT}
+        aria-invalid={Boolean(semiProblem)} aria-describedby={semiProblem?'ossia-semitone-error':undefined}
         onChange={e=>setTransposeSemi(parseInt(e.target.value)||0)}/>
-      <label className="form-label">옥타브 이동 (-2 ~ +2)</label>
-      <input className="form-input form-input--mono" type="number" value={octaveShift} min={-2} max={2}
+      {semiProblem&&<p className="card__text" id="ossia-semitone-error">{semiProblem}</p>}
+      <label className="form-label" htmlFor="ossia-octave">옥타브 이동 (-{OSSIA_OCTAVE_LIMIT} ~ +{OSSIA_OCTAVE_LIMIT})</label>
+      <input id="ossia-octave" className="form-input form-input--mono" type="number" value={octaveShift} min={-OSSIA_OCTAVE_LIMIT} max={OSSIA_OCTAVE_LIMIT}
+        aria-invalid={Boolean(octaveProblem)} aria-describedby={octaveProblem?'ossia-octave-error':undefined}
         onChange={e=>setOctaveShift(parseInt(e.target.value)||0)}/>
+      {octaveProblem&&<p className="card__text" id="ossia-octave-error">{octaveProblem}</p>}
     </div>
 
     <div className="card">
       <div className="card__title">🏷️ Ossia 파트 이름</div>
-      <input className="form-input" type="text" value={ossiaLabel}
+      <input className="form-input" type="text" value={ossiaLabel} aria-label="Ossia 파트 이름"
         onChange={e=>setOssiaLabel(e.target.value)} placeholder="Ossia"/>
     </div>
 
     <div className="btn-row">
-      <button className="btn btn--primary" onClick={run}>▶ Ossia 추가</button>
+      <button className="btn btn--primary" onClick={run} disabled={Boolean(semiProblem||octaveProblem)} aria-describedby={semiProblem?'ossia-semitone-error':octaveProblem?'ossia-octave-error':undefined}>▶ Ossia 추가</button>
       <button className="btn btn--secondary" onClick={clearOssia}>🗑️ Ossia 제거</button>
     </div>
     <LogPanel lines={log}/>
@@ -2461,7 +2493,7 @@ function ExportPanel({files,activeFile=0,scope='all',onSelectActiveFile,showProg
 
     {files.length>0 && <div className="card">
       <div className="card__title">📄 파일 선택</div>
-      <select className="form-select" value={selIdx} onChange={e=>{const index=parseInt(e.target.value);setSelIdx(index);onSelectActiveFile?.(index);}}>
+      <select className="form-select" aria-label="내보낼 파일" value={selIdx} onChange={e=>{const index=parseInt(e.target.value);setSelIdx(index);onSelectActiveFile?.(index);}}>
         {files.map((f,i)=><option key={i} value={i}>{f.name}</option>)}
       </select>
     </div>}
@@ -2687,7 +2719,7 @@ function HarmonyPanel({files,activeFile=0,scope='all',showProgress,hideProgress,
       </div>
     </div>
     <div className="card"><div className="card__title">🎯 대상</div>
-      <select className="form-select" value={target} onChange={e=>setTarget(e.target.value)}>
+      <select className="form-select" aria-label="화성을 쌓을 파트" value={target} onChange={e=>setTarget(e.target.value)}>
         <option value="all">모든 파트</option><option value="first">첫 번째 파트만</option>
       </select>
     </div>
@@ -2823,10 +2855,10 @@ function ChordToolsPanel({files,activeFile=0,scope='all',showProgress,hideProgre
       <div className="card__text">기존 코드 기호를 찾아 다른 코드로 일괄 교체합니다.</div>
       {rules.map((r,i)=>
         <div className="chord-rule" key={i}>
-          <input className="form-input form-input--mono" placeholder="원본 (예: Am)" value={r.from} onChange={e=>updateRule(i,'from',e.target.value)}/>
+          <input className="form-input form-input--mono" aria-label={`코드 변경 규칙 ${i+1} 원본`} placeholder="원본 (예: Am)" value={r.from} onChange={e=>updateRule(i,'from',e.target.value)}/>
           <span className="chord-rule__arrow">→</span>
-          <input className="form-input form-input--mono" placeholder="변경 (예: Am7)" value={r.to} onChange={e=>updateRule(i,'to',e.target.value)}/>
-          <button className="chord-rule__remove" onClick={()=>removeRule(i)}>✕</button>
+          <input className="form-input form-input--mono" aria-label={`코드 변경 규칙 ${i+1} 변경`} placeholder="변경 (예: Am7)" value={r.to} onChange={e=>updateRule(i,'to',e.target.value)}/>
+          <button className="chord-rule__remove" aria-label={`코드 변경 규칙 ${i+1} 삭제`} onClick={()=>removeRule(i)}>✕</button>
         </div>
       )}
       <button className="btn btn--secondary" onClick={addRule}>+ 규칙 추가</button>

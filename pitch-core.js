@@ -150,5 +150,26 @@
     return {step:bass.step,alter:bass.alter};
   }
 
-  global.PitchCore={STEPS,STEP_TO_SEMI,NOTE_CHILD_ORDER,CHORD_TONES,readPitch,pitchToMidi,addInterval,shiftOctave,shiftNoteOctave,nearestShift,keySignatureAlter,createKeyTracker,accidentalName,insertNoteChild,alterInEffect,syncAccidental,diatonicThird,chromaticThird,bassForInversion};
+  // "C4"·"F#3"·"Bb5" 같은 음 이름 글을 읽습니다. 앞뒤 공백은 무시합니다.
+  // 형식이 틀리면 {error:'format'}, 옥타브가 [minOctave,maxOctave] 밖이면 {error:'octave',octave}, 읽었으면 {pitch:{step,alter,octave}}입니다.
+  // 사용자가 직접 적는 음역(D09)처럼 옥타브가 아무리 커도(C1000000000 등) 읽기만 하고 반복하지 않으므로 바로 거절할 수 있습니다.
+  function parseNoteName(text,{minOctave=0,maxOctave=9}={}){
+    const match=String(text??'').trim().match(/^([A-G])([#b]?)(\d+)$/);
+    if(!match)return {error:'format'};
+    const octave=Number(match[3]);
+    if(!Number.isInteger(octave)||octave<minOctave||octave>maxOctave)return {error:'octave',octave};
+    return {pitch:{step:match[1],alter:match[2]==='#'?1:match[2]==='b'?-1:0,octave}};
+  }
+
+  // midi를 [low, high] 안으로 옮기는 옥타브 수를 산술로 구합니다(반복문 없음, D09). 가장 적게 올리거나 내린 값입니다.
+  // fits가 false면 범위가 한 옥타브보다 좁아 들어갈 자리가 없다는 뜻이고, 그때 octaves는 가장 가까운 아래쪽 값입니다.
+  function octavesToFit(midi,low,high){
+    const note=Number(midi),lo=Number(low),hi=Number(high);
+    if(![note,lo,hi].every(Number.isFinite)||lo>hi)return {octaves:0,fits:false};
+    const octaves=Math.min(Math.max(0,Math.ceil((lo-note)/12)),Math.floor((hi-note)/12))||0;
+    const moved=note+octaves*12;
+    return {octaves,fits:moved>=lo&&moved<=hi};
+  }
+
+  global.PitchCore={STEPS,STEP_TO_SEMI,NOTE_CHILD_ORDER,CHORD_TONES,readPitch,pitchToMidi,addInterval,shiftOctave,shiftNoteOctave,nearestShift,keySignatureAlter,createKeyTracker,parseNoteName,octavesToFit,accidentalName,insertNoteChild,alterInEffect,syncAccidental,diatonicThird,chromaticThird,bassForInversion};
 })(window);

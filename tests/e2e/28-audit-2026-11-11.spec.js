@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
 import { readFileSync } from 'node:fs';
-import { openApp, openPanel, uploadFixture, waitForScore, getDocQuery, fixturesDir } from './helpers.js';
+import { openApp, openPanel, uploadFixture, waitForScore, getDocQuery, getPitches, fixturesDir } from './helpers.js';
 
 // 2026-11-11 재검수 보고서(D01~D16) 회귀 시험. 항목 ID는 보고서의 통합 ID(D01~D16)를 따릅니다.
 // 앱 상태는 읽기만 하고, 조작은 실제 버튼·입력으로 합니다. 탭 전환만 시험 훅(__mxlSetActiveFile)을 씁니다.
@@ -424,5 +424,128 @@ test.describe('2026-11-11 재검수 · 조성 기준 (이조 악기·dim7·보�
       .map((note) => [note.querySelector('staff')?.textContent, note.querySelector('step').textContent, note.querySelector('alter')?.textContent ?? '0', note.querySelector('octave').textContent]));
     // 1단 D5의 3도 위는 C장조의 F5, 2단 D3의 3도 위는 G장조의 F♯3입니다.
     expect(added).toEqual([['1', 'F', '0', '5'], ['2', 'F', '1', '3']]);
+  });
+});
+
+// ── 입력 검증: 사용자 지정 음역의 큰 옥타브(D09)와 안내한 범위만큼만 받는 반음·옥타브 입력(D16) ──
+// f01-basic은 두 마디에 C4 D4 E4 F4 G4 A4 B4 C5 여덟 음입니다.
+const octaveUp = (pitches, octaves) => pitches.map((pitch) => pitch.replace(/\/(\d+)$/, (_, octave) => `/${Number(octave) + octaves}`));
+
+test.describe('2026-11-11 재검수 · 사용자 입력 범위 (D09·D16)', () => {
+  test('@panels D09 range panel refuses a huge custom octave at the input before doing any work', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadFixture(page, 'f01-basic.musicxml');
+    const before = await getPitches(page);
+    const historyBefore = await historyLength(page);
+    const panel = await openPanel(page, 'range');
+    await panel.locator('select').selectOption('custom');
+    const low = panel.getByLabel('최저음', { exact: true });
+    const high = panel.getByLabel('최고음', { exact: true });
+    const run = panel.getByRole('button', { name: /음역대 조정 실행/ });
+    // 옥타브 10억: 예전에는 음표마다 약 10억 번 반복한 뒤에야 막혀 탭이 오래 멈췄습니다. 이제는 입력 즉시 사유가 보이고 실행이 막힙니다.
+    await low.fill('C1000000000');
+    await high.fill('C1000000001');
+    const problem = panel.locator('#range-custom-error');
+    await expect(problem).toContainText('최저음의 옥타브는 0~9여야 합니다');
+    await expect(problem).toContainText('C1000000000');
+    await expect(low).toHaveAttribute('aria-invalid', 'true');
+    await expect(run).toBeDisabled();
+    await expect(run).toHaveAttribute('aria-describedby', 'range-custom-error');
+    expect(await getPitches(page)).toEqual(before);
+    expect(await historyLength(page)).toBe(historyBefore);
+  });
+
+  test('@panels D09 range panel explains malformed, out-of-range and reversed custom notes and still runs a valid range', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadFixture(page, 'f01-basic.musicxml');
+    const before = await getPitches(page);
+    const panel = await openPanel(page, 'range');
+    await panel.locator('select').selectOption('custom');
+    const low = panel.getByLabel('최저음', { exact: true });
+    const high = panel.getByLabel('최고음', { exact: true });
+    const run = panel.getByRole('button', { name: /음역대 조정 실행/ });
+    const problem = panel.locator('#range-custom-error');
+    await expect(panel.locator('#range-custom-hint')).toContainText('옥타브(0~9)');
+    const cases = [
+      ['H4', 'C5', '최저음 형식이 올바르지 않습니다', low],
+      ['C4', 'C', '최고음 형식이 올바르지 않습니다', high],
+      ['C10', 'C11', '최저음의 옥타브는 0~9여야 합니다', low],
+      ['C6', 'C4', '최저음이 최고음보다 높습니다', low],
+    ];
+    for (const [lowText, highText, message, flagged] of cases) {
+      await low.fill(lowText);
+      await high.fill(highText);
+      await expect(problem).toContainText(message);
+      await expect(flagged).toHaveAttribute('aria-invalid', 'true');
+      await expect(run).toBeDisabled();
+    }
+    expect(await getPitches(page)).toEqual(before);
+    // 올바른 값이면 사유가 사라지고 실행됩니다. C4~C5를 C6~C7 안으로 두 옥타브(마지막 C5는 한 옥타브) 올립니다.
+    await low.fill('C6');
+    await high.fill('C7');
+    await expect(problem).toHaveCount(0);
+    await expect(run).toBeEnabled();
+    await run.click();
+    await expect(panel.locator('.result-log')).toContainText('8개 음표 이동');
+    expect(await getPitches(page)).toEqual(['C/6', 'D/6', 'E/6', 'F/6', 'G/6', 'A/6', 'B/6', 'C/6']);
+  });
+
+  test('@panels D16 transpose panel enforces the ±12 semitone range it announces', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadFixture(page, 'f01-basic.musicxml');
+    const before = await getPitches(page);
+    const historyBefore = await historyLength(page);
+    const panel = await openPanel(page, 'transpose');
+    await panel.getByRole('button', { name: '반음 단위 이동', exact: true }).click();
+    const semitone = panel.getByLabel('이동할 반음 수 (-12 ~ +12)');
+    const run = panel.getByRole('button', { name: /변환 실행/ });
+    const problem = panel.locator('#transpose-semitone-error');
+    for (const value of ['99', '13', '-13']) {
+      await semitone.fill(value);
+      await expect(problem).toContainText('-12 ~ +12');
+      await expect(semitone).toHaveAttribute('aria-invalid', 'true');
+      await expect(run).toBeDisabled();
+    }
+    expect(await getPitches(page)).toEqual(before);
+    expect(await historyLength(page)).toBe(historyBefore);
+    // 경계값 12는 안내한 그대로 받아들여 한 옥타브 올립니다.
+    await semitone.fill('12');
+    await expect(problem).toHaveCount(0);
+    await run.click();
+    await expect.poll(() => getPitches(page)).toEqual(octaveUp(before, 1));
+    expect(await historyLength(page)).toBe(historyBefore + 1);
+  });
+
+  test('@panels D16 ossia panel enforces the semitone and octave ranges it announces', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadFixture(page, 'f01-basic.musicxml');
+    const panel = await openPanel(page, 'ossia');
+    const semitone = panel.getByLabel(/조옮김 \(반음/);
+    const octave = panel.getByLabel(/옥타브 이동/);
+    const run = panel.getByRole('button', { name: '▶ Ossia 추가', exact: true });
+    const ossiaMeta = () => page.evaluate(() => window.__mxlGetState().files[0].ossiaMeta ?? null);
+    await semitone.fill('99');
+    await expect(panel.locator('#ossia-semitone-error')).toContainText('-12 ~ +12');
+    await expect(semitone).toHaveAttribute('aria-invalid', 'true');
+    await expect(run).toBeDisabled();
+    await semitone.fill('0');
+    await expect(panel.locator('#ossia-semitone-error')).toHaveCount(0);
+    await octave.fill('3');
+    await expect(panel.locator('#ossia-octave-error')).toContainText('-2 ~ +2');
+    await expect(octave).toHaveAttribute('aria-invalid', 'true');
+    await expect(run).toBeDisabled();
+    expect(await ossiaMeta()).toBeNull();
+    // 경계값(+12 반음, -2 옥타브)은 안내한 그대로 받아들여 Ossia를 만듭니다.
+    await semitone.fill('12');
+    await octave.fill('-2');
+    await expect(panel.locator('#ossia-semitone-error')).toHaveCount(0);
+    await expect(panel.locator('#ossia-octave-error')).toHaveCount(0);
+    await expect(run).toBeEnabled();
+    await run.click();
+    await expect.poll(ossiaMeta).toMatchObject({ startMeasure: 1 });
   });
 });

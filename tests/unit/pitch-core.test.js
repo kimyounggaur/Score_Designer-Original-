@@ -144,3 +144,53 @@ describe('PitchCore.createKeyTracker (D07·D08)',()=>{
     expect(keys.fifthsFor(1)).toBe(5);
   });
 });
+
+describe('PitchCore.parseNoteName (D09)',()=>{
+  it.each([
+    ['C4',{step:'C',alter:0,octave:4}],[' F#3 ',{step:'F',alter:1,octave:3}],['Bb5',{step:'B',alter:-1,octave:5}],
+    ['A0',{step:'A',alter:0,octave:0}],['G9',{step:'G',alter:0,octave:9}],['B#4',{step:'B',alter:1,octave:4}],
+  ])('reads %s',(text,expected)=>{
+    expect(core.parseNoteName(text)).toEqual({pitch:expected});
+  });
+  it.each(['','c4','H4','C-1','C4.5','C#b4','4C','C 4','C♯4',null,undefined,42])('rejects the format of %j',text=>{
+    expect(core.parseNoteName(text)).toEqual({error:'format'});
+  });
+  it('rejects octaves outside 0–9 at once, however large',()=>{
+    expect(core.parseNoteName('C10')).toEqual({error:'octave',octave:10});
+    expect(core.parseNoteName('C1000000000')).toEqual({error:'octave',octave:1000000000});
+    expect(core.parseNoteName(`C${'9'.repeat(400)}`).error).toBe('octave');
+    expect(core.parseNoteName('C3',{minOctave:4}).error).toBe('octave');
+    expect(core.parseNoteName('C10',{maxOctave:12}).pitch.octave).toBe(10);
+  });
+});
+
+describe('PitchCore.octavesToFit (D09)',()=>{
+  // 예전 RangePanel의 1씩 올리고 내리던 반복문(작은 값에서만 같은 답을 내는 기준)
+  const incremental=(midi,low,high)=>{let octaves=0;while(midi+octaves*12<low)octaves++;while(midi+octaves*12>high)octaves--;return {octaves,fits:midi+octaves*12>=low};};
+  it('gives the same answer as the old loop for every pitch and many ranges',()=>{
+    for(const low of [0,12,21,48,60,72,95])for(const width of [0,1,5,11,12,13,24,40,100])for(let midi=0;midi<=127;midi+=1){
+      expect(core.octavesToFit(midi,low,low+width),`${midi} in ${low}..${low+width}`).toEqual(incremental(midi,low,low+width));
+    }
+  });
+  it('keeps a pitch that is already in range and moves one that is not',()=>{
+    expect(core.octavesToFit(60,48,72)).toEqual({octaves:0,fits:true});
+    expect(core.octavesToFit(40,60,84)).toEqual({octaves:2,fits:true});
+    expect(core.octavesToFit(100,60,84)).toEqual({octaves:-2,fits:true});
+  });
+  it('reports no fit when the range is narrower than an octave and misses the pitch class',()=>{
+    expect(core.octavesToFit(61,60,60)).toEqual({octaves:-1,fits:false});
+    expect(core.octavesToFit(60,61,66)).toEqual({octaves:0,fits:false});
+  });
+  it('does not loop, so huge values answer immediately',()=>{
+    const started=performance.now();
+    expect(core.octavesToFit(60,12_000_000_012,12_000_000_099)).toEqual({octaves:999_999_996,fits:true});
+    expect(core.octavesToFit(60,0,1e12)).toEqual({octaves:0,fits:true});
+    expect(core.octavesToFit(1e12,0,127)).toEqual({octaves:-83_333_333_323,fits:true});
+    expect(performance.now()-started).toBeLessThan(50);
+  });
+  it('treats non-finite input and reversed ranges as no fit',()=>{
+    expect(core.octavesToFit(NaN,0,127)).toEqual({octaves:0,fits:false});
+    expect(core.octavesToFit(60,Infinity,Infinity)).toEqual({octaves:0,fits:false});
+    expect(core.octavesToFit(60,72,48)).toEqual({octaves:0,fits:false});
+  });
+});
