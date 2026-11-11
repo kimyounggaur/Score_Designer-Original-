@@ -1,6 +1,7 @@
 import { test, expect } from '@playwright/test';
 import path from 'node:path';
-import { openApp, openPanel, uploadFixture, fixturesDir } from './helpers.js';
+import { readFileSync } from 'node:fs';
+import { openApp, openPanel, uploadFixture, waitForScore, getDocQuery, fixturesDir } from './helpers.js';
 
 // 2026-11-11 재검수 보고서(D01~D16) 회귀 시험. 항목 ID는 보고서의 통합 ID(D01~D16)를 따릅니다.
 // 앱 상태는 읽기만 하고, 조작은 실제 버튼·입력으로 합니다. 탭 전환만 시험 훅(__mxlSetActiveFile)을 씁니다.
@@ -208,5 +209,143 @@ test.describe('2026-11-11 재검수 · 세션 삭제 실패 (D13)', () => {
     await row.getByRole('button', { name: '삭제', exact: true }).click();
     await modal.getByRole('button', { name: '확인', exact: true }).click();
     await expect(row).toHaveCount(0);
+  });
+});
+
+// D03·D10·D11·D14: 재생 시작 템포, 빠르기말, 적용 항목 없는 템포 실행, 점음표 템포의 소수 유지.
+const f14WithoutSound = () => readFileSync(path.join(fixturesDir, 'f14-dotted-metronome.musicxml'), 'utf8').replace(/<sound tempo="[^"]*"\/>/, '');
+const sourceTempo = (page) => page.evaluate(() => Array.from(window.__mxlGetState().files[0].xmlDoc.querySelectorAll('sound[tempo]'), (sound) => sound.getAttribute('tempo')));
+
+test.describe('2026-11-11 재검수 · 재생과 템포 (D03·D10·D11·D14)', () => {
+  test('@panels D03 player starts at the quarter-note tempo of a dotted metronome without sound tempo', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    const xml = f14WithoutSound();
+    expect(xml).not.toContain('<sound');
+    await page.locator('input[type="file"]').setInputFiles({ name: 'dotted-no-sound.musicxml', mimeType: 'application/xml', buffer: Buffer.from(xml, 'utf8') });
+    await waitForScore(page);
+    // 점4분음표=60은 4분음표 기준 90 BPM입니다. 하단 재생 막대도 같은 값이고, 길이는 4초(6박)입니다.
+    await expect(page.locator('.midi-player__field--tempo .transport__value')).toHaveText('90 BPM');
+    await expect(page.locator('.transport__tempo-slider')).toHaveValue('90');
+    await expect(page.locator('.midi-player__time > span').last()).toHaveText('0:04');
+    expect(await page.evaluate(() => window.__mxlGetState().bpm)).toBe(90);
+    // 템포 패널이 감지한 값과 같습니다.
+    const panel = await openPanel(page, 'tempo');
+    await expect(panel).toContainText('점4분음표=60');
+    await expect(panel).toContainText('4분음표 기준 90 BPM');
+  });
+
+  test('@panels D03 player tempo follows the panel after a dotted-quarter tempo change', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadFixture(page, 'f14-dotted-metronome.musicxml');
+    await expect(page.locator('.midi-player__field--tempo .transport__value')).toHaveText('90 BPM');
+    const panel = await openPanel(page, 'tempo');
+    await panel.locator('.tempo-slider').fill('120');
+    await panel.getByRole('button', { name: /템포 변경 실행/ }).click();
+    await expect.poll(() => sourceTempo(page)).toEqual(['120']);
+    await expect(page.locator('.midi-player__field--tempo .transport__value')).toHaveText('120 BPM');
+    await expect(page.locator('.midi-player__time > span').last()).toHaveText('0:03');
+  });
+
+  test('@panels D10 every tempo has a term and 60 BPM is not Prestissimo', async ({ page }) => {
+    test.setTimeout(60_000);
+    await openApp(page);
+    await uploadFixture(page, 'f01-basic.musicxml');
+    const panel = await openPanel(page, 'tempo');
+    const slider = panel.locator('.tempo-slider');
+    const term = panel.locator('.tempo-display__term');
+    const cases = [[20, 'Grave'], [40, 'Grave'], [41, 'Largo'], [55, 'Largo'], [56, 'Larghetto'], [60, 'Larghetto'], [65, 'Larghetto'], [66, 'Adagio'], [75, 'Adagio'], [76, 'Andante'], [210, 'Presto'], [211, 'Prestissimo'], [300, 'Prestissimo']];
+    for (const [bpm, name] of cases) {
+      await slider.fill(String(bpm));
+      await expect(term, `${bpm} BPM`).toHaveText(name);
+      // 프리셋 칸은 하나만 눌린 상태로 같은 이름을 가리킵니다.
+      await expect(panel.locator('.tempo-preset[aria-pressed="true"]'), `${bpm} BPM`).toHaveCount(1);
+      await expect(panel.locator('.tempo-preset[aria-pressed="true"] .tempo-preset__name'), `${bpm} BPM`).toHaveText(name);
+    }
+    // 빠른값 칸 60과 적용 뒤 원본 정보도 같은 이름입니다.
+    await panel.getByRole('button', { name: '60 BPM', exact: true }).click();
+    await expect(term).toHaveText('Larghetto');
+    await panel.getByRole('button', { name: /템포 변경 실행/ }).click();
+    await expect(panel).toContainText('60 BPM (Larghetto)');
+    // 프리셋 칸 목록에는 Prestissimo 칸이 늘 있으므로, 원본 정보 줄에서만 확인합니다.
+    await expect(panel.locator('.card__text').first()).not.toContainText('Prestissimo');
+  });
+
+  test('@panels D10 per-measure tempo names 60 BPM Larghetto in the entry, timeline and log', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadFixture(page, 'f01-basic.musicxml');
+    const panel = await openPanel(page, 'tempochange');
+    await panel.getByLabel('템포 변경 1 BPM').fill('60');
+    await expect(panel.locator('.change-entry .tempo-preset__name')).toHaveText('Larghetto');
+    await expect(panel.locator('.timeline__segment-range').first()).toContainText('Larghetto');
+    await panel.getByRole('button', { name: /템포 변경 실행/ }).click();
+    await expect(panel.locator('.result-log')).toContainText('60 BPM (Larghetto)');
+    await expect(panel.locator('.timeline')).not.toContainText('Prestissimo');
+  });
+
+  test('@panels D11 tempo panel with both options off refuses to run and records nothing', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadFixture(page, 'f01-basic.musicxml');
+    const panel = await openPanel(page, 'tempo');
+    const run = panel.getByRole('button', { name: /템포 변경 실행/ });
+    const before = await historyLength(page);
+    await panel.getByRole('button', { name: 'sound tempo', exact: true }).click();
+    await panel.getByRole('button', { name: 'metronome 표기', exact: true }).click();
+    await panel.locator('.tempo-slider').fill('220');
+    await expect(panel.locator('#tempo-options-empty')).toBeVisible();
+    await expect(panel.locator('#tempo-options-empty')).toContainText('하나 이상 켜세요');
+    await expect(run).toBeDisabled();
+    await expect(run).toHaveAttribute('aria-describedby', 'tempo-options-empty');
+    // 스크립트로 눌러도 성공 기록이나 변경 기록이 생기지 않습니다.
+    await run.evaluate((button) => button.click());
+    await expect(panel.locator('.result-log')).toHaveCount(0);
+    expect(await historyLength(page)).toBe(before);
+    expect(await sourceTempo(page)).toEqual(['100']);
+    // 항목 하나를 켜면 안내가 사라지고 그 항목만 바뀝니다.
+    await panel.getByRole('button', { name: 'sound tempo', exact: true }).click();
+    await expect(panel.locator('#tempo-options-empty')).toHaveCount(0);
+    await expect(run).toBeEnabled();
+    await run.click();
+    await expect(panel.locator('.result-log')).toContainText('적용 완료');
+    expect(await historyLength(page)).toBe(before + 1);
+    expect(await sourceTempo(page)).toEqual(['220']);
+    expect((await getDocQuery(page, 'metronome per-minute')).text).toBe('100');
+  });
+
+  test('@panels D14 tempo panel keeps decimals for a dotted-quarter metronome', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadFixture(page, 'f14-dotted-metronome.musicxml');
+    const panel = await openPanel(page, 'tempo');
+    await panel.locator('.tempo-slider').fill('100');
+    await panel.getByRole('button', { name: /템포 변경 실행/ }).click();
+    await expect.poll(() => sourceTempo(page)).toEqual(['100']);
+    // 정수 67이면 4분음표 기준 100.5가 됩니다. 소수 둘째 자리까지 두면 100.005이고, 그 오차를 기록에 적습니다.
+    expect((await getDocQuery(page, 'metronome per-minute')).text).toBe('66.67');
+    await expect(panel.locator('.result-log')).toContainText('점4분음표=66.67');
+    await expect(panel.locator('.result-log')).toContainText('4분음표 기준 100.005 BPM');
+    const effective = await page.evaluate(() => window.PlaybackCore.quarterBpmFromMetronome(window.__mxlGetState().files[0].xmlDoc.querySelector('metronome')));
+    expect(Math.abs(effective - 100)).toBeLessThan(0.01);
+    // 정확히 떨어지는 값은 오차 문구 없이 그대로 적습니다.
+    await panel.locator('.tempo-slider').fill('120');
+    await panel.getByRole('button', { name: /템포 변경 실행/ }).click();
+    await expect.poll(() => sourceTempo(page)).toEqual(['120']);
+    expect((await getDocQuery(page, 'metronome per-minute')).text).toBe('80');
+    await expect(panel.locator('.result-log')).toContainText('점4분음표=80');
+    await expect(panel.locator('.result-log')).not.toContainText('소수 둘째 자리');
+  });
+
+  test('@panels D14 per-measure tempo keeps decimals for a dotted-quarter metronome', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadFixture(page, 'f14-dotted-metronome.musicxml');
+    const panel = await openPanel(page, 'tempochange');
+    await panel.getByLabel('템포 변경 1 BPM').fill('100');
+    await panel.getByRole('button', { name: /템포 변경 실행/ }).click();
+    await expect.poll(() => getDocQuery(page, 'measure[number="1"] sound')).toMatchObject({ attrs: { tempo: '100' } });
+    expect((await getDocQuery(page, 'measure[number="1"] per-minute')).text).toBe('66.67');
   });
 });

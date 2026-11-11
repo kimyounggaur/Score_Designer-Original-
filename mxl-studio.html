@@ -39,7 +39,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="pitch-core.js?v=1"></script>
 <script src="measure-core.js?v=2"></script>
 <script src="numbering-core.js?v=1"></script>
-<script src="playback-core.js?v=3"></script>
+<script src="playback-core.js?v=4"></script>
 <script src="roman-analysis-core.js?v=4"></script>
 <script src="share-session-core.js?v=1"></script>
 <script src="session-store-core.js?v=3"></script>
@@ -158,7 +158,7 @@ const TRANS_INSTRUMENTS = {
 };
 
 const TEMPO_PRESETS = [
-  {name:'Grave',min:20,max:40,bpm:35},{name:'Largo',min:40,max:55,bpm:48},
+  {name:'Grave',min:20,max:40,bpm:35},{name:'Largo',min:40,max:55,bpm:48},{name:'Larghetto',min:55,max:65,bpm:60},
   {name:'Adagio',min:65,max:75,bpm:70},{name:'Andante',min:75,max:90,bpm:82},
   {name:'Moderato',min:90,max:110,bpm:100},{name:'Allegretto',min:110,max:125,bpm:116},
   {name:'Allegro',min:125,max:150,bpm:138},{name:'Vivace',min:150,max:170,bpm:160},
@@ -535,29 +535,31 @@ function getCurrentClef(xmlDoc){
   if(sign==='C')return 'alto';
   return 'treble';
 }
-function getTempoTerm(bpm){for(const p of TEMPO_PRESETS)if(bpm>=p.min&&bpm<=p.max)return p.name;return bpm<20?'Larghissimo':'Prestissimo'}
+// 프리셋 범위는 20~300을 틈 없이 덮습니다(경계값은 느린 쪽 이름). 범위 밖은 Larghissimo/Prestissimo, 숫자가 아니면 빈 문자열입니다.
+function tempoPresetOf(bpm){
+  const value=Number(bpm);
+  if(!Number.isFinite(value)||value<20||value>300)return null;
+  return TEMPO_PRESETS.find(p=>value>=p.min&&value<=p.max)||null;
+}
+function getTempoTerm(bpm){
+  const value=Number(bpm);if(!Number.isFinite(value))return '';
+  return tempoPresetOf(value)?.name||(value<20?'Larghissimo':'Prestissimo');
+}
 // 템포 BPM 입력 허용 범위(마디별 템포). 빈 값·숫자가 아닌 값·범위 밖은 실행하지 않습니다.
 function isValidBpm(value){const text=String(value??'').trim();const n=Number(text);return text!==''&&Number.isFinite(n)&&n>=20&&n<=400;}
-// MusicXML metronome의 beat-unit(+beat-unit-dot)을 4분음표 배수로 바꿉니다. 점 하나 ×1.5, 점 둘 ×1.75.
-// sound tempo는 항상 4분음표 기준이므로, 점4분음표=60은 sound tempo 90과 같은 빠르기입니다.
-const BEAT_UNIT_QUARTERS={breve:8,whole:4,half:2,quarter:1,eighth:0.5,'16th':0.25,'32nd':0.125,'64th':0.0625};
 const BEAT_UNIT_KO={breve:'2온음표',whole:'온음표',half:'2분음표',quarter:'4분음표',eighth:'8분음표','16th':'16분음표','32nd':'32분음표','64th':'64분음표'};
-function metronomeBeat(metronome){
-  const children=Array.from(metronome?.children||[]);
-  const index=children.findIndex(el=>el.localName==='beat-unit');
-  if(index<0)return null;
-  const unit=children[index].textContent.trim();
-  let dots=0;for(let i=index+1;i<children.length&&children[i].localName==='beat-unit-dot';i++)dots++;
-  return BEAT_UNIT_QUARTERS[unit]?{unit,dots,factor:BEAT_UNIT_QUARTERS[unit]*(2-1/Math.pow(2,dots))}:null;
-}
-function metronomePerMinute(metronome){
-  const text=metronome?.querySelector('per-minute')?.textContent?.trim()||'';
-  return /^\d+(\.\d+)?$/.test(text)?Number(text):null;
-}
-function quarterBpmFromMetronome(metronome){
-  const beat=metronomeBeat(metronome),perMinute=metronomePerMinute(metronome);
-  return beat&&perMinute!=null?perMinute*beat.factor:null;
-}
+// metronome의 beat-unit(+beat-unit-dot)을 4분음표 기준으로 바꾸는 환산은 재생 엔진(PlaybackCore)과 같은 함수를 씁니다.
+// 점 하나 ×1.5, 점 둘 ×1.75. sound tempo는 항상 4분음표 기준이므로 점4분음표=60은 sound tempo 90과 같은 빠르기입니다.
+// 재생 슬라이더와 템포 패널이 서로 다른 값을 보이지 않게 합니다.
+// playback-core.js를 불러오지 못해도 앱이 멈추지 않도록, 호출할 때 찾아 쓰고 없으면 '알 수 없음(null)'으로 둡니다.
+const metronomeBeat=metronome=>window.PlaybackCore?.metronomeBeat(metronome)??null;
+const metronomePerMinute=metronome=>window.PlaybackCore?.metronomePerMinute(metronome)??null;
+const quarterBpmFromMetronome=metronome=>window.PlaybackCore?.quarterBpmFromMetronome(metronome)??null;
+// BPM은 소수 둘째 자리까지 둡니다. 점음표 환산을 정수로 반올림하면 같은 빠르기가 되지 않습니다(100 BPM → 점4분음표 67 = 100.5).
+const roundBpm=value=>Math.round(Number(value)*100)/100;
+function formatBpm(value){return Number.isFinite(Number(value))?String(roundBpm(value)):'—'}
+// 4분음표 기준 BPM을 박 단위(factor)의 per-minute 문자열로 바꿉니다. 100 BPM, 점4분음표 → "66.67".
+function perMinuteText(quarterBpm,factor){return String(roundBpm(quarterBpm/factor))}
 function metronomeLabel(metronome){
   const beat=metronomeBeat(metronome);if(!beat)return '';
   return `${['','점','겹점'][beat.dots]??'점'.repeat(beat.dots)}${BEAT_UNIT_KO[beat.unit]}=${metronome.querySelector('per-minute')?.textContent?.trim()??''}`;
@@ -582,14 +584,6 @@ function getPartInfo(xmlDoc){
     const id=part.getAttribute('id')||`part-${index+1}`;
     return{id,index,label:labels.get(id)||`Part ${index+1}`};
   });
-}
-function getDocBpm(xmlDoc,fallback=120){
-  const sound=xmlDoc?.querySelector?.('sound[tempo]');
-  const fromSound=parseFloat(sound?.getAttribute('tempo')||'');
-  if(fromSound>0)return fromSound;
-  const pm=xmlDoc?.querySelector?.('metronome per-minute');
-  const fromText=parseFloat(pm?.textContent||'');
-  return fromText>0?fromText:fallback;
 }
 const scriptPromises=new Map();
 function loadScript(url,integrity){
@@ -1261,7 +1255,7 @@ function TempoPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
     if(s){const t=parseFloat(s.getAttribute('tempo'));if(t>0){setOrigBpm(t);setBpm(t);setDetectMsg(`✓ 감지됨: ${t} BPM (${getTempoTerm(t)})${notation}`);return}}
     // sound가 없으면 metronome 표기를 4분음표 기준으로 환산합니다(점4분음표=60 → 90 BPM).
     const quarter=metronome?quarterBpmFromMetronome(metronome):null;
-    if(quarter>0){const t=Math.round(quarter);setOrigBpm(t);setBpm(t);
+    if(quarter>0){const t=roundBpm(quarter);setOrigBpm(t);setBpm(t);
       setDetectMsg(metronomeBeat(metronome).factor===1?`✓ 감지됨: ${t} BPM`:`✓ 감지됨: ${metronomeLabel(metronome)} (4분음표 기준 ${t} BPM)`);return}
     setOrigBpm(120);setBpm(120);setDetectMsg('템포 정보 없음. 기본값 120 BPM');
   },[files,activeFile]);
@@ -1271,8 +1265,11 @@ function TempoPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
   const mult=(bpm/origBpm).toFixed(2);
   const ratioClass=bpm<origBpm?'tempo-ratio-bar__value--slower':bpm>origBpm?'tempo-ratio-bar__value--faster':'tempo-ratio-bar__value--same';
 
+  const nothingToApply=!optSound&&!optMetro;
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
+    // 바꿀 항목이 없으면 아무것도 바뀌지 않으므로 성공으로 알리거나 변경 기록을 만들지 않습니다(D11).
+    if(nothingToApply){setLog([{m:'⚠ 적용할 항목(sound tempo, metronome 표기)을 하나 이상 켜세요.',t:'warn'}]);return}
     setLog([]);showProgress('템포 변경 중...');await new Promise(r=>setTimeout(r,50));
     try{
       const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
@@ -1299,8 +1296,10 @@ function TempoPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
           const pm=metronome.querySelector('per-minute');if(!pm)return;
           const beat=metronomeBeat(metronome);
           if(!beat||metronomePerMinute(metronome)==null){ch.push({m:`⚠ metronome 표기 '${pm.textContent.trim()}'은(는) 숫자가 아니거나 박 단위를 알 수 없어 바꾸지 않았습니다`,t:'warn'});return;}
-          pm.textContent=String(Math.round(bpm/beat.factor));
-          ch.push(beat.factor===1?'metronome 변경':`metronome 변경 (${metronomeLabel(metronome)})`);
+          pm.textContent=perMinuteText(bpm,beat.factor);
+          // 점음표는 소수 둘째 자리에서 반올림하므로 4분음표로 되돌린 값이 목표와 다르면 그 값을 함께 알립니다.
+          const effective=quarterBpmFromMetronome(metronome);
+          ch.push(beat.factor===1?'metronome 변경':`metronome 변경 (${metronomeLabel(metronome)}${Math.abs(effective-bpm)>0.0005?` · 4분음표 기준 ${Math.round(effective*1000)/1000} BPM, 소수 둘째 자리 반올림`:''})`);
         });
         updatedFiles.push(commitFile(file,doc));
         lines.push({m:`✓ ${file.name} → ${bpm} BPM`,t:'ok'});
@@ -1310,7 +1309,7 @@ function TempoPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
     }catch(e){setLog(l=>[...l,{m:'❌ '+friendlyError(e),t:'err'}])}
     hideProgress();
-  },[files,activeFile,scope,bpm,optSound,optMetro,showProgress,hideProgress,onFilesUpdate]);
+  },[files,activeFile,scope,bpm,optSound,optMetro,nothingToApply,showProgress,hideProgress,onFilesUpdate]);
 
   return <div>
     <h2 className="panel__heading">템포 조절</h2>
@@ -1339,8 +1338,8 @@ function TempoPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
     </div>
     <div className="card"><div className="card__title">🎼 프리셋</div>
       <div className="tempo-presets">{TEMPO_PRESETS.map(p=>
-        <button type="button" key={p.name} className={`tempo-preset${bpm>=p.min&&bpm<=p.max?' tempo-preset--active':''}`}
-          aria-pressed={bpm>=p.min&&bpm<=p.max} onClick={()=>setBpm(p.bpm)}>
+        <button type="button" key={p.name} className={`tempo-preset${tempoPresetOf(bpm)===p?' tempo-preset--active':''}`}
+          aria-pressed={tempoPresetOf(bpm)===p} onClick={()=>setBpm(p.bpm)}>
           <div className="tempo-preset__name">{p.name}</div>
           <div className="tempo-preset__range">{p.min}–{p.max}</div>
         </button>
@@ -1353,7 +1352,8 @@ function TempoPanel({files,activeFile=0,scope='all',showProgress,hideProgress,on
       </div>
       <div className="card__text section-gap">재생 속도는 sound tempo와 metronome 표기로 바뀝니다. 음표 길이(duration)는 바꾸지 않습니다. 점4분음표처럼 다른 박 단위의 metronome 표기는 같은 빠르기로 환산합니다.</div>
     </div>
-    <div className="btn-row"><button className="btn btn--primary" onClick={run}>▶ 템포 변경 실행</button></div>
+    {nothingToApply&&<p className="card__text" id="tempo-options-empty">적용할 항목을 하나 이상 켜세요. sound tempo나 metronome 표기 중 하나는 켜져 있어야 템포가 바뀝니다.</p>}
+    <div className="btn-row"><button className="btn btn--primary" onClick={run} disabled={nothingToApply} aria-describedby={nothingToApply?'tempo-options-empty':undefined}>▶ 템포 변경 실행</button></div>
     <LogPanel lines={log}/>
   </div>;
 }
@@ -1731,7 +1731,7 @@ function TempoChangePanel({files,activeFile=0,scope='all',showProgress,hideProgr
     const s=activeDoc(files,activeFile).querySelector('sound[tempo]');
     if(s)return parseFloat(s.getAttribute('tempo'))||120;
     const quarter=quarterBpmFromMetronome(activeDoc(files,activeFile).querySelector('metronome'));
-    return quarter>0?Math.round(quarter):120;
+    return quarter>0?roundBpm(quarter):120;
   },[files,activeFile]);
 
   const addChange=useCallback(()=>{
@@ -1784,7 +1784,7 @@ function TempoChangePanel({files,activeFile=0,scope='all',showProgress,hideProgr
             const pm=metronome?.querySelector('per-minute');
             if(pm){
               const beat=metronomeBeat(metronome);
-              if(beat&&metronomePerMinute(metronome)!=null)pm.textContent=String(Math.round(ch.bpm/beat.factor));
+              if(beat&&metronomePerMinute(metronome)!=null)pm.textContent=perMinuteText(ch.bpm,beat.factor);
               else lines.push({m:`⚠ ${file.name}: 마디 ${ch.measure}의 metronome 표기 '${pm.textContent.trim()}'은(는) 바꾸지 않았습니다`,t:'warn'});
             }
           }else{
@@ -4348,7 +4348,7 @@ function MidiPlayer({file,fileCount,currentBpm,onBpmChange,onPlaybackUpdate,osmd
         <span className="transport__label">Tempo</span>
         <input className="transport__tempo-slider" type="range" min={20} max={300} value={currentBpm}
           onChange={e=>onBpmChange(parseInt(e.target.value,10)||120)}/>
-        <span className="transport__value">{currentBpm} BPM</span>
+        <span className="transport__value">{formatBpm(currentBpm)} BPM</span>
       </label>
 
       <label className="midi-player__field midi-player__field--instrument">
@@ -4758,15 +4758,13 @@ function App(){
     }
   },[shareModal]);
 
-  /* Detect tempo from the active score. */
+  /* 재생 슬라이더의 처음 BPM. 재생 엔진이 시작하는 템포와 같은 값(첫 마디의 sound tempo → metronome의 박 단위·점 환산 → 120)을 씁니다.
+     per-minute 숫자를 그대로 쓰면 점4분음표=60이 60으로 잡혀 원래 속도의 2/3로 재생됩니다(D03). */
   useEffect(()=>{
     if(!files.length)return;
-    const doc=activeDoc(files,activeFile);
-    const s=doc.querySelector('sound[tempo]');
-    if(s){const t=parseFloat(s.getAttribute('tempo'));if(t>0){setBpm(t);return}}
-    const pm=doc.querySelector('metronome per-minute');
-    if(pm){const t=parseFloat(pm.textContent);if(t>0){setBpm(t);return}}
-    setBpm(120);
+    let tempo=120;
+    try{tempo=window.PlaybackCore?.initialTempo(activeDoc(files,activeFile))??120;}catch{tempo=120;}
+    setBpm(tempo);
   },[files,activeFile]);
 
 
