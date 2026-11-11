@@ -91,6 +91,30 @@
     if(accidental&&!accidental.hasAttribute('cautionary')&&!accidental.hasAttribute('editorial')&&!accidental.hasAttribute('parentheses'))accidental.remove();
     return false;
   }
+  // 보표마다 다른 조표를 따라가는 추적기(D07·D08). <attributes>를 문서 순서로 update에 넘기고 fifthsFor(보표 번호)로 묻습니다.
+  // <key>에 number가 없으면 모든 보표에, number="n"이면 n번 보표에만 적용합니다(MusicXML key@number).
+  // number 없는 조표가 오면 보표별 조표는 모두 그 값으로 덮입니다. 자기 조표가 없는 보표는 number 없는 조표를,
+  // 그것도 없으면 가장 앞 번호의 조표를 따릅니다(보표 1의 조표만 적은 악보를 이전처럼 읽기 위한 물러남).
+  function createKeyTracker(initial=0){
+    let shared=Number(initial)||0,sharedSet=false;
+    const own=new Map();
+    return {
+      update(attributesEl){
+        for(const key of kids(attributesEl,'key')){
+          const fifths=kid(key,'fifths');if(!fifths)continue;
+          const value=Number(fifths.textContent.trim())||0;
+          if(!key.hasAttribute('number')){shared=value;sharedSet=true;own.clear();}
+          else own.set(Math.max(1,Math.trunc(Number(key.getAttribute('number')))||1),value);
+        }
+      },
+      fifthsFor(staff=1){
+        const id=Math.max(1,Math.trunc(Number(staff))||1);
+        if(own.has(id))return own.get(id);
+        if(sharedSet||!own.size)return shared;
+        return own.get(Math.min(...own.keys()));
+      },
+    };
+  }
   // 조성 기반 3도: 음이름을 두 칸 옮기고 변화표는 조표를 따릅니다.
   function diatonicThird(pitch,fifths,direction='above'){
     const sign=direction==='below'?-1:1;
@@ -126,5 +150,5 @@
     return {step:bass.step,alter:bass.alter};
   }
 
-  global.PitchCore={STEPS,STEP_TO_SEMI,NOTE_CHILD_ORDER,CHORD_TONES,readPitch,pitchToMidi,addInterval,shiftOctave,shiftNoteOctave,nearestShift,keySignatureAlter,accidentalName,insertNoteChild,alterInEffect,syncAccidental,diatonicThird,chromaticThird,bassForInversion};
+  global.PitchCore={STEPS,STEP_TO_SEMI,NOTE_CHILD_ORDER,CHORD_TONES,readPitch,pitchToMidi,addInterval,shiftOctave,shiftNoteOctave,nearestShift,keySignatureAlter,createKeyTracker,accidentalName,insertNoteChild,alterInEffect,syncAccidental,diatonicThird,chromaticThird,bassForInversion};
 })(window);

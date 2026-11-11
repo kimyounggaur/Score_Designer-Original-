@@ -266,3 +266,139 @@ describe('per-measure keys, sounding pitch and cadence types (C09, C10)',()=>{
   });
 });
 
+// 2026-11-11 재검수 D05(이조 악기 첫 파트의 실음 조)·D06(단조 이끎음 dim7 근음).
+describe('roman analysis uses the concert key of a transposing first part (D05)',()=>{
+  const parse=text=>new DOMParser().parseFromString(text,'text/xml');
+  const note=([step,octave,alter=0],chord)=>`<note>${chord?'<chord/>':''}<pitch><step>${step}</step>${alter?`<alter>${alter}</alter>`:''}<octave>${octave}</octave></pitch><duration>4</duration></note>`;
+  const chordXml=notes=>notes.map((entry,index)=>note(entry,index>0)).join('');
+  const score=parts=>parse(`<score-partwise version="3.1"><part-list>${parts.map((_,index)=>`<score-part id="P${index+1}"><part-name>P${index+1}</part-name></score-part>`).join('')}</part-list>${parts.map((measures,index)=>`<part id="P${index+1}">${measures}</part>`).join('')}</score-partwise>`);
+  const attributes=({fifths,mode='major',transpose=''})=>`<attributes><divisions>1</divisions><key><fifths>${fifths}</fifths><mode>${mode}</mode></key>${transpose}</attributes>`;
+  const bFlat='<transpose><diatonic>-1</diatonic><chromatic>-2</chromatic></transpose>';
+  const eFlatAlto='<transpose><diatonic>-5</diatonic><chromatic>-9</chromatic></transpose>';
+
+  it('reads a B-flat clarinet in written D major as C major (Ⅰ, not "?")',()=>{
+    const data=window.RomanAnalysis.detectRomanNumeral(score([`<measure number="1">${attributes({fifths:2,transpose:bFlat})}${chordXml([['D',4],['F',4,1],['A',4]])}</measure><measure number="2">${chordXml([['A',4],['C',5,1],['E',5]])}</measure>`]));
+    expect(data).toEqual(expect.objectContaining({keyName:'C',mode:'major',fifths:0,tonicSemi:0}));
+    expect(data.rows.map(row=>[row.chordName,row.roman,row.keyName,row.fifths])).toEqual([['C','Ⅰ','C',0],['G','Ⅴ','C',0]]);
+  });
+  it('does not need <diatonic> to find the concert key',()=>{
+    const data=window.RomanAnalysis.detectRomanNumeral(score([`<measure number="1">${attributes({fifths:2,transpose:'<transpose><chromatic>-2</chromatic></transpose>'})}${chordXml([['D',4],['F',4,1],['A',4]])}</measure>`]));
+    expect(data.keyName).toBe('C');expect(data.rows[0].roman).toBe('Ⅰ');
+  });
+  it('keeps the minor mode while moving the tonic to the sounding pitch',()=>{
+    const data=window.RomanAnalysis.detectRomanNumeral(score([`<measure number="1">${attributes({fifths:-1,mode:'minor',transpose:bFlat})}${chordXml([['D',4],['F',4],['A',4]])}</measure>`]));
+    expect(data).toEqual(expect.objectContaining({keyName:'C',mode:'minor',fifths:-3}));
+    expect(data.rows[0]).toEqual(expect.objectContaining({chordName:'Cm',roman:'i'}));
+  });
+  it('maps a transposed instrument in E-flat (written C) to E-flat major',()=>{
+    const data=window.RomanAnalysis.detectRomanNumeral(score([`<measure number="1">${attributes({fifths:0,transpose:eFlatAlto})}${chordXml([['F',4],['A',4],['C',5]])}</measure>`]));
+    expect(data).toEqual(expect.objectContaining({keyName:'Eb',mode:'major',fifths:-3}));
+    expect(data.rows[0]).toEqual(expect.objectContaining({chordName:'Ab',roman:'Ⅳ'}));
+  });
+  it('reports a modulation of the transposing part in concert keys',()=>{
+    const data=window.RomanAnalysis.detectRomanNumeral(score([`<measure number="1">${attributes({fifths:2,transpose:bFlat})}${chordXml([['D',4],['F',4,1],['A',4]])}</measure><measure number="2"><attributes><key><fifths>3</fifths></key></attributes>${chordXml([['A',4],['C',5,1],['E',5]])}</measure>`]));
+    expect(data.keyChanges).toEqual([expect.objectContaining({measure:2,keyName:'G',mode:'major',fifths:1})]);
+    expect(data.rows.map(row=>[row.keyName,row.roman])).toEqual([['C','Ⅰ'],['G','Ⅰ']]);
+  });
+  it('analyzes with the first part when the clarinet comes first and a piano follows',()=>{
+    const data=window.RomanAnalysis.detectRomanNumeral(score([
+      `<measure number="1">${attributes({fifths:2,transpose:bFlat})}${chordXml([['D',4],['F',4,1],['A',4]])}</measure>`,
+      `<measure number="1">${attributes({fifths:0})}${chordXml([['C',3],['E',3],['G',3]])}</measure>`,
+    ]));
+    expect(data.keyName).toBe('C');
+    expect(data.rows.map(row=>[row.chordName,row.roman])).toEqual([['C','Ⅰ']]);
+  });
+  it('leaves a non-transposing score and whole-octave transpositions untouched',()=>{
+    const piano=window.RomanAnalysis.detectRomanNumeral(score([`<measure number="1">${attributes({fifths:2})}${chordXml([['D',4],['F',4,1],['A',4]])}</measure>`]));
+    expect(piano).toEqual(expect.objectContaining({keyName:'D',fifths:2}));
+    expect(piano.rows[0].roman).toBe('Ⅰ');
+    const guitar=window.RomanAnalysis.detectRomanNumeral(score([`<measure number="1">${attributes({fifths:2,transpose:'<transpose><diatonic>0</diatonic><chromatic>0</chromatic><octave-change>-1</octave-change></transpose>'})}${chordXml([['D',5],['F',5,1],['A',5]])}</measure>`]));
+    expect(guitar).toEqual(expect.objectContaining({keyName:'D',fifths:2}));
+  });
+  it('getKeyInfo returns the concert key, and C major when the score has no key',()=>{
+    const clarinet=score([`<measure number="1">${attributes({fifths:2,transpose:bFlat})}${chordXml([['D',4],['F',4,1],['A',4]])}</measure>`]);
+    expect(window.RomanAnalysis.getKeyInfo(clarinet)).toEqual({fifths:0,mode:'major',tonicSemi:0,keyName:'C'});
+    expect(window.RomanAnalysis.getKeyInfo(parse('<score-partwise/>'))).toEqual({fifths:0,mode:'major',tonicSemi:0,keyName:'C'});
+  });
+  it('shifts fifths by the transposition and keeps whole-octave shifts exact',()=>{
+    const {concertFifths}=window.RomanAnalysis;
+    expect(concertFifths(2,-2)).toBe(0);expect(concertFifths(0,-2)).toBe(-2);
+    expect(concertFifths(0,-9)).toBe(-3);expect(concertFifths(0,3)).toBe(-3);
+    expect(concertFifths(5,5)).toBe(4);expect(concertFifths(7,1)).toBe(2);expect(concertFifths(-7,-1)).toBe(-2);
+    expect(concertFifths(2,-14)).toBe(0);
+    expect(concertFifths(2,0)).toBe(2);expect(concertFifths(2,-12)).toBe(2);expect(concertFifths(9,12)).toBe(9);
+  });
+  it('spells chord symbols with the concert key when the first part transposes',()=>{
+    // 기보 C장조(fifths 0) E♭ 알토 색소폰 F·A·C → 실음 A♭·C·E♭. 기보 조표로 읽으면 G#이 됩니다.
+    const doc=score([`<measure number="1">${attributes({fifths:0,transpose:eFlatAlto})}${chordXml([['F',4],['A',4],['C',5]])}</measure>`]);
+    const rows=window.RomanAnalysis.analyzeVerticalities(doc);
+    expect(rows[0].fifths).toBe(-3);
+    expect(rows[0].chord.symbol).toBe('A♭');
+  });
+});
+
+describe('minor leading-tone diminished seventh keeps its spelled root (D06)',()=>{
+  const parse=text=>new DOMParser().parseFromString(text,'text/xml');
+  const note=([step,octave,alter=0],chord)=>`<note>${chord?'<chord/>':''}<pitch><step>${step}</step>${alter?`<alter>${alter}</alter>`:''}<octave>${octave}</octave></pitch><duration>4</duration></note>`;
+  const minorScore=(fifths,notes)=>parse(`<score-partwise version="3.1"><part-list><score-part id="P1"><part-name>P</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions><key><fifths>${fifths}</fifths><mode>minor</mode></key></attributes>${notes.map((entry,index)=>note(entry,index>0)).join('')}</measure></part></score-partwise>`);
+  const analyze=(fifths,notes)=>window.RomanAnalysis.detectRomanNumeral(minorScore(fifths,notes)).rows[0];
+
+  it('names B–D–F–A♭ in C minor as the leading-tone chord vii°7 (not D°7 / ii°4/2)',()=>{
+    expect(analyze(-3,[['B',3],['D',4],['F',4],['A',4,-1]])).toEqual(expect.objectContaining({chordName:'B°7',roman:'vii°7',degree:7,inversion:0}));
+  });
+  it('keeps the root through every inversion of the same chord',()=>{
+    expect(analyze(-3,[['D',3],['F',3],['A',3,-1],['B',3]])).toEqual(expect.objectContaining({chordName:'B°7',roman:'vii°6/5',inversion:1}));
+    expect(analyze(-3,[['F',3],['A',3,-1],['B',3],['D',4]])).toEqual(expect.objectContaining({chordName:'B°7',roman:'vii°4/3',inversion:2}));
+    expect(analyze(-3,[['A',3,-1],['B',3],['D',4],['F',4]])).toEqual(expect.objectContaining({chordName:'B°7',roman:'vii°4/2',inversion:3}));
+  });
+  it('uses the sharp spelling in A minor (G♯–B–D–F is vii°7 on G♯, not a chord on D)',()=>{
+    // 화음 이름표(chordName)는 조와 무관한 고정 표기라 근음 8은 Ab로 나옵니다. 판정 기준은 근음 번호와 로마 숫자입니다.
+    expect(analyze(0,[['G',3,1],['B',3],['D',4],['F',4]])).toEqual(expect.objectContaining({rootSemi:8,quality:'dim7',roman:'vii°7',degree:7}));
+  });
+  it('picks the root from the spelling over the key and the lowest pitch class',()=>{
+    const {identifyChord}=window.RomanAnalysis;
+    const letters=entries=>new Map(entries.map(([pc,letter])=>[pc,new Set([letter])]));
+    // B(6) D(1) F(3) A♭(5): 3도로 쌓이는 근음은 B
+    expect(identifyChord(new Set([11,2,5,8]),{spelling:letters([[11,6],[2,1],[5,3],[8,5]]),key:{tonicSemi:2,mode:'major'}}).rootSemi).toBe(11);
+    // G♯(4) B(6) D(1) F(3): 근음은 G♯
+    expect(identifyChord(new Set([11,2,5,8]),{spelling:letters([[8,4],[11,6],[2,1],[5,3]]),key:{tonicSemi:0,mode:'minor'}}).rootSemi).toBe(8);
+    // D(1) F(3) A♭(5) C♭(0)처럼 근음 글자에서 3도로 쌓이는 철자면 D가 근음
+    expect(identifyChord(new Set([2,5,8,11]),{spelling:letters([[2,1],[5,3],[8,5],[11,0]])}).rootSemi).toBe(2);
+  });
+  it('falls back to the leading tone of the tonic, then of the dominant, when letters are unknown',()=>{
+    const {identifyChord}=window.RomanAnalysis;
+    const cMinor={tonicSemi:0,mode:'minor'};
+    expect(identifyChord(new Set([11,2,5,8]),{key:cMinor}).rootSemi).toBe(11);
+    expect(identifyChord(new Set([11,2,5,8]),{key:cMinor}).chordName).toBe('B°7');
+    expect(identifyChord(new Set([6,9,0,3]),{key:cMinor}).rootSemi).toBe(6);
+    expect(identifyChord(new Set([6,9,0,3]),{key:{tonicSemi:7,mode:'major'}}).rootSemi).toBe(6);
+    // 조에 이끎음이 없는 dim7은 예전처럼 가장 낮은 음이름 번호가 근음입니다.
+    expect(identifyChord(new Set([1,4,7,10]),{key:cMinor}).rootSemi).toBe(1);
+    expect(identifyChord(new Set([11,2,5,8])).rootSemi).toBe(2);
+  });
+  it('picks the root of an augmented triad from its spelling and defaults to the lowest pitch class',()=>{
+    const {identifyChord}=window.RomanAnalysis;
+    const letters=entries=>new Map(entries.map(([pc,letter])=>[pc,new Set([letter])]));
+    expect(identifyChord(new Set([0,4,8]),{spelling:letters([[0,0],[4,2],[8,4]])})).toEqual(expect.objectContaining({rootSemi:0,chordName:'C+'}));
+    expect(identifyChord(new Set([0,4,8]),{spelling:letters([[4,2],[8,4],[0,6]])})).toEqual(expect.objectContaining({rootSemi:4,chordName:'E+'}));
+    expect(identifyChord(new Set([0,4,8])).rootSemi).toBe(0);
+  });
+  it('still resolves non-symmetric chords to their single root',()=>{
+    const {identifyChord}=window.RomanAnalysis;
+    expect(identifyChord(new Set([7,11,2,5]),{key:{tonicSemi:0,mode:'minor'}})).toEqual(expect.objectContaining({rootSemi:7,quality:'7'}));
+    expect(identifyChord(new Set([11,2,5,9]),{key:{tonicSemi:0,mode:'minor'}})).toEqual(expect.objectContaining({rootSemi:11,quality:'ø7'}));
+  });
+  it('records the spelled letter of every sounding pitch, shifted by the transposition diatonic',()=>{
+    const doc=parse('<score-partwise><part id="P1"><measure number="1"><attributes><divisions>1</divisions><transpose><diatonic>-1</diatonic><chromatic>-2</chromatic></transpose></attributes>'+note(['D',4])+note(['F',4,1],true)+'</measure></part><part id="P2"><measure number="1"><attributes><divisions>1</divisions><transpose><chromatic>-2</chromatic></transpose></attributes>'+note(['A',4])+'</measure></part></score-partwise>');
+    const parts=Array.from(doc.querySelectorAll('part'));
+    const beat=window.RomanAnalysis.collectMeasureBeats(parts,0)[0];
+    // D→C(0), F♯→E(2) (<diatonic> -1). 두 번째 파트는 <diatonic>이 없어 글자를 알 수 없습니다.
+    expect(Array.from(beat.spelling.get(0))).toEqual([0]);
+    expect(Array.from(beat.spelling.get(4))).toEqual([2]);
+    expect(beat.spelling.get(7).size).toBe(0);
+    expect(window.RomanAnalysis.getPitchLetter(doc.querySelector('note'),-1)).toBe(0);
+    expect(window.RomanAnalysis.getPitchLetter(doc.querySelector('note'),-8)).toBe(0);
+    expect(window.RomanAnalysis.getPitchLetter(doc.querySelector('note'),null)).toBeNull();
+    expect(window.RomanAnalysis.getPitchLetter(doc.querySelector('note'),0)).toBe(1);
+  });
+});

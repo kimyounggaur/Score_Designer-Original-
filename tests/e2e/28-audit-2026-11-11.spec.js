@@ -349,3 +349,80 @@ test.describe('2026-11-11 재검수 · 재생과 템포 (D03·D10·D11·D14)', (
     expect((await getDocQuery(page, 'measure[number="1"] per-minute')).text).toBe('66.67');
   });
 });
+
+// ── 조성 기준: 이조 악기 실음 조(D05), 단조 이끎음 dim7(D06), 보표별 조표(D07·D08) ──
+const scoreHeader = (partName) => `<?xml version="1.0" encoding="UTF-8"?><score-partwise version="3.1"><part-list><score-part id="P1"><part-name>${partName}</part-name></score-part></part-list>`;
+const noteXml = (step, octave, { alter = 0, chord = false, staff = 0 } = {}) => `<note>${chord ? '<chord/>' : ''}<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>${octave}</octave></pitch><duration>4</duration>${staff ? `<voice>${staff}</voice><staff>${staff}</staff>` : ''}</note>`;
+const triadXml = (notes) => notes.map(([step, octave, alter], index) => noteXml(step, octave, { alter, chord: index > 0 })).join('');
+async function uploadXml(page, name, xml) {
+  await page.locator('input[type="file"]').setInputFiles({ name, mimeType: 'application/xml', buffer: Buffer.from(xml, 'utf8') });
+  await waitForScore(page);
+}
+// 코드명(4번째 칸)과 로마숫자(5번째 칸)만 읽습니다.
+const romanCells = (panel) => panel.locator('.roman-table tbody tr').evaluateAll((rows) => rows.map((row) => {
+  const cells = Array.from(row.querySelectorAll('td'), (cell) => cell.textContent);
+  return [cells[3], cells[4]];
+}));
+const twoStaffKeysXml = () => `${scoreHeader('Piano')}<part id="P1"><measure number="1"><attributes><divisions>1</divisions><key number="1"><fifths>0</fifths></key><key number="2"><fifths>1</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time><staves>2</staves><clef number="1"><sign>G</sign><line>2</line></clef><clef number="2"><sign>F</sign><line>4</line></clef></attributes>${noteXml('D', 5, { staff: 1 })}<backup><duration>4</duration></backup>${noteXml('D', 3, { staff: 2 })}</measure></part></score-partwise>`;
+
+test.describe('2026-11-11 재검수 · 조성 기준 (이조 악기·dim7·보표별 조표)', () => {
+  test('@panels D05 roman analysis reads a B♭ clarinet part in its concert key', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    // 기보 D장조(♯2개)·실음 C장조. 기보음 D·F♯·A는 실음 C·E·G이고, 둘째 마디 A·C♯·E는 실음 G·B·D입니다.
+    const attributes = '<attributes><divisions>1</divisions><key><fifths>2</fifths><mode>major</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef><transpose><diatonic>-1</diatonic><chromatic>-2</chromatic></transpose></attributes>';
+    await uploadXml(page, 'clarinet-bb.musicxml', `${scoreHeader('Clarinet in B♭')}<part id="P1"><measure number="1">${attributes}${triadXml([['D', 4], ['F', 4, 1], ['A', 4]])}</measure><measure number="2">${triadXml([['A', 4], ['C', 5, 1], ['E', 5]])}</measure></part></score-partwise>`);
+    const panel = await openPanel(page, 'roman');
+    // 기보 조표(D장조)가 아니라 실음 조(C장조)가 시작 단추에 나옵니다.
+    const run = panel.getByRole('button', { name: 'C장조 분석 시작' });
+    await expect(run).toBeVisible();
+    await run.click();
+    await expect(panel.locator('.result-log')).toContainText('C장조');
+    expect(await romanCells(panel)).toEqual([['C', 'Ⅰ'], ['G', 'Ⅴ']]);
+    // 악보에 삽입하면 판정되지 않는 "?"가 아니라 로마 숫자가 들어갑니다.
+    await panel.getByRole('button', { name: '악보에 삽입', exact: true }).click();
+    await expect.poll(() => page.evaluate(() => Array.from(window.__mxlGetState().files[0].xmlDoc.querySelectorAll('words[id^="mxl-roman-"]'), (words) => words.textContent))).toEqual(['Ⅰ', 'Ⅴ']);
+  });
+
+  test('@panels D06 roman analysis names the C minor leading-tone diminished seventh by its root', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    // 기본위치 B–D–F–A♭, 제1전위(D가 베이스), 이어지는 c단조 으뜸화음.
+    const attributes = '<attributes><divisions>1</divisions><key><fifths>-3</fifths><mode>minor</mode></key><time><beats>4</beats><beat-type>4</beat-type></time><clef><sign>G</sign><line>2</line></clef></attributes>';
+    await uploadXml(page, 'c-minor-dim7.musicxml', `${scoreHeader('Piano')}<part id="P1"><measure number="1">${attributes}${triadXml([['B', 3], ['D', 4], ['F', 4], ['A', 4, -1]])}</measure><measure number="2">${triadXml([['D', 3], ['F', 3], ['A', 3, -1], ['B', 3]])}</measure><measure number="3">${triadXml([['C', 4], ['E', 4, -1], ['G', 4]])}</measure></part></score-partwise>`);
+    const panel = await openPanel(page, 'roman');
+    await panel.getByRole('button', { name: 'c단조 분석 시작' }).click();
+    await expect(panel.locator('.result-log')).toContainText('c단조');
+    // D°7 / ii°4/2 가 아니라 B°7의 vii°7과 그 제1전위입니다.
+    expect(await romanCells(panel)).toEqual([['B°7', 'vii°7'], ['B°7', 'vii°6/5'], ['Cm', 'i']]);
+  });
+
+  test('@panels D07 numbering follows the key of each staff in movable-do mode', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadXml(page, 'two-staff-keys.musicxml', twoStaffKeysXml());
+    const panel = await openPanel(page, 'numbering');
+    await panel.getByRole('button', { name: '이동 도법', exact: true }).click();
+    const octaveDots = panel.getByRole('button', { name: '옥타브 점 표시', exact: true });
+    await octaveDots.click();
+    await expect(octaveDots).toHaveAttribute('aria-pressed', 'false');
+    await panel.getByRole('button', { name: '▶ 숫자 악보 생성' }).click();
+    await expect(panel.locator('.result-log')).toContainText('2개 숫자 삽입');
+    // 1단(C장조)의 D는 2, 2단(G장조)의 D는 5입니다. 첫 조표로만 읽으면 둘 다 2가 됩니다.
+    expect(await page.evaluate(() => Array.from(window.__mxlGetState().files[0].xmlDoc.querySelectorAll('lyric[name="mxl-studio-number"] text'), (text) => text.textContent))).toEqual(['2', '5']);
+  });
+
+  test('@panels D08 harmony stacking spells thirds with the key of each staff', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadXml(page, 'two-staff-keys.musicxml', twoStaffKeysXml());
+    const panel = await openPanel(page, 'harmony');
+    await panel.getByRole('button', { name: '▶ 화성 쌓기 실행' }).click();
+    await expect(panel.locator('.result-log')).toContainText('2개 추가');
+    const added = await page.evaluate(() => Array.from(window.__mxlGetState().files[0].xmlDoc.querySelectorAll('note'))
+      .filter((note) => note.querySelector('chord'))
+      .map((note) => [note.querySelector('staff')?.textContent, note.querySelector('step').textContent, note.querySelector('alter')?.textContent ?? '0', note.querySelector('octave').textContent]));
+    // 1단 D5의 3도 위는 C장조의 F5, 2단 D3의 3도 위는 G장조의 F♯3입니다.
+    expect(added).toEqual([['1', 'F', '0', '5'], ['2', 'F', '1', '3']]);
+  });
+});

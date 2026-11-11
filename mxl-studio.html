@@ -36,11 +36,11 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script src="chord-symbol-core.js?v=1"></script>
 <script src="history-core.js?v=3"></script>
 <script src="transpose-core.js?v=4"></script>
-<script src="pitch-core.js?v=1"></script>
+<script src="pitch-core.js?v=2"></script>
 <script src="measure-core.js?v=2"></script>
-<script src="numbering-core.js?v=1"></script>
+<script src="numbering-core.js?v=2"></script>
 <script src="playback-core.js?v=4"></script>
-<script src="roman-analysis-core.js?v=4"></script>
+<script src="roman-analysis-core.js?v=5"></script>
 <script src="share-session-core.js?v=1"></script>
 <script src="session-store-core.js?v=3"></script>
 <script src="export-core.js?v=3"></script>
@@ -2631,13 +2631,14 @@ function HarmonyPanel({files,activeFile=0,scope='all',showProgress,hideProgress,
         const doc=cloneDoc(file.xmlDoc);let added=0,skipped=0;
         const parts=Array.from(doc.querySelectorAll('score-partwise > part'));
         for(const part of target==='first'?parts.slice(0,1):parts){
-          // 마디를 따라 현재 조표를 추적하고, 그 조표로 3도 음의 철자를 정합니다.
-          let fifths=0;
+          // 마디를 따라 현재 조표를 추적하고, 그 조표로 3도 음의 철자를 정합니다. 보표마다 조표가 다르면 그 음표의 보표 조표를 씁니다(D08).
+          const keys=PitchCore.createKeyTracker();
           for(const measure of xmlChildren(part,'measure')){
             for(const node of Array.from(measure.children)){
-              if(node.localName==='attributes'){const value=node.querySelector('key fifths');if(value)fifths=Number(value.textContent)||0;continue;}
+              if(node.localName==='attributes'){keys.update(node);continue;}
               if(node.localName!=='note'||['rest','chord','grace','cue','unpitched'].some(tag=>xmlChild(node,tag)))continue;
               const pitch=PitchCore.readPitch(node);if(!pitch)continue;
+              const fifths=keys.fifthsFor(xmlText(node,'staff','1'));
               // 이 음에 이미 붙은 chord 음표와 같은 음(step·alter·octave)은 다시 넣지 않습니다(반복 실행 시 중복, E17).
               const existing=[];
               for(let sibling=node.nextElementSibling;sibling;sibling=sibling.nextElementSibling){
@@ -2915,7 +2916,7 @@ function NumberingPanel({files,activeFile=0,scope='all',showProgress,hideProgres
 
   return <div>
     <h2 className="panel__heading">숫자 악보</h2>
-    <p className="panel__description">음높이를 숫자로 변환하여 가사(Lyric) 위치에 삽입합니다. 이동 도법은 마디마다 그 시점의 조표를 따릅니다.</p>
+    <p className="panel__description">음높이를 숫자로 변환하여 가사(Lyric) 위치에 삽입합니다. 이동 도법은 마디마다, 보표마다 그 시점의 조표를 따릅니다.</p>
     <p className="card__text">원본 가사 백업은 이 브라우저 탭 안에서만 유지됩니다. 세션 저장·공유·새로고침 뒤에는 복원할 수 없습니다.</p>
     <div className="card"><div className="card__title">🔢 번호 체계</div>
       <div className="chip-group">
@@ -3276,7 +3277,7 @@ function RomanAnalysisPanel({files,activeFile=0,scope='all',showProgress,hidePro
 
   return <div>
     <h2 className="panel__heading">로마 숫자 분석</h2>
-    <p className="panel__description">마디별 수직 음향을 그 마디의 조표 기준 로마 숫자 화성으로 해석하고 종지를 요약합니다. 음이 3개 이상 겹치는 박만 화음으로 확정합니다. 이조 악기는 <code>&lt;transpose&gt;</code>를 적용한 실음으로 분석합니다. 최상성부 종지 판정은 하지 않습니다.</p>
+    <p className="panel__description">마디별 수직 음향을 그 마디의 조표 기준 로마 숫자 화성으로 해석하고 종지를 요약합니다. 음이 3개 이상 겹치는 박만 화음으로 확정합니다. 이조 악기는 <code>&lt;transpose&gt;</code>를 적용한 실음과 실음 조(첫 파트 기준)로 분석합니다. 최상성부 종지 판정은 하지 않습니다.</p>
     <div className="btn-row">
       <button className="btn btn--primary" onClick={runAnalysis} disabled={!files.length}>
         {keyInfo?`${keyInfo.mode==='minor'?keyInfo.keyName.toLowerCase():keyInfo.keyName}${keyInfo.mode==='minor'?'단조':'장조'} 분석 시작`:'로마 숫자 분석 시작'}

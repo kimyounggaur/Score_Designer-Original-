@@ -110,3 +110,37 @@ describe('PitchCore.bassForInversion',()=>{
     expect(core.bassForInversion(root,kind,inversion)).toBeNull();
   });
 });
+
+describe('PitchCore.createKeyTracker (D07·D08)',()=>{
+  const attributes=body=>parse(`<measure><attributes>${body}</attributes></measure>`).querySelector('attributes');
+  it('returns the initial value before any key and applies a key without number to every staff',()=>{
+    const keys=core.createKeyTracker(-2);
+    expect([keys.fifthsFor(1),keys.fifthsFor(2)]).toEqual([-2,-2]);
+    keys.update(attributes('<key><fifths>2</fifths></key>'));
+    expect([keys.fifthsFor(1),keys.fifthsFor(2),keys.fifthsFor('3')]).toEqual([2,2,2]);
+  });
+  it('keeps one key per staff when keys carry a number',()=>{
+    const keys=core.createKeyTracker();
+    keys.update(attributes('<key number="1"><fifths>0</fifths></key><key number="2"><fifths>1</fifths></key>'));
+    expect([keys.fifthsFor(1),keys.fifthsFor(2)]).toEqual([0,1]);
+  });
+  it('changes only the numbered staff, and lets a later numberless key reset them all',()=>{
+    const keys=core.createKeyTracker();
+    keys.update(attributes('<key><fifths>3</fifths></key>'));
+    keys.update(attributes('<key number="2"><fifths>-1</fifths></key>'));
+    expect([keys.fifthsFor(1),keys.fifthsFor(2)]).toEqual([3,-1]);
+    keys.update(attributes('<key><fifths>0</fifths></key>'));
+    expect([keys.fifthsFor(1),keys.fifthsFor(2)]).toEqual([0,0]);
+  });
+  it('falls back to the lowest numbered key for a staff without its own key',()=>{
+    const keys=core.createKeyTracker();
+    keys.update(attributes('<key number="2"><fifths>4</fifths></key><key number="3"><fifths>1</fifths></key>'));
+    expect([keys.fifthsFor(2),keys.fifthsFor(3),keys.fifthsFor(1),keys.fifthsFor(9)]).toEqual([4,1,4,4]);
+  });
+  it('ignores key elements without fifths and tolerates a missing attributes element',()=>{
+    const keys=core.createKeyTracker(5);
+    keys.update(attributes('<key><mode>minor</mode></key>'));
+    keys.update(null);
+    expect(keys.fifthsFor(1)).toBe(5);
+  });
+});

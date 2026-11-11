@@ -8,7 +8,7 @@ const lyricTexts=(doc,generated)=>Array.from(doc.querySelectorAll('lyric'))
   .filter(lyric=>generated===undefined||(lyric.getAttribute('name')==='mxl-studio-number')===generated)
   .map(lyric=>lyric.querySelector('text').textContent);
 let core;
-beforeEach(async()=>{delete window.NumberingCore;vi.resetModules();await import('../../numbering-core.js');core=window.NumberingCore;});
+beforeEach(async()=>{delete window.NumberingCore;delete window.PitchCore;vi.resetModules();await import('../../pitch-core.js');await import('../../numbering-core.js');core=window.NumberingCore;});
 
 describe('NumberingCore octave dots',()=>{
   it('counts dots from the base octave and caps them at three',()=>{
@@ -105,5 +105,37 @@ describe('NumberingCore generated lyrics and backup',()=>{
     const backup=core.backupLyrics(doc);
     doc.querySelector('part').setAttribute('id','P9');
     expect(core.restoreLyrics(doc,backup)).toEqual({restored:0,missing:3});
+  });
+});
+
+describe('NumberingCore per-staff keys (D07)',()=>{
+  const twoStaves=(staffKeys,notes)=>parse(`<score-partwise version="3.1"><part-list><score-part id="P1"><part-name>Piano</part-name></score-part></part-list><part id="P1"><measure number="1"><attributes><divisions>1</divisions>${staffKeys}<staves>2</staves></attributes>${notes}</measure></part></score-partwise>`);
+  const staffNote=(step,octave,staff)=>`<note><pitch><step>${step}</step><octave>${octave}</octave></pitch><duration>4</duration><voice>${staff}</voice><staff>${staff}</staff></note>`;
+  const notes=`${staffNote('D',5,1)}<backup><duration>4</duration></backup>${staffNote('D',3,2)}`;
+  it('numbers each staff with its own key in movable-do mode',()=>{
+    const doc=twoStaves('<key number="1"><fifths>0</fifths></key><key number="2"><fifths>1</fifths></key>',notes);
+    core.generateNumberLyrics(doc,{mode:'movable',showOct:false});
+    // 1단은 C장조의 레(2), 2단은 G장조의 솔(5)의 위 레 = 5입니다.
+    expect(lyricTexts(doc,true)).toEqual(['2','5']);
+  });
+  it('keeps a key without number for every staff',()=>{
+    const doc=twoStaves('<key><fifths>1</fifths></key>',notes);
+    core.generateNumberLyrics(doc,{mode:'movable',showOct:false});
+    expect(lyricTexts(doc,true)).toEqual(['5','5']);
+  });
+  it('follows a per-staff key change from the measure where it appears',()=>{
+    const doc=twoStaves('<key><fifths>0</fifths></key>',notes);
+    const second=doc.createElement('measure');second.setAttribute('number','2');
+    second.innerHTML=`<attributes><key number="2"><fifths>1</fifths></key></attributes>${notes}`;
+    doc.querySelector('part').appendChild(second);
+    core.generateNumberLyrics(doc,{mode:'movable',showOct:false});
+    expect(lyricTexts(doc,true)).toEqual(['2','2','2','5']);
+  });
+  it('reports the key of a staff with fifthsForMeasure',()=>{
+    const doc=twoStaves('<key number="1"><fifths>0</fifths></key><key number="2"><fifths>1</fifths></key>',notes);
+    const p=part(doc),measure=p.querySelector('measure');
+    expect(core.fifthsForMeasure(p,measure)).toBe(0);
+    expect(core.fifthsForMeasure(p,measure,'1')).toBe(0);
+    expect(core.fifthsForMeasure(p,measure,'2')).toBe(1);
   });
 });

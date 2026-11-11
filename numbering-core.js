@@ -54,25 +54,25 @@
     return text;
   }
 
-  function keyFifthsOf(attributes){
-    const keys=childElements(attributes,'key');
-    const key=keys.find(k=>!k.hasAttribute('number')||k.getAttribute('number')==='1')||keys[0];
-    const fifths=firstChild(key,'fifths');
-    return fifths?Number(fifths.textContent)||0:null;
+  // 보표마다 조표가 다를 수 있으므로 조표 추적은 PitchCore.createKeyTracker가 맡습니다(화성 쌓기와 같은 규칙, D07).
+  function newKeyTracker(){
+    if(!global.PitchCore?.createKeyTracker)throw new Error('조표 추적 모듈(PitchCore)을 불러오지 못했습니다.');
+    return global.PitchCore.createKeyTracker();
   }
+  function staffOf(note){return firstChild(note,'staff')?.textContent?.trim()||'1';}
 
-  // 그 마디가 시작될 때(첫 음표 앞 attributes 포함)의 조표 fifths.
+  // 그 마디가 시작될 때(첫 음표 앞 attributes 포함)의 조표 fifths. staff는 보표 번호(기본 1)입니다.
   // MeasureCore.keyFifthsAt은 마디 안 마지막 조표를 돌려주므로 여기서는 쓰지 않습니다(마디 중간 조바꿈 구분).
-  function fifthsForMeasure(partEl,measureEl){
-    let fifths=0;
+  function fifthsForMeasure(partEl,measureEl,staff='1'){
+    const keys=newKeyTracker();
     for(const measure of childElements(partEl,'measure')){
       for(const child of childElements(measure)){
-        if(measure===measureEl&&child.localName==='note')return fifths;
-        if(child.localName==='attributes'){const value=keyFifthsOf(child);if(value!=null)fifths=value;}
+        if(measure===measureEl&&child.localName==='note')return keys.fifthsFor(staff);
+        if(child.localName==='attributes')keys.update(child);
       }
-      if(measure===measureEl)return fifths;
+      if(measure===measureEl)return keys.fifthsFor(staff);
     }
-    return fifths;
+    return keys.fifthsFor(staff);
   }
 
   function removeGeneratedLyrics(doc){
@@ -146,17 +146,17 @@
   }
 
   // 모든 음높이 음표(쉼표 제외, chord·꾸밈음 포함)에 표식 가사를 붙입니다.
-  // 조표는 파트·마디를 따라 문서 순서로 추적하므로 마디 중간 조바꿈도 반영합니다.
+  // 조표는 파트·마디를 따라 문서 순서로 추적하므로 마디 중간 조바꿈도 반영하고, 보표마다 다른 조표는 그 음표의 보표 것을 씁니다.
   // keepLyrics가 아니면 원본 가사 제거는 호출자 책임입니다(백업 후 removeUserLyrics).
   function generateNumberLyrics(doc,options={}){
     const {keepLyrics=false}=options;
     removeGeneratedLyrics(doc);
     let count=0;
     for(const part of Array.from(doc.querySelectorAll('score-partwise > part'))){
-      let fifths=0;
+      const keys=newKeyTracker();
       for(const measure of childElements(part,'measure')){
         for(const child of childElements(measure)){
-          if(child.localName==='attributes'){const value=keyFifthsOf(child);if(value!=null)fifths=value;continue;}
+          if(child.localName==='attributes'){keys.update(child);continue;}
           if(child.localName!=='note'||firstChild(child,'rest'))continue;
           const pitch=readPitch(child);if(!pitch)continue;
           let number=1;
@@ -165,7 +165,7 @@
           lyric.setAttribute('number',String(number));
           lyric.setAttribute('name',GENERATED_LYRIC_NAME);
           const syllabic=doc.createElement('syllabic');syllabic.textContent='single';lyric.appendChild(syllabic);
-          const text=doc.createElement('text');text.textContent=noteToNumStr(pitch.step,pitch.alter,pitch.octave,{...options,fifths});lyric.appendChild(text);
+          const text=doc.createElement('text');text.textContent=noteToNumStr(pitch.step,pitch.alter,pitch.octave,{...options,fifths:keys.fifthsFor(staffOf(child))});lyric.appendChild(text);
           insertLyric(child,lyric);
           count++;
         }
