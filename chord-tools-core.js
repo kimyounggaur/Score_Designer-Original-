@@ -30,6 +30,53 @@
     });
   }
 
+  // N.C.가 아닌 코드 기호(harmony)만 모읍니다.
+  function chordHarmonies(measure){
+    return Array.from(measure?.querySelectorAll?.('harmony')||[]).filter(harmony=>!isNoChordHarmony(harmony));
+  }
+
+  // 마디 안의 코드 기호(N.C. 제외)를 지우고 지운 개수를 돌려줍니다.
+  function removeChordHarmonies(measure){
+    const list=chordHarmonies(measure);
+    list.forEach(harmony=>harmony.remove());
+    return list.length;
+  }
+
+  // 박 단위 수직 분석 묶음으로 마디마다 코드 1개를 넣습니다(D01).
+  // 코드를 확정한 마디에서만 기존 코드를 바꿉니다. 확정하지 못한 마디와 N.C. 마디의 기존 코드는 그대로 둡니다.
+  // groups: [{measure, measureIndex, beats:[{chord:{symbol}|null, ...}]}] — RomanAnalysis.analyzeVerticalities 행을 마디별로 묶은 값.
+  // 반환: {inserted, replaced, keptExisting, skippedExisting, unsettled:[{measure, measureIndex, row, existing}]}
+  function insertAutoChords(xmlDoc,groups,{replaceExisting=false}={}){
+    const result={inserted:0,replaced:0,keptExisting:0,skippedExisting:0,unsettled:[]};
+    const childrenOf=(el,name)=>Array.from(el?.children||[]).filter(child=>child.localName===name);
+    const parts=childrenOf(xmlDoc?.documentElement,'part').map(part=>childrenOf(part,'measure'));
+    const measures=parts.find(list=>list.length)||[];
+    // 같은 마디 위치에 있는 모든 파트의 코드 기호 개수(코드가 다른 파트에 있는 악보도 함께 셉니다).
+    const existingAt=index=>parts.reduce((sum,list)=>sum+chordHarmonies(list[index]).length,0);
+    for(const group of groups||[]){
+      const first=group?.beats?.[0];
+      const measure=measures[group?.measureIndex];
+      if(!first||!measure)continue;
+      if(!first.chord){
+        const existing=existingAt(group.measureIndex);
+        result.unsettled.push({measure:group.measure,measureIndex:group.measureIndex,row:first,existing});
+        result.keptExisting+=existing;
+        continue;
+      }
+      if(measureHasNoChordHarmony(measure))continue;
+      if(!replaceExisting&&measure.querySelector('harmony')){result.skippedExisting++;continue;}
+      const parsed=global.ChordSymbolCore?.parse(first.chord.symbol);
+      if(!parsed)continue; // 읽을 수 없는 기호는 기존 코드를 지우지 않고 건너뜁니다.
+      if(replaceExisting)for(const list of parts)result.replaced+=removeChordHarmonies(list[group.measureIndex]);
+      const harmony=xmlDoc.createElement('harmony');
+      global.ChordSymbolCore.apply(harmony,parsed);
+      const firstNote=childrenOf(measure,'note')[0];
+      if(firstNote)measure.insertBefore(harmony,firstNote);else measure.appendChild(harmony);
+      result.inserted++;
+    }
+    return result;
+  }
+
   // ── 음높이류(pitch class) 집합으로 코드 판정 ──
   // 패턴의 모든 음이 집합에 있어야 후보가 됩니다(부분 일치로 코드를 만들지 않음).
   // 음이 하나뿐이거나 두 음이 완전5도가 아니면 확정하지 않습니다.
@@ -114,6 +161,8 @@
     isNoChordText,
     measureHasNoChordHarmony,
     preserveNoChordHarmonies,
+    removeChordHarmonies,
+    insertAutoChords,
     CHORD_PATTERNS,
     spellPitchClass,
     chordSymbolText,

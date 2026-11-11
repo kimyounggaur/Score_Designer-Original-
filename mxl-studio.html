@@ -32,7 +32,7 @@ setTimeout(function(){if(document.getElementById('boot'))window.__mxlBootMessage
 <script crossorigin="anonymous" integrity="sha384-ku9eM40vVDsFUiERorrdlHlF0LIhdfn716M7TntM72Uo98T7LWiogD3hNenPx8Q0" src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
 <script crossorigin="anonymous" integrity="sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG" src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script crossorigin="anonymous" integrity="sha384-fg0GMOE+ryaeFG8a+kaykJwFk/KI5rLyPkxfxxHjlfBbC8HkEuNcl44thRQD6MzE" src="https://cdn.jsdelivr.net/npm/opensheetmusicdisplay@1.8.9/build/opensheetmusicdisplay.min.js"></script>
-<script src="chord-tools-core.js?v=2"></script>
+<script src="chord-tools-core.js?v=3"></script>
 <script src="chord-symbol-core.js?v=1"></script>
 <script src="history-core.js?v=3"></script>
 <script src="transpose-core.js?v=4"></script>
@@ -276,6 +276,24 @@ function scopeLabel(label,files,scope){
 function scopeLogLine(files,activeFile,scope){
   const targets=targetFiles(files,activeFile,scope);
   return {m:scope==='active'?`대상: 현재 파일(${targets[0]?.file.name||'-'})`:`대상: 열린 파일 ${targets.length}개`,t:'info'};
+}
+// 분석 결과를 만든 대상(파일 객체 목록)을 기억하고, 파일 전환·범위 변경·편집·실행 취소로 대상이 달라지면 onStale을 부릅니다(D04·D12).
+// 돌려주는 함수에 분석한 대상 파일 객체 배열을 넘겨 "이 결과는 이 파일들의 것"이라고 표시합니다.
+function useAnalysisTargets(files,activeFile,scope,onStale){
+  const [analyzed,setAnalyzed]=useState(null);
+  const staleRef=useRef(onStale);staleRef.current=onStale;
+  useEffect(()=>{
+    if(!analyzed)return;
+    const now=targetFiles(files,activeFile,scope).map(target=>target.file);
+    if(now.length===analyzed.length&&now.every((file,i)=>file===analyzed[i]))return;
+    setAnalyzed(null);staleRef.current();
+  },[files,activeFile,scope,analyzed]);
+  return useCallback(fileObjects=>setAnalyzed(Array.from(fileObjects)),[]);
+}
+// 분석 결과 머리글에 적는 대상 설명(현재 파일 이름 또는 열린 파일 수).
+function analysisTargetLabel(files,activeFile,scope){
+  const targets=targetFiles(files,activeFile,scope);
+  return scope==='active'?`현재 파일(${targets[0]?.file.name||'-'})`:`열린 파일 ${targets.length}개`;
 }
 // 음높이를 바꾸는 패널이 커밋 직전에 거는 공통 가드(Phase B V3, 결정 E4). 변환한 문서에 옥타브 0~9를 벗어난 음이 있으면
 // MusicXML 4.0 위반이므로 그 파일은 커밋하지 않고 경고 한 줄만 남깁니다. 커밋해도 되면 true를 돌려줍니다.
@@ -2725,25 +2743,15 @@ function ChordToolsPanel({files,activeFile=0,scope='all',showProgress,hideProgre
     try{
       const lines=[scopeLogLine(files,activeFile,scope)];const updatedFiles=[];
       for(const {file} of targetFiles(files,activeFile,scope)){
-        const doc=cloneDoc(file.xmlDoc);let ins=0;const unsettled=[];
-        if(replaceExisting)window.ChordToolsCore.preserveNoChordHarmonies(doc);
+        const doc=cloneDoc(file.xmlDoc);
         // 박 단위 수직 분석에서 마디마다 첫 박의 확정 코드만 넣습니다(마디당 1개).
         // 분석 행의 measureIndex로 같은 문서의 마디를 찾으므로 못갖춘마디·반복 번호도 어긋나지 않습니다.
-        const measures=xmlChildren(window.MeasureCore.firstPart(doc),'measure');
-        for(const {measure:number,measureIndex,beats} of groupVerticalities(window.RomanAnalysis.analyzeVerticalities(doc))){
-          const first=beats[0];
-          if(!first.chord){unsettled.push(`⚠ 마디 ${number}: ${unsettledChordReason(first)} 코드를 확정하지 않았습니다`);continue;}
-          const meas=measures[measureIndex];if(!meas)continue;
-          if(window.ChordToolsCore.measureHasNoChordHarmony(meas))continue;
-          if(!replaceExisting&&meas.querySelector('harmony'))continue;
-          const parsed=parseChordSymbol(first.chord.symbol);if(!parsed)continue;
-          const harm=doc.createElement('harmony');ChordSymbolCore.apply(harm,parsed);
-          const fn=xmlChild(meas,'note');if(fn)meas.insertBefore(harm,fn);else meas.appendChild(harm);ins++;
-        }
+        // 덮어쓰기를 켜도 코드를 확정한 마디에서만 기존 코드를 바꾸고, 건너뛴 마디의 기존 코드는 그대로 둡니다(D01).
+        const res=window.ChordToolsCore.insertAutoChords(doc,groupVerticalities(window.RomanAnalysis.analyzeVerticalities(doc)),{replaceExisting});
         updatedFiles.push(commitFile(file,doc));
-        unsettled.slice(0,10).forEach(m=>lines.push({m,t:'warn'}));
-        if(unsettled.length>10)lines.push({m:`⚠ … 그 밖에 ${unsettled.length-10}마디도 코드를 확정하지 않았습니다`,t:'warn'});
-        lines.push({m:`✓ ${file.name}: ${ins}마디 코드 삽입`,t:'ok'});
+        res.unsettled.slice(0,10).forEach(u=>lines.push({m:`⚠ 마디 ${u.measure}: ${unsettledChordReason(u.row)} 코드를 확정하지 않았습니다${replaceExisting&&u.existing?` (기존 코드 ${u.existing}개는 그대로 둡니다)`:''}`,t:'warn'}));
+        if(res.unsettled.length>10)lines.push({m:`⚠ … 그 밖에 ${res.unsettled.length-10}마디도 코드를 확정하지 않았습니다`,t:'warn'});
+        lines.push({m:`✓ ${file.name}: ${res.inserted}마디 코드 삽입${replaceExisting?` (기존 코드 ${res.replaced}개 교체, 미확정 마디의 기존 코드 ${res.keptExisting}개 유지)`:res.skippedExisting?` (기존 코드가 있는 ${res.skippedExisting}마디는 건너뜀)`:''}`,t:'ok'});
       }
       onFilesUpdate(mergeTargets(files,targetFiles(files,activeFile,scope),updatedFiles),scopeLabel('코드 분석 및 삽입',files,scope));
       lines.push({m:'✅ 적용 완료!',t:'ok'});setLog(lines);
@@ -2819,7 +2827,7 @@ function ChordToolsPanel({files,activeFile=0,scope='all',showProgress,hideProgre
       <div className="btn-row"><button className="btn btn--primary" onClick={runReplace}>▶ 코드 일괄 변경</button></div>
     </div>
     <div className="card"><div className="card__title">🎸 코드 자동 분석 & 삽입</div>
-      <div className="card__text">마디마다 첫 박에 함께 울리는 음으로 코드를 판정해 악보 위에 넣습니다(마디당 1개). 음이 3개 미만이거나 화음 패턴에 맞지 않는 마디는 건너뛰고 로그에 이유를 남깁니다.</div>
+      <div className="card__text">마디마다 첫 박에 함께 울리는 음으로 코드를 판정해 악보 위에 넣습니다(마디당 1개). 음이 3개 미만이거나 화음 패턴에 맞지 않는 마디는 건너뛰고 로그에 이유를 남깁니다. ‘기존 코드 덮어쓰기’를 켜도 코드를 확정한 마디의 기존 코드만 바꾸며, 건너뛴 마디의 기존 코드는 그대로 둡니다.</div>
       <div className="chip-group"><Chip on={replaceExisting} onClick={()=>setReplaceExisting(!replaceExisting)}>기존 코드 덮어쓰기</Chip></div>
       <div className="btn-row"><button className="btn btn--primary" onClick={runAutoInsert}>▶ 코드 분석 & 삽입</button></div>
     </div>
@@ -3118,11 +3126,14 @@ function LyricStylePanel({files,activeFile=0,scope='all',showProgress,hideProgre
 function ChordsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
   const notify=useNotify();
   const [log,setLog]=useState([]);
+  // 분석한 파일·범위가 바뀌면 이전 결과를 지웁니다(D12).
+  const markAnalyzed=useAnalysisTargets(files,activeFile,scope,useCallback(()=>setLog([]),[]));
 
   const run=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('코드 분석 중...');await new Promise(r=>setTimeout(r,50));
     const lines=[scopeLogLine(files,activeFile,scope)];
+    const analyzedFiles=targetFiles(files,activeFile,scope).map(target=>target.file);
     try{
       for(const {file} of targetFiles(files,activeFile,scope)){
         lines.push({m:`── ${file.name} ──`,t:'info'});
@@ -3136,13 +3147,14 @@ function ChordsPanel({files,activeFile=0,scope='all',showProgress,hideProgress})
       }
       lines.push({m:'✅ 분석 완료',t:'ok'});
     }catch(e){lines.push({m:'❌ '+friendlyError(e),t:'err'});}
-    setLog(lines);hideProgress();
-  },[files,activeFile,scope,showProgress,hideProgress]);
+    setLog(lines);markAnalyzed(analyzedFiles);hideProgress();
+  },[files,activeFile,scope,showProgress,hideProgress,markAnalyzed]);
 
   const runIdentify=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
     setLog([]);showProgress('코드 기호 파악 중...');await new Promise(r=>setTimeout(r,50));
     const lines=[scopeLogLine(files,activeFile,scope)];let grandTotal=0;const grandTally={};
+    const analyzedFiles=targetFiles(files,activeFile,scope).map(target=>target.file);
     for(const {file} of targetFiles(files,activeFile,scope)){
       lines.push({m:`── ${file.name} ──`,t:'info'});
       const parts=file.xmlDoc.querySelectorAll('part');
@@ -3167,8 +3179,8 @@ function ChordsPanel({files,activeFile=0,scope='all',showProgress,hideProgress})
       lines.push({m:`── 전체 합계 ──`,t:'info'});
       lines.push({m:`총 ${grandTotal}개 · 고유 ${sorted.length}종: ${sorted.map(([k,v])=>`${k}(${v})`).join(', ')}`,t:'ok'});
     }
-    lines.push({m:'✅ 코드 기호 파악 완료',t:'ok'});setLog(lines);hideProgress();
-  },[files,activeFile,scope,showProgress,hideProgress]);
+    lines.push({m:'✅ 코드 기호 파악 완료',t:'ok'});setLog(lines);markAnalyzed(analyzedFiles);hideProgress();
+  },[files,activeFile,scope,showProgress,hideProgress,markAnalyzed]);
 
   return <div>
     <h2 className="panel__heading">코드 분석</h2>
@@ -3317,6 +3329,8 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
   const notify=useNotify();
   const [basicData,setBasicData]=useState(null);
   const [composerData,setComposerData]=useState(null);
+  // 분석한 파일·범위가 바뀌면 두 결과를 모두 지워 서로 다른 악보의 수치가 한 화면에 섞이지 않게 합니다(D04).
+  const markAnalyzed=useAnalysisTargets(files,activeFile,scope,useCallback(()=>{setBasicData(null);setComposerData(null);},[]));
 
   const runBasic=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
@@ -3338,10 +3352,11 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
       });
     }
     const rcDisplay={};Object.entries(rc).sort((a,b)=>b[1]-a[1]).forEach(([k,v])=>{rcDisplay[rKo[k]||k]=v});
-    setBasicData({fileCount:targetFiles(files,activeFile,scope).length,totalNotes:tn,totalRests:tr,totalMeasures:tm,totalParts:tp,
+    setBasicData({target:analysisTargetLabel(files,activeFile,scope),fileCount:targetFiles(files,activeFile,scope).length,totalNotes:tn,totalRests:tr,totalMeasures:tm,totalParts:tp,
       lowest:fmtNote(loN),highest:fmtNote(hiN),noteCounts:nc,rhythmCounts:rcDisplay});
+    markAnalyzed(targetFiles(files,activeFile,scope).map(target=>target.file));
     hideProgress();
-  },[files,activeFile,scope,showProgress,hideProgress]);
+  },[files,activeFile,scope,showProgress,hideProgress,markAnalyzed]);
 
   const runComposer=useCallback(async()=>{
     if(!files.length){notify('먼저 파일을 업로드 해주세요.','warn');return}
@@ -3378,12 +3393,13 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
     const pBk={};phrases.forEach(l=>{const b=l<=4?'1-4':l<=8?'5-8':l<=12?'9-12':l<=16?'13-16':'17+';pBk[b]=(pBk[b]||0)+1});
     const topKeys=Object.entries(ksc).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([k,v])=>{const [fifths,mode]=k.split('|');return{name:keyDisplayName(Number(fifths),mode),count:v}});
     const topTime=Object.entries(tsc).sort((a,b)=>b[1]-a[1]).slice(0,5);
-    setComposerData({fileCount:targetFiles(files,activeFile,scope).length,totalNotes:tn,totalMeasures:tm,avgTempo:avgTm,
+    setComposerData({target:analysisTargetLabel(files,activeFile,scope),fileCount:targetFiles(files,activeFile,scope).length,totalNotes:tn,totalMeasures:tm,avgTempo:avgTm,
       lowest:fmtNote(rMinN),highest:fmtNote(rMaxN),
       avgPhrase:avgPh,stepPct:(steps/move*100).toFixed(1),leapPct:(leaps/move*100).toFixed(1),repPct:(reps/move*100).toFixed(1),
       topKeys,topTime,intervals:allIv,progressions:topProg,phraseBuckets:pBk});
+    markAnalyzed(targetFiles(files,activeFile,scope).map(target=>target.file));
     hideProgress();
-  },[files,activeFile,scope,showProgress,hideProgress]);
+  },[files,activeFile,scope,showProgress,hideProgress,markAnalyzed]);
 
   return <div>
     <h2 className="panel__heading">통계 분석</h2>
@@ -3394,7 +3410,7 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
     </div>
 
     {basicData && <div>
-      <p className="stats-caption">마디 {basicData.totalMeasures} · 파트 {basicData.totalParts}개 (마디는 첫 파트 기준, 음표·쉼표는 전체 파트 합계)</p>
+      <p className="stats-caption">분석 대상: {basicData.target} · 마디 {basicData.totalMeasures} · 파트 {basicData.totalParts}개 (마디는 첫 파트 기준, 음표·쉼표는 전체 파트 합계)</p>
       <div className="stats-row">
         <div className="stat-tile"><div className="stat-tile__value">{basicData.fileCount}</div><div className="stat-tile__label">파일 수</div></div>
         <div className="stat-tile"><div className="stat-tile__value">{basicData.totalNotes}</div><div className="stat-tile__label">음표 (전체 파트)</div></div>
@@ -3411,6 +3427,7 @@ function StatsPanel({files,activeFile=0,scope='all',showProgress,hideProgress}){
 
     {composerData && <div>
       <h3 className="stats-heading">작곡 스타일 (첫 파트 선율 기준)</h3>
+      <p className="stats-caption">분석 대상: {composerData.target}</p>
       <div className="stats-row">
         <div className="stat-tile"><div className="stat-tile__value">{composerData.fileCount}</div><div className="stat-tile__label">분석 곡 수</div></div>
         <div className="stat-tile"><div className="stat-tile__value">{composerData.totalNotes}</div><div className="stat-tile__label">음표 (첫 파트)</div></div>
