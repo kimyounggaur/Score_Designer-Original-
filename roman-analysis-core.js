@@ -50,20 +50,56 @@
     return (octave+1)*12+STEP_TO_SEMI[step]+alter+(Number(transposeSemis)||0);
   }
 
-  // <attributes> 안의 <transpose>(number 없는 것 또는 number="1")를 반음 수로 바꿉니다. 없으면 null(이전 값 유지).
-  function transposeSemitones(attributes){
+  // <attributes> 안의 <transpose>(number 없는 것 또는 number="1")를 {semis, diatonic}으로 바꿉니다. 없으면 null(이전 값 유지).
+  // semis: 기보음 → 실음 반음 수(chromatic + 12×octave-change). diatonic: 기보음 → 실음 글자 이동(7음계 단계 수).
+  // <diatonic>은 선택 요소라서 없으면, 옥타브(12반음의 배수) 이동일 때만 0으로 보고 그 밖에는 null(실음 글자를 알 수 없음)입니다.
+  function transposeInfo(attributes){
     const transposes=xmlChildren(attributes,'transpose');
     if(!transposes.length)return null;
     const transpose=transposes.find(node=>!node.hasAttribute('number')||node.getAttribute('number')==='1')||transposes[0];
-    return (Number(xmlText(transpose,'chromatic','0'))||0)+12*(Number(xmlText(transpose,'octave-change','0'))||0);
+    const chromatic=Number(xmlText(transpose,'chromatic','0'))||0;
+    const semis=chromatic+12*(Number(xmlText(transpose,'octave-change','0'))||0);
+    const rawDiatonic=xmlText(transpose,'diatonic','').trim();
+    const diatonic=/^-?\d+$/.test(rawDiatonic)?Number(rawDiatonic):(normSemi(chromatic)===0?0:null);
+    return {semis,diatonic};
+  }
+  function transposeSemitones(attributes){return transposeInfo(attributes)?.semis??null}
+
+  // 음 이름 글자(C=0 … B=6). 실음의 글자는 기보음의 step 글자를 이조의 diatonic만큼 옮긴 것이고, 알 수 없으면 null입니다.
+  const STEP_LETTER={C:0,D:1,E:2,F:3,G:4,A:5,B:6};
+  function getPitchLetter(note,diatonic=0){
+    const pitch=xmlChild(note,'pitch');
+    if(!pitch||diatonic===null||diatonic===undefined)return null;
+    const step=xmlText(pitch,'step','C');
+    if(!Object.prototype.hasOwnProperty.call(STEP_LETTER,step))return null;
+    return (((STEP_LETTER[step]+Math.trunc(Number(diatonic)||0))%7)+7)%7;
   }
 
-  function getKeyInfo(xmlDoc){
+  // 기보 조표(fifths)에 이조 반음 수를 적용한 실음 조표입니다(예: B♭ 클라리넷 기보 D장조 fifths 2, semis -2 → 0).
+  // 12반음의 배수 이동이면 값을 그대로 돌려주고, 그 밖에는 -7…7 범위로 맞춥니다.
+  function concertFifths(fifths,semis){
+    const written=Number(fifths)||0,shift=normSemi(7*Math.round(Number(semis)||0));
+    if(shift===0)return written;
+    let value=written+(shift>5?shift-12:shift);
+    if(value>7)value-=12;else if(value<-7)value+=12;
+    return value;
+  }
+
+  // 문서에서 처음 나오는 <key>의 기보 조표입니다. 첫 파트가 조표를 정하기 전 마디의 기본 조로 씁니다.
+  function firstKeyOf(xmlDoc){
     const key=xmlDoc?.querySelector('key');
-    const fifths=parseInt(xmlText(key,'fifths','0'),10)||0;
-    const mode=xmlText(key,'mode','major')==='minor'?'minor':'major';
-    const tonicSemi=normSemi(fifths*7+(mode==='minor'?9:0));
-    return {fifths,tonicSemi,mode,keyName:KEY_NAMES[tonicSemi]||'C'};
+    return {
+      fifths:parseInt(xmlText(key,'fifths','0'),10)||0,
+      mode:xmlText(key,'mode','major').trim()==='minor'?'minor':'major',
+    };
+  }
+
+  // 첫 재생 파트의 시작 조입니다. 분석하는 음(실음)과 같은 기준이라 이조 악기가 첫 파트면 <transpose>를 적용한 조입니다(D05).
+  function getKeyInfo(xmlDoc){
+    const first=firstPartKeys(xmlDoc)[0];
+    if(first)return first;
+    const {fifths,mode}=firstKeyOf(xmlDoc);
+    return keyFromFifths(fifths,mode);
   }
 
   function sameSet(a,b){
@@ -71,27 +107,63 @@
     return a.every((value,index)=>value===b[index]);
   }
 
+  // root에서 3도씩 쌓은 글자(L, L+2, L+4, …)가 spelling(음이름 번호 → 그 박에 쓰인 글자 집합)과 맞으면 true,
+  // 어긋나면 false, 글자를 모르면 null입니다.
+  function stackedThirdsFit(root,pattern,spelling){
+    if(!spelling||typeof spelling.get!=='function')return null;
+    const tones=pattern.intervals.map(interval=>spelling.get(normSemi(root+interval)));
+    if(tones.some(letters=>!letters||!letters.size))return null;
+    for(const letter of tones[0])if(tones.every((letters,step)=>letters.has((letter+2*step)%7)))return true;
+    return false;
+  }
+
+  // 정확히 일치한 화음의 근음 후보(roots) 중 하나를 고릅니다. 후보가 하나면 그대로입니다.
+  // 대칭 화음(dim7은 네 음, aug는 세 음이 모두 근음 후보)은 ① 철자: 근음 글자에서 3도씩 쌓은 글자와 맞는 후보,
+  // ② dim7이면 조의 으뜸음·딸림음의 이끎음, ③ 가장 낮은 음이름 번호 순으로 고릅니다(D06).
+  function pickSymmetricRoot(roots,pattern,{spelling=null,key=null}={}){
+    if(roots.length<2)return roots[0];
+    const fits=[],open=[];
+    for(const root of roots){
+      const fit=stackedThirdsFit(root,pattern,spelling);
+      if(fit===true)fits.push(root);
+      if(fit!==false)open.push(root);
+    }
+    if(fits.length===1)return fits[0];
+    const pool=fits.length?fits:(open.length?open:roots);
+    if(pattern.quality==='dim7'&&key&&Number.isFinite(Number(key.tonicSemi))){
+      const tonic=normSemi(key.tonicSemi);
+      const leading=[normSemi(tonic-1),normSemi(tonic+6)].find(pc=>pool.includes(pc));
+      if(leading!==undefined)return leading;
+    }
+    return Math.min(...pool);
+  }
+
   // 음이 3개 미만이면 화음으로 확정하지 않습니다(단음·유니슨이 C°7이 되던 C01).
   // 정확히 일치하는 패턴이 없으면 "패턴의 모든 음이 들어 있는" 후보만 고르고, 없으면 unknown입니다.
-  function identifyChord(pitchClassSet,{bass=null}={}){
+  // spelling(음이름 번호 → 쓰인 글자 집합)·key({tonicSemi})는 대칭 화음(dim7·aug)의 근음을 고를 때만 쓰입니다.
+  function identifyChord(pitchClassSet,{bass=null,spelling=null,key=null}={}){
     const pitchClasses=[...new Set([...pitchClassSet].map(normSemi))].sort((a,b)=>a-b);
     if(!pitchClasses.length)return null;
     if(pitchClasses.length<3){
       const chordName=pitchClasses.length===1?PC_NAMES[pitchClasses[0]]+'(단음)':pitchClasses.map(pc=>PC_NAMES[pc]).join('·');
       return {rootSemi:null,quality:'unknown',suffix:'',chordName,pitchClasses};
     }
+    let exact=null;
+    const exactRoots=[];
     for(let root=0;root<12;root++){
       const intervals=pitchClasses.map(pc=>normSemi(pc-root)).sort((a,b)=>a-b);
-      const exact=QUALITY_PATTERNS.find(pattern=>sameSet(intervals,pattern.intervals));
-      if(exact){
-        return {
-          rootSemi:root,
-          quality:exact.quality,
-          suffix:exact.suffix,
-          chordName:PC_NAMES[root]+exact.suffix,
-          pitchClasses,
-        };
-      }
+      const pattern=QUALITY_PATTERNS.find(candidate=>sameSet(intervals,candidate.intervals));
+      if(pattern){exact=pattern;exactRoots.push(root);}
+    }
+    if(exact){
+      const root=pickSymmetricRoot(exactRoots,exact,{spelling,key});
+      return {
+        rootSemi:root,
+        quality:exact.quality,
+        suffix:exact.suffix,
+        chordName:PC_NAMES[root]+exact.suffix,
+        pitchClasses,
+      };
     }
     const bassPc=bass===null||bass===undefined||!Number.isFinite(Number(bass))?null:normSemi(bass);
     const candidates=[];
@@ -148,21 +220,23 @@
     const notes=[],rests=[],starts=new Set();let phraseAfter=false;
     parts.forEach(part=>{
       const measures=xmlChildren(part,'measure'),measure=measures[measureIndex];if(!measure)return;
-      let divisions=1,transpose=0;
-      for(let i=0;i<measureIndex;i++)for(const attr of xmlChildren(measures[i],'attributes')){
+      let divisions=1,transpose=0,diatonic=0;
+      const follow=attr=>{
         divisions=Number(xmlText(attr,'divisions'))||divisions;
-        transpose=transposeSemitones(attr)??transpose;
-      }
+        const info=transposeInfo(attr);
+        if(info){transpose=info.semis;diatonic=info.diatonic;}
+      };
+      for(let i=0;i<measureIndex;i++)for(const attr of xmlChildren(measures[i],'attributes'))follow(attr);
       let cursor=0,lastStart=0;
       for(const node of xmlChildren(measure)){
-        if(node.localName==='attributes'){divisions=Number(xmlText(node,'divisions'))||divisions;transpose=transposeSemitones(node)??transpose;continue;}
+        if(node.localName==='attributes'){follow(node);continue;}
         const duration=(Number(xmlText(node,'duration','0'))||0)/divisions;
         if(node.localName==='backup'){cursor=Math.max(0,cursor-duration);continue;}
         if(node.localName==='forward'){cursor+=duration;continue;}
         if(node.localName!=='note')continue;
         const chord=!!xmlChild(node,'chord'),start=chord?lastStart:cursor;
         if(xmlChild(node,'rest'))rests.push(start);
-        else{const midi=getPitchMidi(node,transpose);if(midi!==null&&!xmlChild(node,'grace')){notes.push({midi,start,end:start+duration});starts.add(start);}}
+        else{const midi=getPitchMidi(node,transpose);if(midi!==null&&!xmlChild(node,'grace')){notes.push({midi,start,end:start+duration,letter:getPitchLetter(node,diatonic)});starts.add(start);}}
         if(!chord){lastStart=start;cursor+=duration;}
       }
       const next=measures[measureIndex+1];
@@ -174,7 +248,14 @@
     return sorted.map((start,index)=>{
       const sounding=notes.filter(note=>note.start<=start&&note.end>start);
       const bass=Math.min(...sounding.map(note=>note.midi));
-      return {start,beat:String(Math.round((start+1)*100)/100),pitchClasses:new Set(sounding.map(note=>normSemi(note.midi))),bass: normSemi(bass),bassMidi:bass,phraseEnd:index===sorted.length-1&&(phraseAfter||rests.some(rest=>rest>start))};
+      // 음이름 번호 → 그 박에 쓰인 글자 집합(C=0 … B=6). 이조 diatonic을 모르는 음은 글자 없이 음이름만 셉니다.
+      const spelling=new Map();
+      sounding.forEach(note=>{
+        const pc=normSemi(note.midi);
+        if(!spelling.has(pc))spelling.set(pc,new Set());
+        if(note.letter!==null)spelling.get(pc).add(note.letter);
+      });
+      return {start,beat:String(Math.round((start+1)*100)/100),pitchClasses:new Set(sounding.map(note=>normSemi(note.midi))),bass: normSemi(bass),bassMidi:bass,spelling,phraseEnd:index===sorted.length-1&&(phraseAfter||rests.some(rest=>rest>start))};
     });
   }
 
@@ -216,29 +297,20 @@
   }
 
   // 첫 파트의 조표를 마디 순서로 따라가며 행마다 그 시점의 조(keyName·tonicSemi·fifths·mode)로 해석합니다.
+  // 조는 분석하는 음과 같은 실음 기준입니다. 첫 파트가 이조 악기면 기보 조표에 <transpose>를 적용한 조입니다(D05).
   // 반환 객체의 keyName·mode는 첫 조표(헤더 표시용)이고, 조가 바뀐 마디는 keyChanges에 담깁니다.
   function detectRomanNumeral(xmlDoc){
-    const key=getKeyInfo(xmlDoc);
+    const keys=firstPartKeys(xmlDoc);
+    const key=keys[0]||getKeyInfo(xmlDoc);
     const parts=getPlayablePartElements(xmlDoc);
     const firstMeasures=xmlChildren(parts[0],'measure');
     const rows=[],keyChanges=[];
-    let current=keyFromFifths(key.fifths,key.mode);
     for(let i=0;i<firstMeasures.length;i++){
       const number=measureNumber(firstMeasures[i],i);
-      for(const attributes of xmlChildren(firstMeasures[i],'attributes')){
-        const keyEl=primaryKeyOf(attributes);if(!keyEl)continue;
-        const fifthsEl=xmlChild(keyEl,'fifths'),modeEl=xmlChild(keyEl,'mode');
-        const fifths=fifthsEl?parseInt(fifthsEl.textContent.trim(),10)||0:current.fifths;
-        const mode=modeEl?(modeEl.textContent.trim()==='minor'?'minor':'major'):current.mode;
-        const next=keyFromFifths(fifths,mode);
-        if(next.tonicSemi!==current.tonicSemi||next.mode!==current.mode){
-          if(rows.length||i>0)keyChanges.push({measure:number,...next});
-        }
-        current=next;
-      }
-      const rowKey=current;
+      const rowKey=keys[i],before=keys[i-1];
+      if(before&&(rowKey.tonicSemi!==before.tonicSemi||rowKey.mode!==before.mode))keyChanges.push({measure:number,...rowKey});
       collectMeasureBeats(parts,i).forEach(beatInfo=>{
-        const chord=identifyChord(beatInfo.pitchClasses,{bass:beatInfo.bass});
+        const chord=identifyChord(beatInfo.pitchClasses,{bass:beatInfo.bass,spelling:beatInfo.spelling,key:rowKey});
         const roman=romanForChord(chord,rowKey.tonicSemi,rowKey.mode,beatInfo.bass);
         rows.push({
           measure:number,
@@ -287,22 +359,32 @@
     };
   }
 
-  // 첫 파트 조표(number 없는 key 또는 number="1")를 문서 순서로 따라가 마디 번호별 fifths를 돌려줍니다.
-  // MeasureCore.keyFifthsAt(첫 파트, 번호)와 같은 값입니다(번호가 숫자인 마디 기준).
   function primaryKeyOf(attributes){
     const keys=xmlChildren(attributes,'key');
     return keys.find(key=>!key.hasAttribute('number')||key.getAttribute('number')==='1')||keys[0]||null;
   }
-  function trackFifths(measures){
-    let fifths=0;
+  // 첫 파트 조표(number 없는 key 또는 number="1")와 <transpose>를 마디 순서로 따라가며, 마디마다 실음 기준 {fifths, mode}를 돌려줍니다.
+  // initial은 첫 조표가 나오기 전 마디의 값입니다. 첫 파트가 이조 악기가 아니면 fifths는 기보 조표 그대로입니다.
+  function trackFirstPart(measures,initial={}){
+    let fifths=initial.fifths??0,mode=initial.mode??'major',semis=0;
     return measures.map(measure=>{
       for(const attributes of xmlChildren(measure,'attributes')){
-        const key=primaryKeyOf(attributes),value=xmlChild(key,'fifths');
-        if(value)fifths=parseInt(value.textContent.trim(),10)||0;
+        semis=transposeSemitones(attributes)??semis;
+        const keyEl=primaryKeyOf(attributes);if(!keyEl)continue;
+        const fifthsEl=xmlChild(keyEl,'fifths'),modeEl=xmlChild(keyEl,'mode');
+        if(fifthsEl)fifths=parseInt(fifthsEl.textContent.trim(),10)||0;
+        if(modeEl)mode=modeEl.textContent.trim()==='minor'?'minor':'major';
       }
-      return fifths;
+      return {fifths:concertFifths(fifths,semis),mode};
     });
   }
+  // 첫 재생 파트의 마디마다 실음 기준 조(keyFromFifths와 같은 모양)를 돌려줍니다. 첫 조표 전 마디는 문서의 첫 <key>를 따릅니다.
+  function firstPartKeys(xmlDoc){
+    const parts=getPlayablePartElements(xmlDoc);
+    return trackFirstPart(xmlChildren(parts[0],'measure'),firstKeyOf(xmlDoc)).map(state=>keyFromFifths(state.fifths,state.mode));
+  }
+  // 마디별 실음 기준 fifths입니다. 이조 악기가 아니면 MeasureCore.keyFifthsAt(첫 파트, 번호)와 같은 값입니다(번호가 숫자인 마디 기준).
+  function trackFifths(measures){return trackFirstPart(measures).map(state=>state.fifths)}
 
   // 박(onset)마다 함께 울리는 음으로 코드를 판정합니다(D10). 코드 판정은 ChordToolsCore를 씁니다.
   // fifthsByMeasure: 마디 번호 → fifths(Map·객체·함수). 없으면 첫 파트 조표를 따라갑니다.
@@ -429,6 +511,9 @@
     identifyChord,
     detectCadence,
     getPitchMidi,
+    getPitchLetter,
+    concertFifths,
+    firstPartKeys,
     collectMeasureBeats,
     analyzeVerticalities,
     CADENCE_TYPES,

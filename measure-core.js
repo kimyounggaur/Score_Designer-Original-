@@ -18,6 +18,18 @@
     const root=xmlDoc?.documentElement||xmlDoc;
     return kids(root,'part').find(part=>kids(part,'measure').length)||null;
   }
+  // 읽어 들인 XML을 이 앱이 열 수 없을 때 사유 문장을 돌려주고, 열 수 있으면 null입니다(Phase B U1, D02).
+  // 파일 업로드·저장 세션·세션 JSON·공유 링크가 모두 이 함수로 같은 기준을 적용합니다.
+  function unsupportedScoreReason(xmlDoc){
+    const root=xmlDoc?.documentElement,name=root?.localName||'';
+    if(name==='score-timewise')return '마디 우선(score-timewise) 형식은 지원하지 않습니다. 악보 프로그램에서 MusicXML(partwise)로 다시 내보내 주세요.';
+    if(name==='opus')return '여러 악보 묶음(opus) 파일은 지원하지 않습니다. 악보를 하나씩 내보내 주세요.';
+    if(name!=='score-partwise')return `지원하는 MusicXML 악보가 아닙니다. (루트 요소: ${name||'없음'})`;
+    const parts=kids(root,'part');
+    if(!parts.length)return '악보에 파트가 없습니다.';
+    if(!parts.some(part=>kids(part,'measure').length))return '악보에 마디가 없습니다.';
+    return null;
+  }
   // number 속성이 숫자인 마디만 담습니다. 같은 번호가 반복되면 첫 마디를 쓰고 나머지는 duplicates로 돌려줍니다.
   function measuresByNumber(partEl){
     const map=new Map(),duplicates=[];
@@ -103,5 +115,5 @@
       .filter(segment=>segment.from<=segment.to);
   }
 
-  global.MeasureCore={ATTRIBUTE_ORDER,measureNumber,firstPart,measuresByNumber,measureNumbers,keyFifthsAt,modeAt,effectiveAttributes,insertAttributesChild,leadingAttributes,segments};
+  global.MeasureCore={ATTRIBUTE_ORDER,measureNumber,firstPart,unsupportedScoreReason,measuresByNumber,measureNumbers,keyFifthsAt,modeAt,effectiveAttributes,insertAttributesChild,leadingAttributes,segments};
 })(window);

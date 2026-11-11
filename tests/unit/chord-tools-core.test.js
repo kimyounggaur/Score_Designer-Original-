@@ -1,7 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import '../../pitch-core.js';
+import '../../measure-core.js';
 import '../../chord-tools-core.js';
 import '../../chord-symbol-core.js';
+import '../../roman-analysis-core.js';
 
 const xml = `<score-partwise>
   <part id="P1">
@@ -114,3 +116,90 @@ describe('ChordToolsCore.detectChordFromPitchClasses', () => {
   });
 });
 
+
+// D01: 자동 코드 삽입은 코드를 확정한 마디에서만 기존 코드를 바꾸고, 건너뛴 마디의 기존 코드는 지우지 않는다.
+describe('ChordToolsCore.insertAutoChords', () => {
+  const chordNotes = (pitches) => pitches.map(([step, alter], index) =>
+    `<note>${index ? '<chord/>' : ''}<pitch><step>${step}</step>${alter ? `<alter>${alter}</alter>` : ''}<octave>4</octave></pitch><duration>4</duration></note>`).join('');
+  const harmony = (step, kind = 'major') => `<harmony><root><root-step>${step}</root-step></root><kind>${kind}</kind></harmony>`;
+  const restMeasure = (number, extra = '') => `<measure number="${number}">${extra}<note><rest/><duration>4</duration></note></measure>`;
+  const scoreXml = `<score-partwise version="3.1">
+    <part-list><score-part id="P1"><part-name>A</part-name></score-part><score-part id="P2"><part-name>B</part-name></score-part></part-list>
+    <part id="P1">
+      <measure number="1"><attributes><divisions>1</divisions><key><fifths>0</fifths></key><time><beats>4</beats><beat-type>4</beat-type></time></attributes>${harmony('F')}${chordNotes([['C'], ['E'], ['G']])}</measure>
+      <measure number="2">${harmony('G', 'dominant')}${chordNotes([['G']])}</measure>
+      <measure number="3"><harmony><kind text="N.C.">none</kind></harmony>${chordNotes([['C'], ['E'], ['G']])}</measure>
+      <measure number="4">${chordNotes([['D'], ['F', 1], ['A']])}</measure>
+      ${restMeasure(5, harmony('A', 'minor'))}
+    </part>
+    <part id="P2">
+      <measure number="1">${harmony('A')}<note><rest/><duration>4</duration></note></measure>
+      <measure number="2">${harmony('E')}<note><rest/><duration>4</duration></note></measure>
+      ${restMeasure(3)}${restMeasure(4)}${restMeasure(5)}
+    </part>
+  </score-partwise>`;
+  const load = () => new DOMParser().parseFromString(scoreXml, 'text/xml');
+  const group = (rows) => {
+    const groups = [];
+    for (const row of rows) {
+      const last = groups[groups.length - 1];
+      if (last && last.measureIndex === row.measureIndex) last.beats.push(row);
+      else groups.push({ measure: row.measure, measureIndex: row.measureIndex, beats: [row] });
+    }
+    return groups;
+  };
+  const symbols = (doc, partId) => Array.from(doc.querySelectorAll(`part[id="${partId}"] harmony`), (h) => window.ChordSymbolCore.toString(h));
+  const perMeasure = (doc, partId) => Array.from(doc.querySelectorAll(`part[id="${partId}"] measure`), (m) => Array.from(m.querySelectorAll('harmony'), (h) => window.ChordSymbolCore.toString(h)));
+  const insert = (doc, options) => window.ChordToolsCore.insertAutoChords(doc, group(window.RomanAnalysis.analyzeVerticalities(doc)), options);
+
+  it('replaces only settled measures and keeps the existing chord of an unsettled measure', () => {
+    const doc = load();
+    const result = insert(doc, { replaceExisting: true });
+
+    expect(perMeasure(doc, 'P1')).toEqual([['C'], ['G7'], ['N.C.'], ['D'], ['Am']]);
+    expect(result.inserted).toBe(2);
+    expect(result.unsettled.map((u) => [Number(u.measure), u.existing])).toEqual([[2, 2]]);
+    expect(result.keptExisting).toBe(2);
+  });
+
+  it('also replaces chords written in other parts at a settled measure, and keeps them elsewhere', () => {
+    const doc = load();
+    const result = insert(doc, { replaceExisting: true });
+
+    expect(perMeasure(doc, 'P2')).toEqual([[], ['E'], [], [], []]);
+    expect(result.replaced).toBe(2);
+  });
+
+  it('keeps every existing chord when nothing is replaced and reports the skipped measures', () => {
+    const doc = load();
+    const result = insert(doc, { replaceExisting: false });
+
+    expect(perMeasure(doc, 'P1')).toEqual([['F'], ['G7'], ['N.C.'], ['D'], ['Am']]);
+    expect(perMeasure(doc, 'P2')).toEqual([['A'], ['E'], [], [], []]);
+    expect(result).toEqual(expect.objectContaining({ inserted: 1, replaced: 0, skippedExisting: 1 }));
+  });
+
+  it('never deletes chords when no measure is settled', () => {
+    const doc = new DOMParser().parseFromString(`<score-partwise><part-list><score-part id="P1"/></part-list><part id="P1">
+      <measure number="1"><attributes><divisions>1</divisions></attributes>${harmony('E')}${chordNotes([['E']])}</measure>
+      <measure number="2">${harmony('B', 'dominant')}${chordNotes([['B']])}</measure>
+    </part></score-partwise>`, 'text/xml');
+    const result = insert(doc, { replaceExisting: true });
+
+    expect(symbols(doc, 'P1')).toEqual(['E', 'B7']);
+    expect(result).toEqual(expect.objectContaining({ inserted: 0, replaced: 0, keptExisting: 2 }));
+    expect(result.unsettled).toHaveLength(2);
+  });
+
+  it('leaves the existing chord when the detected symbol cannot be written', () => {
+    const doc = load();
+    const parse = vi.spyOn(window.ChordSymbolCore, 'parse').mockReturnValue(null);
+    try {
+      const result = insert(doc, { replaceExisting: true });
+      expect(result.inserted).toBe(0);
+      expect(perMeasure(doc, 'P1')).toEqual([['F'], ['G7'], ['N.C.'], [], ['Am']]);
+    } finally {
+      parse.mockRestore();
+    }
+  });
+});

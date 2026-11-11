@@ -28,7 +28,7 @@ npm run serve
 | `share-session-core.js` | 현재 XML·Ossia 직렬화와 압축 공유 링크 |
 | `session-store-core.js` | IndexedDB·localStorage 세션 저장과 목록, 쓰기 실패 이유 전달, 구세션 이전 보호 |
 | `export-core.js` | 출력·MusicXML 표준 공용 함수: 색상 `#RRGGBB` 정규화, 음높이 옥타브(0~9) 검사, 타악기 파트 판정, 이미지 폭 3종·용지 3종·PNG 크기 한도, SVG 고유 크기 |
-| `tests/fixtures`, `tests/unit`, `tests/e2e`, `tests/schema` | 픽스처 21개, 단위·브라우저 회귀(검수 회귀 24-audit-regressions, MusicXML 스키마 25-schema, 이미지·PDF 출력 26-output, Phase B 회귀 27-phase-b-regressions 포함)와 테스트 전용 MusicXML 4.0 XSD |
+| `tests/fixtures`, `tests/unit`, `tests/e2e`, `tests/schema` | 픽스처 21개, 단위·브라우저 회귀(검수 회귀 24-audit-regressions, MusicXML 스키마 25-schema, 이미지·PDF 출력 26-output, Phase B 회귀 27-phase-b-regressions, 2026-11-11 재검수 회귀 28-audit-2026-11-11, 입력 이름 검사 a11y/input-names 포함)와 테스트 전용 MusicXML 4.0 XSD |
 | `manual`, `MXL-Studio-사용자설명서`, `MXL-Studio-퀵스타트-사용자설명서` | 설명서 HTML 정본과 PDF·SVG 배포본 |
 | `MXL-Studio-업데이트-문서` | 2026년 9월 기준 변경 안내와 릴리스 노트(이후 Phase A·A2·B 변경은 설명서와 `context-notes.md`에 기록) |
 | `scripts` | HTML → PDF → SVG 재생성 도구 |
@@ -39,6 +39,7 @@ npm run serve
 
 | 날짜 | 환경 | 단위 | 전체 브라우저 | 시간 |
 |---|---|---|---|---|
+| 2026-11-11 (재검수 D01~D16) | Linux 헤드리스 Chrome | **326개 통과** | **264개 통과 / 4개 제외** | 14.8분 |
 | 2026-11-11 (Phase B) | Linux 헤드리스 Chrome | **257개 통과** | **234개 통과 / 4개 제외** | 12.3분 |
 | 2026-11-10 (Phase A2) | Linux 헤드리스 Chrome | **185개 통과** | **150개 통과 / 4개 제외** | 8.6분 |
 | 2026-11-09 (Phase A) | Linux 헤드리스 Chrome | **142개 통과** | **107개 통과 / 4개 제외** | 6.1분 |
@@ -54,7 +55,7 @@ npm run serve
 - [퀵스타트](manual/MXL-Studio-Quick-Start-ko.html): 업로드부터 저장까지 빠른 흐름.
 - [9월 업데이트](MXL-Studio-업데이트-문서/MXL-Studio-2026-09-업데이트-안내.md): 이번 개선 내용.
 
-HTML이 정본이며 설명서·퀵스타트의 PDF와 SVG는 2026-11-11 버전으로 재생성했습니다(Linux에서 생성해 Malgun Gothic 대신 Noto Sans CJK로 표시됩니다. Windows에서 다시 생성하면 원래 글꼴로 돌아갑니다). `python -m pip install -r scripts/requirements-docs.txt` 후 `npm run docs:build`로 갱신합니다. 다른 Python을 쓰려면 `DOCS_PYTHON` 환경 변수에 실행 경로를 지정합니다.
+HTML이 정본이며 설명서·퀵스타트의 PDF와 SVG는 2026-11-11 버전으로 재생성했고, 재검수 대응(D01~D16)으로 바뀐 동작은 설명서(10쪽)에만 반영해 설명서 PDF·SVG를 다시 만들었습니다(Linux에서 생성해 Malgun Gothic 대신 Noto Sans CJK로 표시됩니다. Windows에서 다시 생성하면 원래 글꼴로 돌아갑니다). `python -m pip install -r scripts/requirements-docs.txt` 후 `npm run docs:build`로 갱신합니다. 다른 Python을 쓰려면 `DOCS_PYTHON` 환경 변수에 실행 경로를 지정합니다.
 
 ## 설계 문서 관계
 

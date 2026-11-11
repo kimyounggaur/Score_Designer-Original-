@@ -1,5 +1,5 @@
 import {beforeEach,describe,expect,it,vi} from 'vitest';
-import {readFileSync} from 'node:fs';
+import {readFileSync,readdirSync} from 'node:fs';
 import path from 'node:path';
 const parse=text=>new DOMParser().parseFromString(text,'text/xml');
 const fixture=name=>parse(readFileSync(path.resolve('tests/fixtures',name),'utf8'));
@@ -228,6 +228,70 @@ describe('PlaybackCore',()=>{
       const backward=[6,7,8,9,10].map(n=>bar(n,'<barline><repeat direction="backward" times="16"/></barline>')).join('');
       const result=core.expandMeasureOrderDetailed(measuresOf(score(forward+backward+bar(11,words('D.C.','dacapo="yes"')))));
       expect(result.order).toHaveLength(20000);expect(result.unsupported).toEqual(['D.C.']);
+    });
+  });
+  describe('initial tempo and metronome beat units (D03)',()=>{
+    const metro=(unit,perMinute,dots=0,sound='')=>`<direction><direction-type><metronome><beat-unit>${unit}</beat-unit>${'<beat-unit-dot/>'.repeat(dots)}<per-minute>${perMinute}</per-minute></metronome></direction-type>${sound&&`<sound ${sound}/>`}</direction>`;
+    const metronomeOf=inner=>parse(`<metronome>${inner}</metronome>`).documentElement;
+    const withoutSound=name=>parse(readFileSync(path.resolve('tests/fixtures',name),'utf8').replace(/<sound tempo="[^"]*"\/>/g,''));
+    it('converts a beat unit and its dots into quarter-note BPM',()=>{
+      const cases=[
+        ['<beat-unit>quarter</beat-unit><per-minute>120</per-minute>',120],
+        ['<beat-unit>quarter</beat-unit><beat-unit-dot/><per-minute>60</per-minute>',90],
+        ['<beat-unit>half</beat-unit><beat-unit-dot/><beat-unit-dot/><per-minute>40</per-minute>',140],
+        ['<beat-unit>eighth</beat-unit><per-minute>200</per-minute>',100],
+        ['<beat-unit>breve</beat-unit><per-minute>30</per-minute>',240],
+        ['<beat-unit>64th</beat-unit><per-minute>480</per-minute>',30],
+        ['<beat-unit>quarter</beat-unit><beat-unit-dot/><per-minute> 66.67 </per-minute>',100.005],
+      ];
+      for(const [inner,expected] of cases)expect(core.quarterBpmFromMetronome(metronomeOf(inner))).toBeCloseTo(expected,6);
+      expect(core.metronomeBeat(metronomeOf('<beat-unit>quarter</beat-unit><beat-unit-dot/><per-minute>60</per-minute>'))).toEqual({unit:'quarter',dots:1,factor:1.5});
+    });
+    it('returns null when the beat unit is unknown or per-minute is not a plain number',()=>{
+      for(const inner of [
+        '<beat-unit>maxima</beat-unit><per-minute>60</per-minute>',
+        '<per-minute>60</per-minute>',
+        '<beat-unit>quarter</beat-unit><per-minute>c. 60</per-minute>',
+        '<beat-unit>quarter</beat-unit><per-minute>60-66</per-minute>',
+        '<beat-unit>quarter</beat-unit><beat-unit>half</beat-unit>',
+        '<beat-unit>quarter</beat-unit>',
+      ])expect(core.quarterBpmFromMetronome(metronomeOf(inner))).toBeNull();
+      expect(core.quarterBpmFromMetronome(null)).toBeNull();expect(core.metronomeBeat(undefined)).toBeNull();
+    });
+    it('starts at the first measure tempo: sound tempo, then metronome unit, else 120',()=>{
+      expect(core.initialTempo(score(bar(1,words('Allegro','tempo="84"'))))).toBe(84);
+      expect(core.initialTempo(score(bar(1,metro('quarter',100))))).toBe(100);
+      expect(core.initialTempo(score(bar(1,metro('quarter',60,1))))).toBe(90);
+      expect(core.initialTempo(score(bar(1,metro('quarter',50,0,'tempo="70"'))))).toBe(70);
+      expect(core.initialTempo(score(bar(1)))).toBe(120);
+      // 첫 마디 맨 앞이 아닌 템포(2마디 이후)는 시작 템포로 보지 않는다. 재생 엔진과 같은 규칙이다.
+      expect(core.initialTempo(score(bar(1)+bar(2,words('Presto','tempo="180"'))))).toBe(120);
+      expect(core.initialTempo(parse('<score-partwise/>'))).toBe(120);
+      expect(core.initialTempo(null)).toBe(120);
+    });
+    it('takes the first part that has a tempo in its first measure',()=>{
+      const doc=parse(`<score-partwise><part-list><score-part id="P1"/><score-part id="P2"/></part-list><part id="P1">${bar(1)}</part><part id="P2">${bar(1,metro('eighth',180))}</part></score-partwise>`);
+      expect(core.initialTempo(doc)).toBe(90);
+    });
+    it('equals the tempo extractPlaybackData starts from for every fixture',()=>{
+      const names=readdirSync(path.resolve('tests/fixtures')).filter(name=>name.endsWith('.musicxml'));
+      let checked=0;
+      for(const name of names){
+        const data=core.extractPlaybackData(fixture(name));
+        if(!data.measureTimeline.length)continue;
+        expect(core.initialTempo(fixture(name)),name).toBeCloseTo(data.measureTimeline[0].bpm,9);checked++;
+      }
+      expect(checked).toBeGreaterThan(10);
+    });
+    it('plays a dotted-quarter metronome without sound tempo at 90 BPM, not at the raw per-minute 60',()=>{
+      const doc=withoutSound('f14-dotted-metronome.musicxml');
+      expect(doc.querySelector('sound')).toBeNull();
+      expect(core.initialTempo(doc)).toBe(90);
+      const natural=core.extractPlaybackData(doc);
+      expect(natural.measureTimeline[0].bpm).toBeCloseTo(90);expect(natural.totalDuration).toBeCloseTo(4);
+      // 플레이어가 처음 BPM으로 넘기는 값(initialTempo)은 속도를 바꾸지 않는다. 원시 per-minute 60을 넘기면 2/3 속도(6초)가 된다.
+      expect(core.extractPlaybackData(doc,{bpm:core.initialTempo(doc)}).totalDuration).toBeCloseTo(4);
+      expect(core.extractPlaybackData(doc,{bpm:60}).totalDuration).toBeCloseTo(6);
     });
   });
   describe('percussion parts',()=>{

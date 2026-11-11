@@ -137,6 +137,23 @@ test.describe('Phase B B-2 · 옥타브 범위 가드', () => {
     await panel.locator('select').selectOption('custom');
     await panel.locator('input.form-input--mono').nth(0).fill('C11');
     await panel.locator('input.form-input--mono').nth(1).fill('C12');
+    // 2026-11-11 D09: 옥타브 0~9 밖의 음 이름은 입력 단계에서 바로 거절합니다(사유가 보이고 실행 단추가 막힙니다).
+    await expect(panel.locator('#range-custom-error')).toContainText('옥타브는 0~9');
+    await expect(panel.getByRole('button', { name: /음역대 조정 실행/ })).toBeDisabled();
+    expect(await snapshot(page)).toEqual(before);
+  });
+
+  test('@panels range panel final guard still stops notes that land past octave 9 with a limit written as B#9', async ({ page }) => {
+    test.setTimeout(45_000);
+    await openApp(page);
+    await uploadFixture(page, FIXTURE);
+    const before = await snapshot(page);
+    const panel = await openPanel(page, 'range');
+    await panel.locator('select').selectOption('custom');
+    // B#9는 표기상 9옥타브지만 소리로는 C10과 같아, 입력 검사는 통과하고 옮긴 음(C10)이 가드에 걸립니다.
+    await panel.locator('input.form-input--mono').nth(0).fill('B#9');
+    await panel.locator('input.form-input--mono').nth(1).fill('B#9');
+    await expect(panel.locator('#range-custom-error')).toHaveCount(0);
     await panel.getByRole('button', { name: /음역대 조정 실행/ }).click();
     const log = panel.locator('.result-log');
     await expect(log).toContainText('옥타브 0~9');

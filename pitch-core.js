@@ -91,6 +91,30 @@
     if(accidental&&!accidental.hasAttribute('cautionary')&&!accidental.hasAttribute('editorial')&&!accidental.hasAttribute('parentheses'))accidental.remove();
     return false;
   }
+  // 보표마다 다른 조표를 따라가는 추적기(D07·D08). <attributes>를 문서 순서로 update에 넘기고 fifthsFor(보표 번호)로 묻습니다.
+  // <key>에 number가 없으면 모든 보표에, number="n"이면 n번 보표에만 적용합니다(MusicXML key@number).
+  // number 없는 조표가 오면 보표별 조표는 모두 그 값으로 덮입니다. 자기 조표가 없는 보표는 number 없는 조표를,
+  // 그것도 없으면 가장 앞 번호의 조표를 따릅니다(보표 1의 조표만 적은 악보를 이전처럼 읽기 위한 물러남).
+  function createKeyTracker(initial=0){
+    let shared=Number(initial)||0,sharedSet=false;
+    const own=new Map();
+    return {
+      update(attributesEl){
+        for(const key of kids(attributesEl,'key')){
+          const fifths=kid(key,'fifths');if(!fifths)continue;
+          const value=Number(fifths.textContent.trim())||0;
+          if(!key.hasAttribute('number')){shared=value;sharedSet=true;own.clear();}
+          else own.set(Math.max(1,Math.trunc(Number(key.getAttribute('number')))||1),value);
+        }
+      },
+      fifthsFor(staff=1){
+        const id=Math.max(1,Math.trunc(Number(staff))||1);
+        if(own.has(id))return own.get(id);
+        if(sharedSet||!own.size)return shared;
+        return own.get(Math.min(...own.keys()));
+      },
+    };
+  }
   // 조성 기반 3도: 음이름을 두 칸 옮기고 변화표는 조표를 따릅니다.
   function diatonicThird(pitch,fifths,direction='above'){
     const sign=direction==='below'?-1:1;
@@ -126,5 +150,26 @@
     return {step:bass.step,alter:bass.alter};
   }
 
-  global.PitchCore={STEPS,STEP_TO_SEMI,NOTE_CHILD_ORDER,CHORD_TONES,readPitch,pitchToMidi,addInterval,shiftOctave,shiftNoteOctave,nearestShift,keySignatureAlter,accidentalName,insertNoteChild,alterInEffect,syncAccidental,diatonicThird,chromaticThird,bassForInversion};
+  // "C4"·"F#3"·"Bb5" 같은 음 이름 글을 읽습니다. 앞뒤 공백은 무시합니다.
+  // 형식이 틀리면 {error:'format'}, 옥타브가 [minOctave,maxOctave] 밖이면 {error:'octave',octave}, 읽었으면 {pitch:{step,alter,octave}}입니다.
+  // 사용자가 직접 적는 음역(D09)처럼 옥타브가 아무리 커도(C1000000000 등) 읽기만 하고 반복하지 않으므로 바로 거절할 수 있습니다.
+  function parseNoteName(text,{minOctave=0,maxOctave=9}={}){
+    const match=String(text??'').trim().match(/^([A-G])([#b]?)(\d+)$/);
+    if(!match)return {error:'format'};
+    const octave=Number(match[3]);
+    if(!Number.isInteger(octave)||octave<minOctave||octave>maxOctave)return {error:'octave',octave};
+    return {pitch:{step:match[1],alter:match[2]==='#'?1:match[2]==='b'?-1:0,octave}};
+  }
+
+  // midi를 [low, high] 안으로 옮기는 옥타브 수를 산술로 구합니다(반복문 없음, D09). 가장 적게 올리거나 내린 값입니다.
+  // fits가 false면 범위가 한 옥타브보다 좁아 들어갈 자리가 없다는 뜻이고, 그때 octaves는 가장 가까운 아래쪽 값입니다.
+  function octavesToFit(midi,low,high){
+    const note=Number(midi),lo=Number(low),hi=Number(high);
+    if(![note,lo,hi].every(Number.isFinite)||lo>hi)return {octaves:0,fits:false};
+    const octaves=Math.min(Math.max(0,Math.ceil((lo-note)/12)),Math.floor((hi-note)/12))||0;
+    const moved=note+octaves*12;
+    return {octaves,fits:moved>=lo&&moved<=hi};
+  }
+
+  global.PitchCore={STEPS,STEP_TO_SEMI,NOTE_CHILD_ORDER,CHORD_TONES,readPitch,pitchToMidi,addInterval,shiftOctave,shiftNoteOctave,nearestShift,keySignatureAlter,createKeyTracker,parseNoteName,octavesToFit,accidentalName,insertNoteChild,alterInEffect,syncAccidental,diatonicThird,chromaticThird,bassForInversion};
 })(window);

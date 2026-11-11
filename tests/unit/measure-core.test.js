@@ -72,3 +72,25 @@ describe('MeasureCore.segments',()=>{
     expect(core.segments([{measure:2,value:1},{measure:9,value:2}],4)).toEqual([{from:2,to:4,value:1}]);
   });
 });
+
+// D02: 업로드·세션·공유가 같은 구조 검사를 쓰도록 MeasureCore가 판정을 한 곳에서 맡습니다.
+describe('MeasureCore.unsupportedScoreReason',()=>{
+  const reason=text=>core.unsupportedScoreReason(parse(text));
+  it('accepts a partwise score that has a part with a measure',()=>{
+    expect(core.unsupportedScoreReason(fixture('f01-basic.musicxml'))).toBeNull();
+    expect(reason('<score-partwise><part id="P1"><measure number="1"/></part></score-partwise>')).toBeNull();
+    // 첫 파트가 비어 있어도 다른 파트에 마디가 있으면 열 수 있습니다.
+    expect(reason('<score-partwise><part id="P1"/><part id="P2"><measure number="1"/></part></score-partwise>')).toBeNull();
+  });
+  it('rejects every structure the uploader rejects, with a distinct reason',()=>{
+    expect(reason('<score-timewise><measure number="1"/></score-timewise>')).toContain('score-timewise');
+    expect(reason('<opus/>')).toContain('opus');
+    expect(reason('<html/>')).toContain('루트 요소: html');
+    expect(reason('<score-partwise><part-list/></score-partwise>')).toBe('악보에 파트가 없습니다.');
+    expect(reason('<score-partwise><part id="P1"/></score-partwise>')).toBe('악보에 마디가 없습니다.');
+    expect(core.unsupportedScoreReason(null)).toContain('루트 요소: 없음');
+  });
+  it('does not count measures nested in other elements as a part measure',()=>{
+    expect(reason('<score-partwise><part-list><score-part id="P1"><measure/></score-part></part-list></score-partwise>')).toBe('악보에 파트가 없습니다.');
+  });
+});

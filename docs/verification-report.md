@@ -114,3 +114,44 @@ Phase B 이전 빌드와 이 브랜치를 같은 하네스에서 창 크기 둘�
 ### 문서와 화면 검증
 
 사용자 설명서 10쪽과 퀵스타트 4쪽 PDF를 `npm run docs:build`로 다시 만들고 전 페이지를 이미지로 렌더해 잘림·겹침·빈 페이지가 없음을 확인했습니다. SVG도 같은 PDF에서 다시 생성했습니다(Linux라 한글은 Noto Sans CJK로 표시됩니다). 이번 변경으로 바뀐 내용은 표기 변환 보관본·'↩ 원본 복원', 옥타브 0~9·타악기 조표·TAB 안내, 이미지 폭(기본 1100px)·용지(기본 A4 세로), 재생 이동 기호와 타악기 안내, 업로드 형식 안내, 표지의 'Phase B'·2026-11-11입니다. 설명서 화면 11장 중 내보내기 패널(`06-export-panel.png`)만 폭·용지 선택과 미리보기가 보이는 새 화면(1280×800)으로 다시 촬영해 `manual/assets`와 두 설명서 폴더에 같은 파일로 교체했고, 나머지 화면은 Phase B로 모습이 바뀌지 않아 그대로입니다. 업데이트 안내 PDF·SVG는 2026-09-03자 기록이라 다시 만들지 않고 원래 파일을 유지했습니다.
+
+## 2026-11-11 재검수 대응 (D01~D16)
+
+환경: Linux, Node.js 22.23.4, Google Chrome for Testing 153.0.8010.12 (헤드리스), Playwright 1.61.1, 이전과 같은 로컬 HTTPS 미러. 근거는 Phase B 병합본(main 135cec0)을 기준으로 한 외부 재검수 보고서(`…20261111_GPT61Sol_.md`)의 통합 ID D01~D16(부록 INV06 = D09)이며, 브랜치 `fix/audit-2026-11-11`에서 단계(F-1~F-6)마다 시험과 기록(`checklist.md`·`context-notes.md`)을 남겼습니다.
+
+| 구분 | 결과 |
+|---|---|
+| Vitest 단위 테스트 | 12개 파일, 326개 통과 (Phase B의 257개에서 +69: pitch-core 29·roman-analysis-core 18·playback-core 6·chord-tools-core 5·numbering-core 4·session-store-core 4·measure-core 3) |
+| Playwright 전체 | 268개 중 264개 통과(chromium 255, mobile 9), 4개 제외, 14.8분 (Phase B의 238개에서 +30: `28-audit-2026-11-11` 27개·`a11y/input-names` 2개·`27-phase-b-regressions` 1개) |
+| CI 범위(`@panels|@a11y`) | 208개 통과 (F-5 시점 chromium) |
+| 변이 시험 | 고친 소스 8개(`chord-tools-core`·`measure-core`·`mxl-studio.html`·`numbering-core`·`pitch-core`·`playback-core`·`roman-analysis-core`·`session-store-core`)를 기준 커밋 135cec0으로 되돌린 상태에서 새 시험을 돌렸습니다: 단위 69개 중 65개, E2E(`28-audit-2026-11-11`·`a11y/input-names`·`27-phase-b-regressions`의 새·바뀐 시험) 31개 중 25개가 실패했고, 통과한 단위 4개·E2E 6개는 정상 동작이 유지되는지 보는 대조 시험입니다(목록은 context-notes의 F-6 절). 확인 뒤 소스를 HEAD로 복원했고 기존 단위 257개는 되돌린 소스에서도 모두 통과했습니다 |
+| 접근성 | 편집 패널 21개의 보이는 입력·선택 모두 이름 있음(고치기 전 16곳 없음), 재생기 조작 단추 이름 유지 (`a11y/input-names`) |
+| 설명서 | 설명서 HTML 13곳을 바뀐 동작에 맞게 고치고 PDF 10쪽·SVG를 `npm run docs:build`와 같은 단계로 다시 만들어 쪽 넘침·잘림이 없음을 이미지로 확인했습니다. 퀵스타트는 바뀐 내용이 없어 그대로입니다 |
+
+제외 4개는 이전과 같습니다(모바일의 데스크톱 패널 폭 검사 1개, Linux 기준 이미지가 없는 시각 검사 3개).
+
+### 결함별 대응
+
+| ID | 고친 것 | 시험 |
+|---|---|---|
+| D01 | 코드 자동 삽입이 덮어쓰기를 켜도 코드를 확정한 마디의 기존 코드만 교체하고, 확정하지 못한 마디의 기존 코드는 보존 | 단위 chord-tools-core, 28 스펙 D01 ×2 |
+| D02 | 업로드·저장 세션·세션 JSON·공유 링크가 `MeasureCore.unsupportedScoreReason` 한 곳으로 파트·마디 없는 악보를 거절하고 현재 작업을 지킴 | 단위 measure-core·session-store-core, 28 스펙 D02 ×6 |
+| D03 | 재생 슬라이더의 처음 BPM을 재생 엔진의 시작 템포(`PlaybackCore.initialTempo`)와 같게 함(점4분음표=60·sound 없음 → 90) | 단위 playback-core, 28 스펙 D03 ×2 |
+| D04·D12 | 통계·코드 분석 결과를 만든 대상이 바뀌면(파일·범위·편집) 결과를 지우고 통계에 분석 대상을 표시 | 28 스펙 D04 ×2·D12 |
+| D05 | 로마 숫자 분석이 이조 악기 첫 파트의 실음 조를 기준으로 읽음(B♭ 클라리넷 기보 D장조 → C장조) | 단위 roman-analysis-core, 28 스펙 D05 |
+| D06 | 감7·증3화음의 근음을 철자 → 조의 이끎음 → 가장 낮은 음이름 순으로 고름(c단조 B–D–F–A♭ = `B°7`) | 단위 roman-analysis-core, 28 스펙 D06 |
+| D07·D08 | 숫자 악보 이동 도법·화성 쌓기가 보표(`number`)별 조표를 따름(`PitchCore.createKeyTracker`) | 단위 pitch-core·numbering-core, 28 스펙 D07·D08 |
+| D09 | 사용자 지정 음역은 입력할 때 형식·옥타브(0~9)·최저>최고를 검사하고 이동 옥타브 수를 산술로 구함(`C1000000000`으로 멈추지 않음) | 단위 pitch-core, 28 스펙 D09 ×2, 27 스펙 ×2 |
+| D10 | 60 BPM이 Prestissimo로 나오던 빠르기말 틈을 Larghetto(55~65)로 메움 | 단위 playback-core, 28 스펙 D10 ×2 |
+| D11 | 템포 패널에서 적용 항목을 모두 끄면 실행·성공 기록 없이 안내만 | 28 스펙 D11 |
+| D13 | 세션 삭제가 두 저장소에서 모두 지워졌을 때만 성공, 실패하면 목록을 유지하고 알림 | 단위 session-store-core, 28 스펙 D13 |
+| D14 | 점음표 metronome의 per-minute을 정수로 반올림하지 않고 소수 둘째 자리까지 유지 | 단위 playback-core, 28 스펙 D14 ×2 |
+| D15 | 편집 패널 입력·선택에 label 연결 또는 aria-label | `a11y/input-names` ×2 |
+| D16 | 조옮김·Ossia 반음 ±12, Ossia 옥타브 ±2를 안내한 값 그대로 검증 | 28 스펙 D16 ×2 |
+
+### 남은 한계 (이번 범위 밖)
+
+- 앱 안의 Ossia는 MusicXML 표준 요소가 아니라 MXL·XML 내보내기에 들어가지 않습니다(PNG·SVG에만 포함, 내보낼 때 알림).
+- 화음 이름표는 조와 무관한 고정 표기라 A단조의 G♯°7은 이름이 `Ab°7`로 나옵니다(근음 번호와 로마 숫자는 맞음).
+- 조옮김·캡포·통계 등 일부 패널의 "현재 조" 표시는 여전히 첫 `key fifths` 하나를 읽습니다.
+- 실제 모바일 기기·Safari·Firefox, 스크린 리더 실사용, 설치 글꼴 10종의 PNG·PDF 최종 모양, 청음은 자동 시험으로 확인하지 못했습니다.

@@ -115,19 +115,38 @@
     return {order:order.slice(0,last+1).concat(again).slice(0,ORDER_LIMIT),applied:unique(plan.applied),unsupported:[]};
   }
   function expandMeasureOrder(measures,expandRepeats=true,options){return expandMeasureOrderDetailed(measures,expandRepeats,options).order;}
+  // metronome 표기를 4분음표 기준 BPM으로 바꾼다. sound tempo는 항상 4분음표 기준이므로
+  // 점4분음표=60은 4분음표 기준 90 BPM이다(점 하나 ×1.5, 점 둘 ×1.75).
+  // 재생·템포 패널·마디별 템포가 같은 환산을 쓰도록 공개한다. 박 단위를 모르면 null을 돌려준다.
+  const BEAT_UNIT_QUARTERS={breve:8,whole:4,half:2,quarter:1,eighth:.5,'16th':.25,'32nd':.125,'64th':.0625};
+  function metronomeBeat(metronome){
+    const items=children(metronome),index=items.findIndex(el=>el.localName==='beat-unit');
+    if(index<0)return null;
+    const unit=items[index].textContent.trim(),base=BEAT_UNIT_QUARTERS[unit];
+    if(!base)return null;
+    let dots=0;for(let i=index+1;i<items.length&&items[i].localName==='beat-unit-dot';i++)dots++;
+    return {unit,dots,factor:base*(2-1/Math.pow(2,dots))};
+  }
+  function metronomePerMinute(metronome){
+    const value=text(metronome,'per-minute').trim();
+    return /^\d+(\.\d+)?$/.test(value)?Number(value):null;
+  }
+  function quarterBpmFromMetronome(metronome){
+    const beat=metronomeBeat(metronome),perMinute=metronomePerMinute(metronome);
+    return beat&&perMinute!=null?perMinute*beat.factor:null;
+  }
   function tempoInDirection(direction){
     const sound=direction.querySelector('sound[tempo]');const bpm=Number(sound?.getAttribute('tempo'));
     if(bpm>0)return bpm;
     const metro=direction.querySelector('metronome');if(!metro)return null;
-    const quarters={whole:4,half:2,quarter:1,eighth:.5,'16th':.25,'32nd':.125}[text(metro,'beat-unit')]||1;
-    const dots=children(metro,'beat-unit-dot').length;
-    const value=Number(text(metro,'per-minute'))*quarters*(2-Math.pow(.5,dots));
+    const value=quarterBpmFromMetronome(metro);
     return value>0?value:null;
   }
-  function parsePart(part,partIndex,id){
+  // limit이 있으면 앞쪽 마디만 읽는다(처음 템포만 필요할 때 악보 전체를 풀지 않으려는 용도).
+  function parsePart(part,partIndex,id,limit=Infinity){
     let divisions=1,nominal=4,velocity=80;
     const transposeByStaff=new Map([['all',0]]);
-    return children(part,'measure').map((measure,sourceIndex)=>{
+    return children(part,'measure').slice(0,limit).map((measure,sourceIndex)=>{
       let cursor=0,lastStart=0,end=0;const notes=[],tempos=[];
       for(const node of children(measure)){
         if(node.localName==='attributes'){
@@ -162,6 +181,16 @@
       return {notes,tempos,duration:measure.getAttribute('implicit')==='yes'?end:Math.max(end,nominal),measure:numericMeasure(measure,sourceIndex)};
     });
   }
+  // 악보가 시작할 때의 4분음표 기준 BPM: 파트 순서대로 첫 마디 맨 앞(0박)의 템포를 찾고, 없으면 120.
+  function initialTempoOf(parsed){
+    for(const part of parsed){const first=part[0]?.tempos.find(tempo=>tempo.quarter===0);if(first)return first.bpm;}
+    return 120;
+  }
+  // 재생 슬라이더의 처음 값. extractPlaybackData가 쓰는 시작 템포와 같은 값이다(첫 마디만 읽는다).
+  function initialTempo(xmlDoc){
+    const elements=children(xmlDoc?.documentElement,'part');
+    return initialTempoOf(elements.map((part,index)=>parsePart(part,index,part.getAttribute('id')||`part-${index+1}`,1)));
+  }
   function extractPlaybackData(xmlDoc,{bpm,expandRepeats=true}={}){
     const elements=children(xmlDoc?.documentElement,'part');
     const labels=new Map(Array.from(xmlDoc?.querySelectorAll('part-list > score-part')||[],part=>[part.getAttribute('id'),text(part,'part-name','Part')]));
@@ -169,12 +198,11 @@
     const parsed=elements.map((part,index)=>parsePart(part,index,parts[index].id));
     const sourceMeasures=children(elements[0],'measure'),source=[];
     const measureLists=elements.map(part=>children(part,'measure'));
-    let initialTempo=120;
-    for(const part of parsed){const first=part[0]?.tempos.find(tempo=>tempo.quarter===0);if(first){initialTempo=first.bpm;break;}}
+    const startTempo=initialTempoOf(parsed);
     // bpm is an initial-tempo override. Later score tempos preserve their ratio
     // to the score's first tempo; duration/divisions is always quarter-note units.
-    const ratio=Number(bpm)>0?Number(bpm)/initialTempo:1;
-    let currentTempo=initialTempo;
+    const ratio=Number(bpm)>0?Number(bpm)/startTempo:1;
+    let currentTempo=startTempo;
     for(let index=0;index<sourceMeasures.length;index++){
       const rows=parsed.map(part=>part[index]).filter(Boolean);
       const length=Math.max(0,...rows.map(row=>row.duration));
@@ -322,5 +350,5 @@
     while(low<=high){const middle=(low+high)>>1;if(timeline[middle].startSec<=sec){answer=middle;low=middle+1;}else high=middle-1;}
     return timeline[answer];
   }
-  global.PlaybackCore={extractPlaybackData,measureAtTime,midiToToneNote,expandMeasureOrder,expandMeasureOrderDetailed,collectNavigation};
+  global.PlaybackCore={extractPlaybackData,initialTempo,metronomeBeat,metronomePerMinute,quarterBpmFromMetronome,measureAtTime,midiToToneNote,expandMeasureOrder,expandMeasureOrderDetailed,collectNavigation};
 })(window);
