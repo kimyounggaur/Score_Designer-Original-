@@ -19,9 +19,9 @@ Vitest는 Windows 한글·공백 경로의 forks 문제를 피하려고 threads 
 |---|---|---|
 | @smoke | 00, 02 | 시작·업로드·Ossia·조옮김·자동복원·편집 후 공유 |
 | @fixtures | 01 | f01-f21 렌더링 |
-| @panels | 03-06, 17-19, 21, 23-27, panels/01-21 | 활성 파일·MXL 왕복·Ossia·재생·커서·각 패널 결과·기록·적용 대상(전체/현재 파일)·12개 조 ZIP·검수 보고서 회귀(24-audit-regressions)·MusicXML 스키마 검증(25-schema)·이미지·PDF 출력 통일(26-output)·옥타브 범위·타악기·TAB·렌더 횟수·재생 경고(27-phase-b-regressions) |
+| @panels | 03-06, 17-19, 21, 23-28, panels/01-21 | 활성 파일·MXL 왕복·Ossia·재생·커서·각 패널 결과·기록·적용 대상(전체/현재 파일)·12개 조 ZIP·검수 보고서 회귀(24-audit-regressions)·MusicXML 스키마 검증(25-schema)·이미지·PDF 출력 통일(26-output)·옥타브 범위·타악기·TAB·렌더 횟수·재생 경고(27-phase-b-regressions)·2026-11-11 재검수 회귀 D01~D16(28-audit-2026-11-11: 코드 자동 삽입·분석 결과 무효화, 세션·공유 구조 검증, 세션 삭제 실패, 재생 시작 템포·템포 용어·점음표, 이조 악기 실음 조·감7 근음·보표별 조표, 사용자 지정 음역·반음·옥타브 입력 범위) |
 | @ux | 09-13, 16 | 알림·탭·레이아웃·세션·줌·인쇄·모바일 드로어 |
-| @a11y | 14-15, a11y/axe | 키보드 버튼·메뉴·음자리표·템포 프리셋, axe 다섯 장면 |
+| @a11y | 14-15, a11y/axe, a11y/input-names | 키보드 버튼·메뉴·음자리표·템포 프리셋, axe 다섯 장면, 편집 패널 21개의 보이는 입력·선택에 프로그램상 이름(label·aria-label)이 있는지(D15) |
 | @robustness | 07-08 | CDN·패널 오류, 파일 형식·중복·크기 제한 |
 | @perf | 20, 22 | 초기 패널 수·가사 복원·자동저장 중복·지연 오디오 |
 | @visual | visual/score | f01, f04, f09 악보 스크린샷 |
@@ -53,6 +53,8 @@ Vitest는 Windows 한글·공백 경로의 forks 문제를 피하려고 threads 
 | f21-ds-al-coda.musicxml | 6마디, segno·To Coda·coda + D.S. al Coda (재생 순서 1,2,3,4,2,3,5,6, R2) |
 
 2026-09-03 결과: 단위 84개 통과. 전체 E2E는 84개 중 80개 통과, 4개 제외, 5.5분. `chromium` 전체와 `mobile` Pixel 5의 @ux를 실행했습니다. 모바일에서는 데스크톱 패널 너비 검사를 제외합니다.
+
+2026-11-11 결과(재검수 대응 D01~D16, Linux 헤드리스 Chrome): 단위 12개 파일 326개 통과(Phase B의 257개에서 +69: pitch-core 29·roman-analysis-core 18·playback-core 6·chord-tools-core 5·numbering-core 4·session-store-core 4·measure-core 3). 전체 E2E는 268개 중 264개 통과(chromium 255, mobile 9), 4개 제외(시각 3·모바일 데스크톱 너비 1), 14.8분(Phase B의 238개에서 +30: `28-audit-2026-11-11` 27개·`a11y/input-names` 2개·`27-phase-b-regressions` 1개). 같은 로컬 미러 방식으로 실행했습니다. 고친 소스 8개를 기준 커밋(135cec0)으로 되돌린 상태에서 새 시험을 돌려 단위 69개 중 65개, E2E 31개 중 25개가 실패하는 것을 확인했습니다(나머지는 정상 동작이 그대로인지 보는 대조 시험이며 목록은 `context-notes.md`의 F-6 절).
 
 2026-11-11 결과(Phase B, Linux 헤드리스 Chrome): 단위 12개 파일 257개 통과. 전체 E2E는 238개 중 234개 통과(chromium 225, mobile 9), 4개 제외(시각 3·모바일 데스크톱 너비 1), 약 12.3분. 스키마 `25-schema` 32개, 출력 `26-output` 12개, 회귀 `27-phase-b-regressions` 20개가 새로 들어갔고 PDF 쪽수 시험은 데스크톱 Chromium에서만 돕니다. 같은 로컬 미러 방식으로 실행했습니다.
 
